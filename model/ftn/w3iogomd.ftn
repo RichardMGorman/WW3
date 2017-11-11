@@ -2250,7 +2250,7 @@
 !/
       END SUBROUTINE W3OUTG
 !/ ------------------------------------------------------------------- /
-      SUBROUTINE W3IOGO ( INXOUT, NDSOG, IOTST, IMOD )
+      SUBROUTINE W3IOGO ( INXOUT, NDSOG, IOTST, IMOD, NEW_QTREE )
 !/
 !/                  +-----------------------------------+
 !/                  | WAVEWATCH III           NOAA/NCEP |
@@ -2302,7 +2302,9 @@
 !                           0 : Fields read.
 !                          -1 : Past end of file.
 !       IMOD    Int.   I   Model number for W3GDAT etc.
+!       NEW_QTREE Log. I/O* Flag to read/write new quadtree data
 !     ----------------------------------------------------------------
+!                         * = optional
 !
 !  4. Subroutines used :
 !
@@ -2354,8 +2356,8 @@
 ! 10. Source code :
 !
 !/ ------------------------------------------------------------------- /
-     USE CONSTANTS
-     USE W3GDATMD
+      USE CONSTANTS
+      USE W3GDATMD
 !/
       USE W3WDATMD, ONLY: W3SETW, W3DIMW
       USE W3ADATMD, ONLY: W3SETA, W3DIMA, W3XETA
@@ -2382,6 +2384,7 @@
                           FNMPRE, NOSWLL, NOEXTR
 !/
       USE W3SERVMD, ONLY: EXTCDE
+      USE QA_UTILS
 !/S      USE W3SERVMD, ONLY: STRACE
 !
       IMPLICIT NONE
@@ -2393,6 +2396,7 @@
       INTEGER, INTENT(IN)           :: NDSOG
       INTEGER, INTENT(IN), OPTIONAL :: IMOD
       CHARACTER, INTENT(IN)         :: INXOUT*(*)
+      LOGICAL, OPTIONAL, INTENT(INOUT) :: NEW_QTREE
 !/
 !/ ------------------------------------------------------------------- /
 !/ Local parameters
@@ -2406,6 +2410,10 @@
 !/ARC      REAL                    :: UDARC 
       CHARACTER(LEN=30)       :: IDTST, TNAME
       CHARACTER(LEN=10)       :: VERTST
+      INTEGER                 :: N2
+      LOGICAL                 :: NEW_QT
+!/T      CHARACTER(LEN=31)       :: TSTFILE
+!/T      REAL                    :: TSTDAT(6)
 !/
 !/ ------------------------------------------------------------------- /
 !/
@@ -2417,6 +2425,12 @@
           IGRD   = IMOD
         ELSE
           IGRD   = 1
+        END IF
+!
+      IF ( PRESENT(NEW_QTREE) ) THEN
+          NEW_QT = NEW_QTREE
+        ELSE
+          NEW_QT = .FALSE.
         END IF
 !
       CALL W3SETO ( IGRD, NDSE, NDST )
@@ -2467,13 +2481,24 @@
 ! ( IPASS = 1 )
 !
           IF ( WRITE ) THEN
+              IF ( GTYPE.EQ.QAGTYPE ) THEN
+                  N2 = NQUAD
+                ELSE
+                  N2 = NY
+                END IF
               WRITE (NDSOG)                                           &
-                IDSTR, VEROGR, GNAME, NOGRP, NGRPP, NSEA, NX, NY,     &
+                IDSTR, VEROGR, GNAME, NOGRP, NGRPP, NSEA, NX, N2,     &
                 UNDEF, NOSWLL
             ELSE
               READ (NDSOG,END=801,ERR=802,IOSTAT=IERR)                &
-                IDTST, VERTST, TNAME, MOGRP, MGRPP, NSEA, NX, NY,     &
+                IDTST, VERTST, TNAME, MOGRP, MGRPP, NSEA, NX, N2,     &
                 UNDEF, MOSWLL
+              IF ( GTYPE.EQ.QAGTYPE ) THEN
+                  NQUAD = N2
+                  NY = 1
+                ELSE
+                  NY = N2
+                END IF
 !
               IF ( IDTST .NE. IDSTR ) THEN
                   WRITE (NDSE,902) IDTST, IDSTR
@@ -2495,9 +2520,16 @@
                   CALL EXTCDE ( 24 )
                 END IF
 !
+! For quadtrees, allocate and read the (initial) quadtree
+! 
+              IF ( GTYPE.EQ.QAGTYPE ) THEN
+                  CALL W3QALL ( IQGW, NSEA, NQUAD, 0, 0 )
+                  CALL QA_IOQT( NDSOG, QTREE(IQGW), -1, IERR, ndse=0 )
+                  IF (IERR.NE.0) GOTO 804
+                END IF
             END IF
 !
-!/T          WRITE (NDST,9002) IDSTR, VEROGR, GNAME, NSEA, NX, NY,    &
+!/T          WRITE (NDST,9002) IDSTR, VEROGR, GNAME, NSEA, NX, N2,    &
 !/T                            UNDEF
 !
         END IF
@@ -2512,6 +2544,42 @@
 !
 !/T      WRITE (NDST,9003) TIME, FLOGRD
 !
+! Quadtree data
+!
+      IF ( GTYPE.EQ.QAGTYPE ) THEN
+          IF ( WRITE ) THEN
+              WRITE (NDSOG)  NEW_QT
+              IF ( NEW_QT ) THEN
+                  CALL QA_IOQT( NDSOG, QTREE(IQGW), 1, IERR, ndse=0 )
+                  IF ( IERR.NE.0 ) GO TO 805
+                END IF
+            ELSE
+              READ (NDSOG,END=803,ERR=802,IOSTAT=IERR) NEW_QT
+              IF ( NEW_QT ) THEN
+                  CALL QA_IOQT( NDSOG, QTREE(IQGW), -1, IERR, ndse=0 )
+                  IF ( IERR.NE.0 ) GO TO 804
+                END IF
+              IF ( PRESENT(NEW_QTREE) ) NEW_QTREE = NEW_QT
+            END IF
+!
+!/T          TSTFILE = 'wave_qtquad_XXXXXXXX_XXXXXX.txt'
+!/T          WRITE (TSTFILE(13:20),'(I8.8)') time(1)
+!/T          WRITE (TSTFILE(22:27),'(I6.6)') time(2)
+!/T          IF ( NEW_QT ) THEN
+!/T              WRITE (NDST,9004)  'YES'
+!/T              TSTFILE(8:11) = 'quad'
+!/T              OPEN (UNIT=91, FILE=TSTFILE)
+!/T              CALL QA_IOQT( 91, QTREE(IQGW), 3, IERR, ndse=0 )
+!/T              CLOSE(91)
+!/T              TSTFILE(8:11) = 'cell'
+!/T              OPEN (UNIT=91, FILE=TSTFILE)
+!/T              CALL QA_IOQT( 91, QTREE(IQGW), 4, IERR, ndse=0 )
+!/T              CLOSE(91)
+!/T            ELSE
+!/T              WRITE (NDST,9004)  'NO '
+!/T            END IF
+        END IF
+!
 ! MAPSTA ------------------------------------------------------------- *
 !
       ALLOCATE ( MAPTMP(NY,NX) )
@@ -2520,6 +2588,14 @@
           WRITE (NDSOG)                                               &
                ((MAPTMP(IY,IX),IX=1,NX),IY=1,NY)
         ELSE
+          IF ( GTYPE.EQ.QAGTYPE ) THEN
+              IF ( GINIT ) THEN
+                  DEALLOCATE(GRIDS(IGRD)%MAPSTA)
+                  DEALLOCATE(GRIDS(IGRD)%MAPST2)
+                END IF
+              ALLOCATE ( GRIDS(IGRD)%MAPSTA(NY,NX),                   &
+                         GRIDS(IGRD)%MAPST2(NY,NX) )
+            END IF
           READ (NDSOG,END=801,ERR=802,IOSTAT=IERR)                    &
                ((MAPTMP(IY,IX),IX=1,NX),IY=1,NY)
           MAPSTA = MOD(MAPTMP+2,8) - 2
@@ -3243,10 +3319,32 @@
 !
          END DO
         END DO
+!/T        IF ( GTYPE.EQ.QAGTYPE ) THEN
+!/T          TSTFILE = 'wave_qtdata_XXXXXXXX_XXXXXX.txt'
+!/T          WRITE (TSTFILE(13:20),'(I8.8)') time(1)
+!/T          WRITE (TSTFILE(22:27),'(I6.6)') time(2)
+!/T          OPEN (UNIT=91, FILE=TSTFILE)
+!/T          WRITE(91,*) ' 3  No. of lines in the header'
+!/T          WRITE(91,*) ' 7  No. of columns of data'
+!/T          WRITE(91,*) ' ISEA, WindSpd   , WindDir   , Hm0       ', &
+!/T                      ', Tm2       , DirMean   , Depth'
+!/T          DO ISEA=1,QTREE(IQGW)%NCELL
+!/T              TSTDAT = UNDEF
+!/T              IF  ( FLOGRD(1,3) ) TSTDAT(1) = UA(ISEA)       
+!/T              IF  ( FLOGRD(1,3) ) TSTDAT(2) = UD(ISEA)       
+!/T              IF  ( FLOGRD(2,1) ) TSTDAT(3) = HS(ISEA)       
+!/T              IF  ( FLOGRD(2,3) ) TSTDAT(4) = T02(ISEA)       
+!/T              IF  ( FLOGRD(2,7) ) TSTDAT(5) = THM(ISEA)       
+!/T              IF  ( FLOGRD(1,1) ) TSTDAT(6) = DW(ISEA)       
+!/T              WRITE(91,'(I8,6E12.4)') ISEA, TSTDAT
+!/T            END DO
+!/T          CLOSE(91)
+!/T        END IF
 !
 ! Flush the buffers for write
-!
-      IF ( WRITE ) CALL FLUSH ( NDSOG )
+!RMG Use FLUSH_ instead of FLUSH in XL Fortran:
+!/NOTXLF      IF ( WRITE ) CALL FLUSH ( NDSOG )
+!/XLF      IF ( WRITE ) CALL FLUSH_ ( NDSOG )
 !
 !/MPI      CALL W3SETA ( IGRD, NDSE, NDST )
 !
@@ -3265,6 +3363,14 @@
   802 CONTINUE
       WRITE (NDSE,1002) IERR
       CALL EXTCDE ( 43 )
+!
+  804 CONTINUE
+      WRITE (NDSE,1004) IERR
+      CALL EXTCDE ( 44 )
+!
+  805 CONTINUE
+      WRITE (NDSE,1005) IERR
+      CALL EXTCDE ( 45 )
 !
   803 CONTINUE
       IOTST  = -1
@@ -3304,6 +3410,12 @@
  1002 FORMAT (/' *** WAVEWATCH III ERROR IN W3IOGO : '/               &
                '     ERROR IN READING FROM FILE'/                     &
                '     IOSTAT =',I5/)
+ 1004 FORMAT (/' *** WAVEWATCH III ERROR IN W3IOGO : '/               &
+               '     ERROR IN READING QUADTREE DATA FROM FILE'/       &
+               '     IOSTAT =',I5/)
+ 1005 FORMAT (/' *** WAVEWATCH III ERROR IN W3IOGO : '/               &
+               '     ERROR IN WRITING QUADTREE DATA TO FILE'/         &
+               '     IOSTAT =',I5/)
 !
 !/T 9000 FORMAT (' TEST W3IOGO : IPASS =',I4,' INXOUT = ',A,          &
 !/T              ' WRITE = ',L1,' UNIT =',I3/                         &
@@ -3322,6 +3434,7 @@
 !/T              '                      ',20L2,2X,20L2/               &
 !/T              '                      ',20L2,2X,20L2/               &
 !/T              '                      ',20L2,2X,20L2)
+!/T 9004 FORMAT (' TEST W3IOGO : NEW QUADTREE DATA? ',A)
 !/T 9010 FORMAT (' TEST W3IOGO : PROC = ',L1,' FOR ',A)
 !/T 9020 FORMAT (' TEST W3IOGO : END OF FILE REACHED')
 !/
