@@ -349,7 +349,6 @@
                           MAPML_QA
 !/PR2      USE W3GDATMD, ONLY: NUFc, NVFc, NRLv, IJKCel, IJKUFc, IJKVFc,    &
 !/PR2                          NLvUFc, NLvVFc   
-                          FLCK, NK, NTH, NSPEC, SIG, GNAME
 !/PDLIB     USE W3GDATMD, ONLY : FLCTH
       USE W3WDATMD, ONLY: TIME, TLEV, TICE, WLV, UST, USTDIR, VA
       USE W3ODATMD, ONLY: NDSO, NDSE, NDST, SCREEN, NDS, NTPROC,      &
@@ -388,6 +387,9 @@
 !/TIMINGS      USE W3PARALL, ONLY: PRINT_MY_TIME
 !/PDLIB!/DEBUGCOH     USE PDLIB_W3PROFSMD, ONLY: ALL_VA_INTEGRAL_PRINT, TEST_MPI_STATUS
 !/PDLIB!/DEBUGINIT    USE PDLIB_W3PROFSMD, ONLY: PRINT_WN_STATISTIC
+      USE W3ADGRMD, ONLY: W3ADG1
+      USE W3PROQMD, ONLY: W3MPQ1
+      USE QA_UTILS
 !/
       IMPLICIT NONE
 !
@@ -439,6 +441,9 @@
       INTEGER                 :: NSEA_SAV
       LOGICAL                 :: GET_TYPE
 !/PDLIB      INTEGER                 :: IScal(1), IPROC
+      INTEGER                 :: NDSEN
+      INTEGER                 :: NSEA_SAV
+      LOGICAL                 :: GET_TYPE
 !/
 !/ ------------------------------------------------------------------- /
 !
@@ -716,7 +721,7 @@
               MAPML_QA(IS) = QTREE(IQGB)%CELL_TYPE(ISEA)
             END DO
 !/T          WRITE(NDST,*) 'TEST W3INIT qtree alloc, NSEA, NSEAL = ',    &
-!/T                         NSEA,NSEAL            
+!/T                         NSEA,NSEAL
         ELSE
 !
 ! 2.b.2 For other grid types, save MAPSTA
@@ -731,7 +736,6 @@
 !/MEMCHECK       WRITE(740+IAPROC,*) 'memcheck_____:', 'WW3_INIT SECTION 2b'
 !/MEMCHECK       call getMallocInfo(mallinfos)
 !/MEMCHECK       call printMallInfo(IAPROC,mallInfos)
-!
 !
 ! 2.c MPP preparation
 ! 2.c.1 Set simple counters and variables
@@ -992,7 +996,6 @@
 !/PR1          CALL W3MPQ1 ( MAPSTA, LVRANGE_QA )
 !/PR2          CALL QA_QT2SMC ( QTREE(IQGW), -9, IJKCel, IJKUFc, IJKVFc,    &
 !/PR2                           NLvUFc, NLvVFc, ierr=IERR, ndse=NDSE )
-
           ALLOCATE ( MAPTST(NY,NX) )
         ELSE
 !
@@ -1017,7 +1020,7 @@
 !/DEBUGINIT     FLUSH(740+IAPROC)
 !/PDLIB!/DEBUGCOH          CALL ALL_VA_INTEGRAL_PRINT(IMOD, "W3INIT, step 4.3")
 !
-! 3.b2 Set MAPSTA associated to PDLIB
+! 3.b3 Set MAPSTA associated to PDLIB
 !
 !/PDLIB      IF (GTYPE .eq. UNGTYPE) THEN
 !/PDLIB        CALL PDLIB_MAPSTA_INIT(IMOD)
