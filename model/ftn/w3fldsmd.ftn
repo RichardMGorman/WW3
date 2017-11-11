@@ -105,6 +105,7 @@
 !/    04-Apr-2010 : Adding iceberg field.               ( version 3.14 )
 !/    09-Sep-2012 : Implement tidal cons. (F. Ardhuin ) ( version 4.09 ) 
 !/    26-Dec-2012 : Modified obsolete declarations.     ( version 4.11 )
+!/    11-Nov-2017 : Include quadtrees. (R. Gorman)      ( version  )
 !/
 !  1. Purpose :
 !
@@ -133,7 +134,7 @@
 !                        (No output if NDSE < 0).
 !       NX, NY  Int.  I  Discrete grid dimensions.                 \
 !       GTYPE   Int.  I  Integer flag indicating type of grid.     /a
-!       NX      Int. I/O Record length.                            \
+!       NX, NY  Int. I/O Record length.                            \
 !       GTYPE   Int.  I  Undefined value.                          /b
 !       IERR    Int.  O  Error indicator.
 !                         0 : No errors.
@@ -199,8 +200,8 @@
 !/ ------------------------------------------------------------------- /
 !/ Parameter list
 !/
-      INTEGER, INTENT(IN)                 :: NDS, NDST, NDSE, NY
-      INTEGER, INTENT(INOUT)              :: NX
+      INTEGER, INTENT(IN)                 :: NDS, NDST, NDSE
+      INTEGER, INTENT(INOUT)              :: NX, NY
       INTEGER, INTENT(OUT)                :: IERR
       INTEGER, INTENT(INOUT)              :: GTYPE
       CHARACTER(LEN=3), INTENT(INOUT)     :: IDFLD
@@ -376,11 +377,15 @@
             END IF
           IF ( IDFLD .NE. TSFLD ) GOTO 808
           IF ( IDFLD(1:2) .NE. 'DT' ) THEN
+            IF ( GTYPE.EQ.4 .AND. GTYPET.EQ.4 ) THEN
+              NX = NXT
+              NY = NYT
+              END IF
             IF ( NX.NE.NXT .OR. NY.NE.NYT ) THEN 
               GOTO 809
             ELSE
               NX     = NXT
-              IF (GTYPE.LE.3) GTYPE  = GTYPET
+              IF (GTYPE.LE.4) GTYPE  = GTYPET
               END IF
             END IF
         END IF
@@ -890,9 +895,9 @@
 !/ ------------------------------------------------------------------- /
       SUBROUTINE W3FLDG (INXOUT, IDFLD, NDS, NDST, NDSE, MX, MY,      &
                          NX, NY, T0, TN, TF0, FX0, FY0, FA0,          &
-                         TFN, FXN, FYN, FAN, IERR, FLAGSC             &
-!/OASIS                  , COUPL_COMM                                 &
-                         )
+                         TFN, FXN, FYN, FAN, IERR, FLAGSC,            &
+!/OASIS                  COUPL_COMM,                                  &
+                         FLQA, NEW_QT, QTREE )
 !/
 !/                  +-----------------------------------+
 !/                  | WAVEWATCH III           NOAA/NCEP |
@@ -908,6 +913,7 @@
 !/    26-Dec-2012 : Modified obsolete declarations.     ( version 4.11 )
 !/    24-Apr-2015 : Adding OASIS coupling calls         ( version 5.07 )
 !/                  (M. Accensi & F. Ardhuin, IFREMER)
+!/    11-Nov-2017 : Incorporate quadtrees. (R.Gorman)   ( version  )
 !/
 !  1. Purpose :
 !
@@ -953,9 +959,13 @@
 !                           5 : Error in reading time.
 !                           6 : Premature EOF reading field.
 !                           7 : Error reading field.
-!       FLAGSC  Log.  I/O  Flag for coupling field
-!       COUPL_COMM Int. I  MPI communicator for coupling
+!       FLAGSC  Log.  I/O* Flag for coupling field
+!       COUPL_COMM Int. I* MPI communicator for coupling
+!       FLQA    Log.   I*  Flag for quadtree grid type
+!       NEW_QT  Log.  I/O* Flag for new quadtree data read/written
+!       QTREE QA_TREE I/O* Input/output quadtrees
 !     ----------------------------------------------------------------
+!                        *=optional
 !
 !  4. Subroutines used :
 !
@@ -1004,6 +1014,7 @@
 !/OASOCM      USE W3OGCMMD, ONLY: RCV_FIELDS_FROM_OCEAN
 !/OASICM      USE W3IGCMMD, ONLY: RCV_FIELDS_FROM_ICE
 !/OASIS       USE W3ODATMD, ONLY: DTOUT 
+      USE QA_UTILS
       IMPLICIT NONE
 !/
 !/ ------------------------------------------------------------------- /
@@ -1020,6 +1031,9 @@
       CHARACTER(LEN=3), INTENT(IN) :: IDFLD
       LOGICAL, INTENT(INOUT), OPTIONAL        :: FLAGSC
 !/OASIS      INTEGER, INTENT(IN), OPTIONAL :: COUPL_COMM
+      LOGICAL, OPTIONAL, INTENT(IN)    :: FLQA
+      LOGICAL, OPTIONAL, INTENT(INOUT) :: NEW_QT
+      TYPE(QA_TREE), OPTIONAL, INTENT(INOUT) :: QTREE(:)
 
 !/
 !/ ------------------------------------------------------------------- /
@@ -1029,8 +1043,10 @@
 !/S      INTEGER, SAVE           :: IENT = 0
       REAL                    :: DTTST
       LOGICAL                 :: WRITE, FL2D, FLFRST, FLBE, FLST,    &
-                                 FLINTERP, FLCOUPL
+                                 FLINTERP, FLCOUPL, FLWND, FLCUR
       LOGICAL, PARAMETER      :: FLAGSC_DEFAULT = .FALSE.
+      LOGICAL                 :: IS_QA, NQT
+      INTEGER                 :: IQIN
 !/
 !/ ------------------------------------------------------------------- /
 !/
@@ -1059,6 +1075,8 @@
                               .OR. IDFLD.EQ.'ISI'
       FLBE   = IDFLD.EQ.'ISI'       
       FLST   = IDFLD.EQ.'WNS' 
+      FLWND  = IDFLD.EQ.'WND' .OR. IDFLD.EQ.'WNS'
+      FLCUR  = IDFLD.EQ.'CUR'
 
       IF ( .NOT. PRESENT(FLAGSC) ) THEN
         FLCOUPL=FLAGSC_DEFAULT
@@ -1077,6 +1095,17 @@
       IF (FLCOUPL) FLINTERP = .FALSE.
 
       FLFRST = TFN(1) .EQ. -1
+!
+! Quadtree options
+!
+      IS_QA = .FALSE.
+      IF ( PRESENT(FLQA) ) IS_QA = FLQA
+      IF ( IS_QA ) THEN
+          NQT = PRESENT(QTREE)
+          IQIN = 0
+          IF ( NQT ) IQIN = MAX(IQIN,SIZE(QTREE,1))
+          IF ( PRESENT(NEW_QT) ) NQT = ( NEW_QT .AND. NQT )
+        END IF      
 !
 !/T      WRITE (NDST,9001) WRITE, FL2D, FLBE, FLST, FLFRST
 !
@@ -1105,6 +1134,11 @@
                         END DO
                     END IF
                   END DO
+                  IF ( IS_QA ) THEN
+                     ! Copy quadtree grids
+                       IF ( PRESENT(QTREE) .AND. IQIN.GT.1 )          &
+                           CALL QA_CPQT ( QTREE(IQIN), QTREE(1) )
+                    END IF
 !/T              ELSE
 !/T                WRITE (NDST,9021)
               END IF
@@ -1118,6 +1152,19 @@
 !
 !/T            WRITE (NDST,9030) TF0
             WRITE (NDS,ERR=803,IOSTAT=ISTAT) TF0
+            !
+            ! For a QA grid:
+            IF ( IS_QA ) THEN
+                ! write flag specifying if updated quadtree grid follows
+                J = 4
+                WRITE (NDS,ERR=804,IOSTAT=ISTAT) NQT
+                IF ( NQT ) THEN
+                    ! write the new quadtree grid
+                    J = 5
+                    CALL QA_IOQT( NDS, QTREE(1), 1, ISTAT, ndse=0 )
+                    IF ( ISTAT.NE.0 ) GO TO 804
+                  END IF
+              END IF
             IF ( .NOT. FL2D ) THEN
                 J      = 1
                 WRITE (NDS,ERR=804,IOSTAT=ISTAT)                      &
@@ -1163,6 +1210,20 @@
 !/OASIS            ELSE 
               READ (NDS,END=800,ERR=805,IOSTAT=ISTAT) TFN
 !/T             WRITE (NDST,9031) TFN
+            !
+            ! Quadtree data
+            IF ( IS_QA ) THEN
+                ! read flag specifying if updated quadtree grid follows
+                J = 4
+                READ (NDS,END=806,ERR=804,IOSTAT=ISTAT) NQT
+                IF ( PRESENT(NEW_QT) ) NEW_QT = NQT
+                IF ( NQT ) THEN
+                    ! read the new quadtree grid
+                    J = 5
+                    CALL QA_IOQT( NDS, QTREE(IQIN), -1, ISTAT, ndse=0 )
+                    IF ( ISTAT.NE.0 ) GO TO 807
+                  END IF
+              END IF
               IF ( .NOT. FL2D ) THEN
 ! note: "J" here does *not* refer to data type, wlev etc.
 !       It refers to the dimension.
@@ -1229,6 +1290,11 @@
                   END DO
               END IF
             END DO
+          IF ( IS_QA ) THEN
+              ! Copy quadtree grids
+              IF ( PRESENT(QTREE) .AND. IQIN.GT.1 )                   &
+                           CALL QA_CPQT ( QTREE(IQIN), QTREE(1) )
+            END IF
 !
         END IF
 !

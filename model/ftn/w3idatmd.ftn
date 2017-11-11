@@ -331,6 +331,7 @@
 !/    19-Jul-2006 : Adding auxiliary grids.             ( version 3.10 )
 !/    04-Oct-2006 : Add filter to array pointers.       ( version 3.10 )
 !/    10-Dec-2014 : Add checks for allocate status      ( version 5.04 )
+!/    11-Nov-2017 : Allow for quadtree input dims.      ( version  )
 !/
 !  1. Purpose :
 !
@@ -380,7 +381,9 @@
 ! 10. Source code :
 !
 !/ ------------------------------------------------------------------- /
-      USE W3GDATMD, ONLY: NGRIDS, NAUXGR, IGRID, W3SETG, NX, NY
+      USE W3GDATMD, ONLY: NGRIDS, NAUXGR, IGRID, W3SETG, NX, NY,      &
+                          GTYPE, QAGTYPE, NCMXQ, IQGLN, IQGC0, IQGCN, &
+                          IQGA0, IQGAN, IQGIN
       USE W3SERVMD, ONLY: EXTCDE
 !/S      USE W3SERVMD, ONLY: STRACE
 !
@@ -397,6 +400,7 @@
 !/
       INTEGER                 :: JGRID
       LOGICAL                 :: FLAGSTIDE(4)=.FALSE.
+      INTEGER                 :: NXL, NXC0, NXCN, NXA0, NXAN, NXI
 !/S      INTEGER, SAVE           :: IENT = 0
 !/
 !/S      CALL STRACE (IENT, 'W3DIMI')
@@ -430,6 +434,22 @@
 !/TIDE      IF ( PRESENT(FLAGSTIDEIN) ) THEN
 !/TIDE          FLAGSTIDE(:) = FLAGSTIDEIN(:)
 !/TIDE        END IF
+
+      IF ( GTYPE.EQ.QAGTYPE ) THEN
+           NXL = NCMXQ(IQGLN)
+           NXC0 = NCMXQ(IQGC0)
+           NXCN = NCMXQ(IQGCN)
+           NXA0 = NCMXQ(IQGA0)
+           NXAN = NCMXQ(IQGAN)
+           NXI = NCMXQ(IQGIN)
+         ELSE
+           NXL = NX
+           NXC0 = NX
+           NXCN = NX
+           NXA0 = NX
+           NXAN = NX
+           NXI = NX
+         END IF
 
       FLIC1  => INPUTS(IMOD)%INFLAGS1(-7)
       FLIC2  => INPUTS(IMOD)%INFLAGS1(-6)
@@ -494,44 +514,44 @@
         END IF
 !
       IF ( FLLEV  ) THEN
-          ALLOCATE ( INPUTS(IMOD)%WLEV(NX,NY), STAT=ISTAT )
+          ALLOCATE ( INPUTS(IMOD)%WLEV(NXL,NY), STAT=ISTAT )
           CHECK_ALLOC_STATUS ( ISTAT )
         END IF
 !
       IF ( FLCUR  ) THEN
-          ALLOCATE ( INPUTS(IMOD)%CX0(NX,NY) ,              &
-                     INPUTS(IMOD)%CY0(NX,NY) ,              &
-                     INPUTS(IMOD)%CXN(NX,NY) ,              &
-                     INPUTS(IMOD)%CYN(NX,NY) , STAT=ISTAT )
+          ALLOCATE ( INPUTS(IMOD)%CX0(NXC0,NY) ,            &
+                     INPUTS(IMOD)%CY0(NXC0,NY) ,            &
+                     INPUTS(IMOD)%CXN(NXCN,NY) ,            &
+                     INPUTS(IMOD)%CYN(NXCN,NY) , STAT=ISTAT )
           CHECK_ALLOC_STATUS ( ISTAT )
         END IF
 !
 !/TIDE      IF ( FLLEVTIDE  ) THEN
-!/TIDE          ALLOCATE ( INPUTS(IMOD)%WLTIDE(NX,NY,NTIDE,2), STAT=ISTAT )
+!/TIDE          ALLOCATE ( INPUTS(IMOD)%WLTIDE(NXL,NY,NTIDE,2), STAT=ISTAT )
 !/TIDE          CHECK_ALLOC_STATUS ( ISTAT )
 !/TIDE        END IF
 !/TIDE!
 !/TIDE      IF ( FLCURTIDE  ) THEN
-!/TIDE          ALLOCATE ( INPUTS(IMOD)%CXTIDE(NX,NY,NTIDE,2),  &
-!/TIDE                     INPUTS(IMOD)%CYTIDE(NX,NY,NTIDE,2), STAT=ISTAT )
+!/TIDE          ALLOCATE ( INPUTS(IMOD)%CXTIDE(NXCN,NY,NTIDE,2),  &
+!/TIDE                     INPUTS(IMOD)%CYTIDE(NXCN,NY,NTIDE,2), STAT=ISTAT )
 !/TIDE          CHECK_ALLOC_STATUS ( ISTAT )
 !/TIDE        END IF
 !
       IF ( FLWIND ) THEN
-          ALLOCATE ( INPUTS(IMOD)%WX0(NX,NY) ,              &
-                     INPUTS(IMOD)%WY0(NX,NY) ,              &
-                     INPUTS(IMOD)%DT0(NX,NY) ,              &
-                     INPUTS(IMOD)%WXN(NX,NY) ,              &
-                     INPUTS(IMOD)%WYN(NX,NY) ,              &
-                     INPUTS(IMOD)%DTN(NX,NY) , STAT=ISTAT )
+          ALLOCATE ( INPUTS(IMOD)%WX0(NXA0,NY) ,            &
+                     INPUTS(IMOD)%WY0(NXA0,NY) ,            &
+                     INPUTS(IMOD)%DT0(NXA0,NY) ,            &
+                     INPUTS(IMOD)%WXN(NXAN,NY) ,            &
+                     INPUTS(IMOD)%WYN(NXAN,NY) ,            &
+                     INPUTS(IMOD)%DTN(NXAN,NY) , STAT=ISTAT )
           CHECK_ALLOC_STATUS ( ISTAT )
           INPUTS(IMOD)%DT0 = 0.
           INPUTS(IMOD)%DTN = 0.
         END IF
 !
       IF ( FLICE  ) THEN
-          ALLOCATE ( INPUTS(IMOD)%ICEI(NX,NY),              &
-                     INPUTS(IMOD)%BERGI(NX,NY), STAT=ISTAT )
+          ALLOCATE ( INPUTS(IMOD)%ICEI(NXI,NY),             &
+                     INPUTS(IMOD)%BERGI(NXI,NY), STAT=ISTAT )
           CHECK_ALLOC_STATUS ( ISTAT )
           INPUTS(IMOD)%BERGI = 0.
         END IF
