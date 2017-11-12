@@ -27,6 +27,7 @@
 !/                  (A. Roland and F. Ardhuin) 
 !/    05-Jul-2011 : Revert to X-Y gaussian shape        ( version 4.01 )
 !/    06-Mar-2012 : Hardening output.                   ( version 4.07 )
+!/    12-Nov-2017 : Include quadtrees (R.Gorman)        ( version  )
 !/
 !/    Copyright 2009-2012 National Weather Service (NWS),
 !/       National Oceanic and Atmospheric Administration.  All rights
@@ -100,6 +101,7 @@
 !      PRTBLK    Subr.   Id.    Print plot of array.
 !      WAVNU1    Subr. W3DISPMD Solve dispersion relation.
 !      W3IOGR    Subr. W3IOGRMD Reading/writing model definition file.
+!      W3STQT    Subr. W3ADGRMD Initial wave quadtree
 !      W3IORS    Subr. W3IORSMD Reading/writing restart files.
 !      W3DIST    Subr. W3GSRUMD Compute distance between two points.
 !      MPI_xxx   Subr. mpif.h   Standard MPI routines.
@@ -173,6 +175,8 @@
 !/ ------------------------------------------------------------------- /
       USE CONSTANTS
 !/
+      USE QA_UTILS
+      USE W3ADGRMD
 !     USE W3GDATMD, ONLY: W3NMOD, W3SETG
 !     USE W3WDATMD, ONLY: W3NDAT, W3SETW, W3DIMW
 !/NL1      USE W3ADATMD, ONLY: W3NAUX, W3SETA
@@ -217,6 +221,7 @@
 !/O6      REAL, ALLOCATABLE       :: HSIG(:,:)
       CHARACTER               :: COMSTR*1, INXOUT*4
       LOGICAL                 :: FLONE,NOSIX
+      INTEGER                 :: NSTGT
 !/
 !/ ------------------------------------------------------------------- /
 !
@@ -240,6 +245,11 @@
       NDSTRC =  6
       NTRACE = 10
       CALL ITRACE ( NDSTRC, NTRACE )
+!
+!     Quadtree grids
+!
+      IQGW = 1
+      IQGB = 2
 !
 !/S      CALL STRACE (IENT, 'W3STRT')
 !
@@ -277,7 +287,30 @@
 !
       IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,902) GNAME
 !
-! 2.b MPP initializations
+! 2.b Quadtree options
+!
+      IF ( GTYPE.EQ.QAGTYPE ) THEN
+!
+!        Save parameters of the bathymetry quadtree
+          NCMXQ(IQGB) = NSEA
+          NQMXQ(IQGB) = NQUAD
+!
+!        Read user quadtree options
+          CALL NEXTLN ( COMSTR , NDSI , NDSEN )
+          READ (NDSI,*,END=801,ERR=802) NSTGT
+!
+!        Create a wave quadtree from the bathy quadtree, reduced down 
+!        to the required limits
+          CALL W3STQT ( NSTGT, NDSEN, IERR, NDST )
+          IF ( IERR.NE.0 ) GOTO 804
+!
+          IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,920) NSTGT,           &
+                NCTARGET_QA, DVTOLFAC_QA, DVMAX_QA/DVTOLFAC_QA,       &
+                DVMAX_QA, NSEA, NQUAD
+!
+        END IF
+!
+! 2.c MPP initializations
 !
 !/SHRD      NSEAL  = NSEA
 !
@@ -285,7 +318,7 @@
 !/DIST      IF ( NSEA .LT. NAPROC ) GOTO 803
 !
       CALL W3DIMW ( 1, NDSE, NDST )
-      ALLOCATE ( E1(NK), DD(NTH), E2(NTH,NK), E21(NSPEC),           &
+      ALLOCATE ( E1(NK), DD(NTH), E2(NTH,NK), E21(NSPEC),             &
                  FINP(NK,NTH) )
 !
 !--- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -308,7 +341,7 @@
 ! 4.a Read parameters.
 !
           CALL NEXTLN ( COMSTR , NDSI , NDSEN )
-          READ (NDSI,*,END=801,ERR=802)                            &
+          READ (NDSI,*,END=801,ERR=802)                               &
                 FP, SIP, THM, NCOS, XM, SIX, YM, SIY, HMAX
           FP     = MAX ( 0.5 * TPIINV * SIG(1) , FP )
           SIP    = MAX ( 0. , SIP )
@@ -328,29 +361,31 @@
              NOSIX=.TRUE.
           END IF
 
-          HPQMAX=-999.0
-          DO JSEA=1, NSEAL
-!/DIST            ISEA   = IAPROC + (JSEA-1)*NAPROC
-!/SHRD            ISEA   = JSEA
-            IX     = MAPSF(ISEA,1)
-            IY     = MAPSF(ISEA,2)
-            IF(HPFAC(IY,IX).GT.HPQMAX)THEN
-               HPQMAX=HPFAC(IY,IX)
-            ENDIF
-          END DO
-          SIX = MAX(0.01*HPQMAX,SIX)
+          IF ( GTYPE.NE.QAGTYPE ) THEN
+              HPQMAX=-999.0
+              DO JSEA=1, NSEAL
+!/DIST                ISEA   = IAPROC + (JSEA-1)*NAPROC
+!/SHRD                ISEA   = JSEA
+                IX     = MAPSF(ISEA,1)
+                IY     = MAPSF(ISEA,2)
+                IF(HPFAC(IY,IX).GT.HPQMAX)THEN
+                   HPQMAX=HPFAC(IY,IX)
+                ENDIF
+              END DO
+              SIX = MAX(0.01*HPQMAX,SIX)
 
-          HPQMAX=-999.0
-          DO JSEA=1, NSEAL
-!/DIST            ISEA   = IAPROC + (JSEA-1)*NAPROC
-!/SHRD            ISEA   = JSEA
-            IX     = MAPSF(ISEA,1)
-            IY     = MAPSF(ISEA,2)
-            IF(HQFAC(IY,IX).GT.HPQMAX)THEN
-               HPQMAX=HQFAC(IY,IX)
-            ENDIF
-          END DO
-          SIY = MAX(0.01*HPQMAX,SIY)
+              HPQMAX=-999.0
+              DO JSEA=1, NSEAL
+!/DIST                ISEA   = IAPROC + (JSEA-1)*NAPROC
+!/SHRD                ISEA   = JSEA
+                IX     = MAPSF(ISEA,1)
+                IY     = MAPSF(ISEA,2)
+                IF(HQFAC(IY,IX).GT.HPQMAX)THEN
+                   HPQMAX=HQFAC(IY,IX)
+                ENDIF
+              END DO
+              SIY = MAX(0.01*HPQMAX,SIY)
+            END IF
 
           HMAX   = MAX ( 0. , HMAX )
 !
@@ -505,29 +540,31 @@
              NOSIX=.TRUE.
           END IF
 
-          HPQMAX=-999.0
-          DO JSEA=1, NSEAL
-!/DIST            ISEA   = IAPROC + (JSEA-1)*NAPROC
-!/SHRD            ISEA   = JSEA
-            IX     = MAPSF(ISEA,1)
-            IY     = MAPSF(ISEA,2)
-            IF(HPFAC(IY,IX).GT.HPQMAX)THEN
-               HPQMAX=HPFAC(IY,IX)
-            ENDIF
-          END DO
-          SIX = MAX(0.01*HPQMAX,SIX)
+          IF ( GTYPE.NE.QAGTYPE ) THEN
+              HPQMAX=-999.0
+              DO JSEA=1, NSEAL
+!/DIST                ISEA   = IAPROC + (JSEA-1)*NAPROC
+!/SHRD                ISEA   = JSEA
+                IX     = MAPSF(ISEA,1)
+                IY     = MAPSF(ISEA,2)
+                IF(HPFAC(IY,IX).GT.HPQMAX)THEN
+                   HPQMAX=HPFAC(IY,IX)
+                ENDIF
+              END DO
+              SIX = MAX(0.01*HPQMAX,SIX)
 
-          HPQMAX=-999.0
-          DO JSEA=1, NSEAL
-!/DIST            ISEA   = IAPROC + (JSEA-1)*NAPROC
-!/SHRD            ISEA   = JSEA
-            IX     = MAPSF(ISEA,1)
-            IY     = MAPSF(ISEA,2)
-            IF(HQFAC(IY,IX).GT.HPQMAX)THEN
-               HPQMAX=HQFAC(IY,IX)
-            ENDIF
-          END DO
-          SIY = MAX(0.01*HPQMAX,SIY)
+              HPQMAX=-999.0
+              DO JSEA=1, NSEAL
+!/DIST                ISEA   = IAPROC + (JSEA-1)*NAPROC
+!/SHRD                ISEA   = JSEA
+                IX     = MAPSF(ISEA,1)
+                IY     = MAPSF(ISEA,2)
+                IF(HQFAC(IY,IX).GT.HPQMAX)THEN
+                   HPQMAX=HQFAC(IY,IX)
+                ENDIF
+              END DO
+              SIY = MAX(0.01*HPQMAX,SIY)
+            END IF
 
           DO
             IF ( THM .LT. 0. ) THEN
@@ -767,6 +804,10 @@
 !/DIST      IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,1003) NSEA, NAPROC
 !/DIST      CALL EXTCDE ( 13 )
 !
+  804 CONTINUE
+      IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,1004) IERR
+      CALL EXTCDE ( 14 )
+!
   888 CONTINUE
       IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,999)
 !/MPI      CALL MPI_FINALIZE  ( IERR_MPI )
@@ -845,12 +886,16 @@
                '     ERROR IN READING FROM INPUT FILE'/               &
                '     IOSTAT =',I5/)
 !
- 1010 FORMAT (/' *** WAVEWATCH III ERROR IN W3STRT : '/               &
-               '     ILLEGAL TYPE, ITYPE =',I4/)
-!
 !/DIST 1003 FORMAT (/' *** WAVEWATCH III ERROR IN W3STRT : '/               &
 !/DIST               '     NUMBER OF SEA POINTS LESS THAN NUMBER OF PROC.'/ &
 !/DIST               '     NSEA, NAPROC =',2I8/)
+!
+ 1004 FORMAT (/' *** WAVEWATCH III ERROR IN W3STRT : '/               &
+               '     ERROR IN W3STQT'/                                &
+               '     IOSTAT =',I5/)
+!
+ 1010 FORMAT (/' *** WAVEWATCH III ERROR IN W3STRT : '/               &
+               '     ILLEGAL TYPE, ITYPE =',I4/)
 !/
 !/ End of W3STRT ----------------------------------------------------- /
 !/
