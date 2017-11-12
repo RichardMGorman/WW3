@@ -379,6 +379,9 @@
       USE W3TIMEMD
 !/IC3      USE W3SIC3MD
 !/IS2      USE W3SIS2MD
+      USE W3ADGRMD
+      USE W3PROQMD
+      USE QA_UTILS
 
 !/OASIS      USE W3OACPMD, ONLY: ID_OASIS_TIME
 !/OASOCM      USE W3OGCMMD, ONLY: SND_FIELDS_TO_OCEAN
@@ -446,6 +449,10 @@
       CHARACTER(LEN=17)       :: IDACT 
       CHARACTER(LEN=13)       :: OUTID
       CHARACTER(LEN=23)       :: IDTIME
+      INTEGER                 :: NDSEN
+      INTEGER                 :: ITER_QA, NITER_QA
+      LOGICAL                 :: ADAPT_VARS(3)= .TRUE.
+      LOGICAL                 :: FLFRSTSAV, NEW_QT
 !
 !/SBS      CHARACTER(LEN=30)       :: FOUTNAME
 !
@@ -489,6 +496,7 @@
       IF ( IADATA .NE. IMOD ) CALL W3SETA ( IMOD, NDSE, NDST )
       IF ( IIDATA .NE. IMOD ) CALL W3SETI ( IMOD, NDSE, NDST )
 !
+!/T      write(NDST,*) 'TEST W3WAVE, NSEAL = ',NSEAL
       ALLOCATE(TAUWX(NSEAL), TAUWY(NSEAL))
 !/REFRX      ALLOCATE(CIK(NSEAL))
 !
@@ -516,6 +524,8 @@
 !
 !/S      CALL STRACE (IENT, 'W3WAVE')
 !
+      NDSEN = 0
+      IF ( IAPROC .EQ. NAPERR ) NDSEN = NDSE
 !
 ! 0.c Local parameter initialization
 !
@@ -538,8 +548,16 @@
           FCUT  = SIG(NK) * TPIINV
         END IF
 !
+      NEW_QT = GTYPE.EQ.QAGTYPE        
+!
 !!Li  ALLOCATE ( FIELD(1-NY:NY*(NX+2)) )
-      IF( RGLGRD .AND. .NOT. FLOMP ) ALLOCATE ( FIELD(1-NY:NY*(NX+2)) )
+      IF( RGLGRD .AND. .NOT. FLOMP ) THEN
+          IF ( GTYPE.EQ.QAGTYPE ) THEN
+              ALLOCATE ( FIELD(0:NCMXQ(IQGW)+2) )
+            ELSE
+              ALLOCATE ( FIELD(1-NY:NY*(NX+2)) )
+            END IF
+        END IF
 !
 !/SMC !!Li   Otherwise use sea point only field
 !/SMC       ALLOCATE ( FIELD(NCel) )
@@ -562,7 +580,7 @@
 ! 0.d Test output
 !
 !/T      ILEN   = LEN_TRIM(FILEXT)
-!/T      WRITE (NDST,9000) IMOD, FILEXT(:ILEN), TEND
+!/T      WRITE (NDST,9000) IMOD, FILEXT(:ILEN), TEND, NSEA, NX, NY
 !
 ! 1.  Check the consistency of the input ----------------------------- /
 ! 1.a Ending time versus initial time
@@ -824,10 +842,17 @@
 !/T        WRITE (NDST,9021) ITIME, IT, TIME, FLMAP, FLDDIR,          &
 !/T                          VGX, VGY, DTG, DTRES
 !
+!      Iterations for grid adaptation
+          NITER_QA = 1
+          IF ( GTYPE.EQ.QAGTYPE ) THEN
+              IF ( DVTYPE_QA.GT.0 .AND. .NOT.FLIWND ) NITER_QA = 2
+            END IF
+          DO ITER_QA=1, NITER_QA
+!
 ! 3.1 Interpolate winds and currents.
 !     (Initialize wave fields with winds)
 !
-          IF ( FLCUR  ) THEN
+            IF ( FLCUR  ) THEN
 !/PALM !
 !/PALM ! Getting currents AND water levels from coupler
 !/PALM !
@@ -859,38 +884,83 @@
 !/PALM ! End of current and water level update from coupler
 !/PALM !
 !/PALM IF (PALMED.EQ.0) THEN
-            CALL W3UCUR ( FLFRST )
+              CALL W3UCUR ( FLFRST )
 !/PALM ENDIF
-            IF (GTYPE .NE. UNGTYPE) THEN       
-              IF( RGLGRD ) THEN
-              CALL W3DZXY(CX(1:UBOUND(CX,1)),'m/s',DCXDX, DCXDY) !CX GRADIENT
-              CALL W3DZXY(CY(1:UBOUND(CY,1)),'m/s',DCYDX, DCYDY) !CY GRADIENT
-              ENDIF
+              IF (GTYPE .EQ. UNGTYPE) THEN       
+                CALL UG_GRADIENTS(CX, DCXDX, DCXDY)
+                CALL UG_GRADIENTS(CY, DCYDX, DCYDY)
+                UGDTUPDATE=.TRUE.
+              ELSE IF (GTYPE .EQ. QAGTYPE) THEN       
+                CALL W3QTGR(CX(1:UBOUND(CX,1)), DCXDX, DCXDY, NDSEN)
+                CALL W3QTGR(CY(1:UBOUND(CX,1)), DCYDX, DCYDY, NDSEN)
+              ELSE
+                IF( RGLGRD ) THEN
+                  CALL W3DZXY(CX(1:UBOUND(CX,1)),'m/s',DCXDX, DCXDY) !CX GRADIENT
+                  CALL W3DZXY(CY(1:UBOUND(CY,1)),'m/s',DCYDX, DCYDY) !CY GRADIENT
+                ENDIF
 !/SMC !!Li  Use new sub for DCXDX/Y and DCYDX/Y assignment.  
-!/SMC         CALL SMCDCXY 
-            ELSE
-              CALL UG_GRADIENTS(CX, DCXDX, DCXDY)
-              CALL UG_GRADIENTS(CY, DCYDX, DCYDY)
-              UGDTUPDATE=.TRUE.
+!/SMC                CALL SMCDCXY 
               END IF      
 !
-            ELSE IF ( FLFRST ) THEN
-              UGDTUPDATE=.TRUE.
-              CX = 0.
-              CY = 0.
-              END IF ! FLCUR 
+              ELSE IF ( FLFRST ) THEN
+                UGDTUPDATE=.TRUE.
+                CX = 0.
+                CY = 0.
+                END IF ! FLCUR 
 !
-          IF ( FLWIND ) THEN
-            IF ( FLFRST ) ASF = 1.
-              CALL W3UWND ( FLFRST, VGX, VGY )
-            ELSE IF ( FLFRST ) THEN
-              U10    = 0.01
-              U10D   = 0.
-              UST    = 0.05
-              USTDIR = 0.05
-            END IF
+            IF ( FLWIND ) THEN
+              IF ( FLFRST ) ASF = 1.
+                CALL W3UWND ( FLFRST, VGX, VGY )
+              ELSE IF ( FLFRST ) THEN
+                U10    = 0.01
+                U10D   = 0.
+                UST    = 0.05
+                USTDIR = 0.05
+              END IF
 !
-          IF ( FLIWND .AND. LOCAL ) CALL W3UINI ( VA )
+            IF ( FLIWND .AND. LOCAL ) CALL W3UINI ( VA )
+!
+! For the quadtree case, adapt the grid         
+!
+            IF ( GTYPE.EQ.QAGTYPE ) THEN
+                IF ( ITER_QA.LT.NITER_QA ) THEN
+          ! Adapt the grid, geographic arrays, and CG and WN
+                    CALL W3ADGR ( DVTYPE_QA, ADAPT_VARS, NDSEN )  
+!/T                    WRITE(NDST,*) 'TEST W3WAVE: AFTER W3ADGR'
+!/T                    WRITE(NDST,*) '             NMOD_QA = ', NMOD_QA
+!/T                    WRITE(NDST,*) ' IMOD   ITO_QA   NFROM_QA, IFROM_QA'
+!/T                    DO IX=1,NMOD_QA
+!/T                        WRITE(NDST,*) IX, ITO_QA(IX), NFROM_QA(IX),    &
+!/T                                      IFROM_QA(IX,:)
+!/T                      END DO
+!/T                    WRITE(NDST,*) 'TEST W3WAVE: AFTER W3ADGR'
+!/T                    WRITE(NDST,*) '             NAUX_QA = ', NAUX_QA
+!/T                    WRITE(NDST,*) ' ISEA   CELL_TYPE, X, Y, IAUX_QA'
+!/T                    DO ISEA=1,NSEA
+!/T                        WRITE(NDST,*) ISEA, QTREE(IQGW)%CELL_TYPE(ISEA), &
+!/T                                      QTREE(IQGW)%XYVAL(ISEA,:),         &
+!/T                                      IAUX_QA(ISEA,1:NAUX_QA)
+!/T                      END DO
+                    IF ( NMOD_QA.EQ.0 ) EXIT
+          ! Adapt the spectra: with MPI it is easier to do it here 
+          ! than in W3ADGR
+                    DO ISPEC=1, NSPEC
+                        IF ( IAPPRO(ISPEC) .EQ. IAPROC ) THEN
+                            CALL W3GATH ( ISPEC, FIELD )
+                            CALL QA_ADVAR ( NMOD_QA, NFROM_QA,   &
+                              IFROM_QA, WFROM_QA, ITO_QA, FIELD )
+                            CALL W3SCAT ( ISPEC, MAPSTA, FIELD )
+                          END IF
+                      END DO
+                  ! Recompute level ranges for propagation
+                    CALL W3MPQ1 ( MAPSTA, LVRANGE_QA )
+                    FLFRSTSAV = FLFRST
+                    FLFRST = .TRUE.
+                  ELSE
+                    FLFRST = FLFRSTSAV
+                  END IF
+              END IF
+          END DO ! ITER_QA=1,NITER_QA
 !
 ! 3.2 Update boundary conditions if boundary flag is true (FLBPI)
 !
@@ -1035,7 +1105,7 @@
 !/PR3              CALL W3MAP3
 !/PRX              CALL W3MAPX
               CALL W3UTRN ( TRNX, TRNY )
-!/PR3              CALL W3MAPT
+!/PR3              IF ( GTYPE.NE.QAGTYPE ) CALL W3MAPT
               CALL W3NMIN ( MAPSTA, FLAG0 )
               IF ( FLAG0 .AND. IAPROC.EQ.NAPERR ) WRITE (NDSE,1030) IMOD
               FLMAP  = .FALSE.
@@ -1049,15 +1119,16 @@
 !/SMC            END IF
 !
           IF ( FLDDIR ) THEN
-            IF (GTYPE .NE. UNGTYPE) THEN  
-!!Li          CALL W3DZXY(DW(1:NSEA),'m',DDDX,DDDY) !DEPTH (DW) GRADIENT
+            IF (GTYPE .EQ. UNGTYPE) THEN  
+              CALL UG_GRADIENTS(DW, DDDX, DDDY)
+            ELSE IF (GTYPE .EQ. QAGTYPE) THEN  
+              CALL W3QTGR(DW(1:UBOUND(DW,1)), DDDX, DDDY, NDSEN)
+            ELSE
+!!Li            CALL W3DZXY(DW(1:NSEA),'m',DDDX,DDDY) !DEPTH (DW) GRADIENT
               IF( RGLGRD ) CALL W3DZXY(DW(1:UBOUND(DW,1)),'m',DDDX,DDDY) 
 !/SMC !!Li  Use new sub for DDDX and DDDY assignment.  
-!/SMC         CALL SMCDHXY 
-!/SMCT        WRITE (NDST,*) " * SMCDHXY completed IT DTG =", IT, DTG
+!/SMC              CALL SMCDHXY 
 !
-            ELSE
-              CALL UG_GRADIENTS(DW, DDDX, DDDY)
               END IF 
               FLDDIR = .FALSE.
             END IF
@@ -1065,18 +1136,22 @@
 !         Calculate PHASE SPEED GRADIENT.
           DCDX = 0.
           DCDY = 0.
-!/REFRX   CIK  = 0.
+!/REFRX          CIK  = 0.
 !/REFRX!
-!/REFRX          IF (GTYPE .NE. UNGTYPE) THEN
-!/REFRX            DO IK=0,NK+1
-!/REFRX               CIK = SIG(IK) / WN(IK,1:NSEA)
-!/REFRX               CALL W3DZXY(CIK,'m/s',DCDX(IK,:,:),DCDY(IK,:,:))
-!/REFRX            END DO
-!/REFRX          ELSE
-!/REFRX            WRITE (NDSE,1040)
-!/REFRX            CALL EXTCDE(2)
-!/REFRX     !      CALL UG_GRADIENTS(CMN, DCDX, DCDY) !/ Stefan, to be confirmed!
-!/REFRX          END IF
+!/REFRX          IF (GTYPE .EQ. UNGTYPE) THEN
+!/REFRX              WRITE (NDSE,1040)
+!/REFRX              CALL EXTCDE(2)
+!/REFRX     !        CALL UG_GRADIENTS(CMN, DCDX, DCDY) !/ Stefan, to be confirmed!
+!/REFRX            ELSE IF (GTYPE .EQ. QAGTYPE) THEN
+!/REFRX              WRITE (NDSE,1040)
+!/REFRX              CALL EXTCDE(2)
+!/REFRX              ! TO BE DONE!?
+!/REFRX            ELSE
+!/REFRX              DO IK=0,NK+1
+!/REFRX                 CIK = SIG(IK) / WN(IK,1:NSEA)
+!/REFRX                 CALL W3DZXY(CIK,'m/s',DCDX(IK,:,:),DCDY(IK,:,:))
+!/REFRX              END DO
+!/REFRX            END IF
 !
           FLIWND = .FALSE.
           FLFRST = .FALSE.
@@ -1111,6 +1186,7 @@
 !/PR3                      IF (GTYPE .EQ. UNGTYPE) THEN
 !!/PR3                        CALL W3CFLUG ( ISEA, NKCFL, FACX, FACX, DTG,  &
 !!/PR3                             MAPFS,  CFLXYMAX(JSEA), VGX, VGY )
+!/PR3                      ELSE IF (GTYPE .EQ. QAGTYPE) THEN
 !/PR3                      ELSE 
 !/PR3                        CALL W3CFLXY ( ISEA, DTG, MAPSTA, MAPFS,      &
 !/PR3                                       CFLXYMAX(JSEA), VGX, VGY )
@@ -1231,15 +1307,7 @@
 !/SMC !!Li   Otherwise use SMC sub to gether field
 !/SMC                    CALL W3GATHSMC ( ISPEC, FIELD )
 !
-                  IF (GTYPE .NE. UNGTYPE) THEN
-!/PR1               CALL W3XYP1 ( ISPEC, DTG, MAPSTA, FIELD, VGX, VGY )
-!/PR2               CALL W3XYP2 ( ISPEC, DTG, MAPSTA, MAPFS, FIELD, VGX, VGY )
-!/PR3               CALL W3XYP3 ( ISPEC, DTG, MAPSTA, MAPFS, FIELD, VGX, VGY )
-!/PRX               CALL W3XYPX
-!/SMC   !!Li   Propagation on SMC grid uses UNO2 scheme.
-!/SMC                    CALL W3PSMC ( ISPEC, DTG, FIELD )
-!
-                  ELSE IF (GTYPE .EQ. UNGTYPE) THEN
+                  IF (GTYPE .EQ. UNGTYPE) THEN
 !/PR1               CALL W3XYPUG ( ISPEC, FACX, FACX, DTG,           &
 !/PR1                                  FIELD, VGX, VGY, UGDTUPDATE )
 !/PR2               CALL W3XYPUG ( ISPEC, FACX, FACX, DTG,           &
@@ -1248,6 +1316,22 @@
 !/PR3                                  FIELD, VGX, VGY, UGDTUPDATE )
 !/PRX               CALL W3XYPUG ( ISPEC, FACX, FACX, DTG,           &
 !/PRX                                  FIELD, VGX, VGY, UGDTUPDATE )
+                  ELSE IF (GTYPE .EQ. QAGTYPE) THEN
+!/PR1               CALL W3XYQ1 ( ISPEC, DTG, MAPSTA, FIELD, VGX, VGY,     &
+!/PR1                             LVRANGE_QA )
+!/PR2               CALL W3XYQ1 ( ISPEC, DTG, MAPSTA, FIELD, VGX, VGY,     &
+!/PR2                             LVRANGE_QA )
+!/PR3               CALL W3XYQ1 ( ISPEC, DTG, MAPSTA, FIELD, VGX, VGY,     &
+!/PR3                             LVRANGE_QA )
+!/PRX               CALL W3XYPX
+                  ELSE
+!/PR1               CALL W3XYP1 ( ISPEC, DTG, MAPSTA, FIELD, VGX, VGY )
+!/PR2               CALL W3XYP2 ( ISPEC, DTG, MAPSTA, MAPFS, FIELD, VGX, VGY )
+!/PR3               CALL W3XYP3 ( ISPEC, DTG, MAPSTA, MAPFS, FIELD, VGX, VGY )
+!/PRX               CALL W3XYPX
+!/SMC   !!Li   Propagation on SMC grid uses UNO2 scheme.
+!/SMC                    CALL W3PSMC ( ISPEC, DTG, FIELD )
+!
                     END IF
 !!Li              CALL W3SCAT ( ISPEC, MAPSTA, FIELD )
                   IF( RGLGRD ) CALL W3SCAT ( ISPEC, MAPSTA, FIELD )
@@ -1783,8 +1867,8 @@
 !/MPI                              IF ( FLGMPI(1) ) CALL MPI_WAITALL  &
 !/MPI                                 ( NRQGO2, IRQGO2, STATIO, IERR_MPI )
 !/MPI                              FLGMPI(1) = .FALSE.
-                              IF ( J .EQ. 1 ) CALL W3IOGO             &
-                                 ( 'WRITE', NDS(7), ITEST, IMOD )
+                              IF ( J .EQ. 1 ) CALL W3IOGO ( 'WRITE',  &
+                                         NDS(7), ITEST, IMOD, NEW_QT )
 !/SBS !
 !/SBS !     Generate output flag file for fields and SBS coupling.
 !/SBS !
@@ -1992,6 +2076,7 @@
 !/T   '===================='/                                         &
 !/T   ' TEST W3WAVE : RUN MODEL',I3,' FILEXT [',A,                    &
 !/T                    '] UP TO ',I8.8,I7.6 /                         &
+!/T                    'NSEA, NX, NY =  ',3I8 /                       &
 !/T   '====================',                                         &
 !/T '============================================================')
 !/T 9010 FORMAT (' TEST W3WAVE : DT INT. =',F12.1,'   FLZERO = ',L1)
