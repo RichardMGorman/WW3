@@ -394,6 +394,9 @@
 !/MEMCHECK      USE MallocInfo_m
 !/SETUP      USE W3WAVSET, only : WAVE_SETUP_COMPUTATION
 !/NETCDF_QAD      USE W3NETCDF, only : OUTPUT_NETCDF_QUICK_AND_DIRTY
+      USE W3ADGRMD
+      USE W3PROQMD
+      USE QA_UTILS
 
 !/OASIS      USE W3OACPMD, ONLY: ID_OASIS_TIME
 !/OASOCM      USE W3OGCMMD, ONLY: SND_FIELDS_TO_OCEAN
@@ -479,6 +482,10 @@
 !/PDLIB     REAL ::             VS_SPEC(NSPEC)
 !/PDLIB     REAL ::             VD_SPEC(NSPEC)
 
+      INTEGER                 :: NDSEN
+      INTEGER                 :: ITER_QA, NITER_QA
+      LOGICAL                 :: ADAPT_VARS(3)= .TRUE.
+      LOGICAL                 :: FLFRSTSAV, NEW_QT
 !
 !/SBS      CHARACTER(LEN=30)       :: FOUTNAME
 !
@@ -1081,8 +1088,8 @@
                 ENDIF
 !/SMC !!Li  Use new sub for DCXDX/Y and DCYDX/Y assignment.  
 !/SMC                CALL SMCDCXY 
-              END IF      
-!
+              END IF
+
 !/MEMCHECK       write(740+IAPROC,*) 'memcheck_____:', 'WW3_WAVE TIME LOOP 4'
 !/MEMCHECK       call getMallocInfo(mallinfos)
 !/MEMCHECK       call printMallInfo(IAPROC,mallInfos)
@@ -1098,31 +1105,45 @@
 !/MEMCHECK       write(740+IAPROC,*) 'memcheck_____:', 'WW3_WAVE TIME LOOP 5'
 !/MEMCHECK       call getMallocInfo(mallinfos)
 !/MEMCHECK       call printMallInfo(IAPROC,mallInfos)
-!
+
             IF ( FLWIND ) THEN
               IF ( FLFRST ) ASF = 1.
-                CALL W3UWND ( FLFRST, VGX, VGY )
-              ELSE IF ( FLFRST ) THEN
-                U10    = 0.01
-                U10D   = 0.
-                UST    = 0.05
-                USTDIR = 0.05
-              END IF
+              CALL W3UWND ( FLFRST, VGX, VGY )
+            ELSE IF ( FLFRST ) THEN
+              U10    = 0.01
+              U10D   = 0.
+              UST    = 0.05
+              USTDIR = 0.05
+            END IF
 
-!/MEMCHECK       write(740+IAPROC,*) 'memcheck_____:', 'WW3_WAVE TIME LOOP 6'
-!/MEMCHECK       call getMallocInfo(mallinfos)
-!/MEMCHECK       call printMallInfo(IAPROC,mallInfos)
+!      DO JSEA = 1, NSEAL
+!        DO IS = 1, NSPEC
+!          IF (VA(IS, JSEA) .LT. 0.) THEN
+!            WRITE(740+IAPROC,*) 'TEST W3WAVE 5', VA(IS,JSEA)
+!            CALL FLUSH(740+IAPROC)
+!          ENDIF
+!        ENDDO
+!      ENDDO
+!      IF (SUM(VA) .NE. SUM(VA)) THEN
+!        WRITE(740+IAPROC,*) 'NAN in ACTION 5', IX, IY, SUM(VA)
+!        CALL FLUSH(740+IAPROC)
+!        STOP
+!      ENDIF
 
-!/TIMINGS         CALL PRINT_MY_TIME("After U10, etc. assignation")
+
+!/MEMCHECK         write(740+IAPROC,*) 'memcheck_____:', 'WW3_WAVE TIME LOOP 6'
+!/MEMCHECK         call getMallocInfo(mallinfos)
+!/MEMCHECK         call printMallInfo(IAPROC,mallInfos)
+
+!/TIMINGS           CALL PRINT_MY_TIME("After U10, etc. assignation")
 !
-!/DEBUGRUN        WRITE(740+IAPROC,*) 'W3WAVE, step 6.5'
-!/DEBUGRUN        FLUSH(740+IAPROC)
-!/PDLIB!/DEBUGCOH          CALL ALL_VA_INTEGRAL_PRINT(IMOD, "Before call to W3UINI")
-!/TIMINGS         CALL PRINT_MY_TIME("Before call W3UINI")
-!
-              IF ( FLIWND .AND. LOCAL ) CALL W3UINI ( VA )
-!/DEBUGRUN        WRITE(740+IAPROC,*) 'W3WAVE, step 6.5.1 DTG=', DTG
-!/DEBUGRUN        FLUSH(740+IAPROC)
+!/DEBUGRUN          WRITE(740+IAPROC,*) 'W3WAVE, step 6.5'
+!/DEBUGRUN          FLUSH(740+IAPROC)
+!/PDLIB!/DEBUGCOH            CALL ALL_VA_INTEGRAL_PRINT(IMOD, "Before call to W3UINI")
+!/TIMINGS           CALL PRINT_MY_TIME("Before call W3UINI")
+            IF ( FLIWND .AND. LOCAL ) CALL W3UINI ( VA )
+!/DEBUGRUN          WRITE(740+IAPROC,*) 'W3WAVE, step 6.5.1 DTG=', DTG
+!/DEBUGRUN          FLUSH(740+IAPROC)
 !
 ! For the quadtree case, adapt the grid         
 !
@@ -1619,6 +1640,7 @@
 !/T                          IF (MOD(ISEA,100).EQ.0) WRITE(NDSE,*) 'COMPUTING CFL FOR NODE:',ISEA
 !/PR3                          CALL W3CFLUG ( ISEA, NKCFL, FACX, FACX, DTG,  &
 !/PR3                                         MAPFS,  CFLXYMAX(JSEA), VGX, VGY )
+!/PR3                        END IF
 !/PR3                      ELSE IF (GTYPE .EQ. QAGTYPE) THEN
 !/PR3                      ELSE 
 !/PR3                        CALL W3CFLXY ( ISEA, DTG, MAPSTA, MAPFS,      &
