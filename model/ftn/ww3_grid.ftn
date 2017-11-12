@@ -4137,6 +4137,313 @@
 !
 ! 10. Set up all maps
 !
+          CALL NEXTLN ( COMSTR , NDSI , NDSE )
+          READ (NDSI,*,END=2001,ERR=2002) LVLREFT, NSUBGRID
+          IF ( LVLREFT.LT.0 ) LVLREFT = 1000 
+          NX0 = NX
+          NY0 = NY
+          LVLREF = 0
+          DO WHILE( MOD(NX0,2).EQ.0 .AND. MOD(NY0,2).EQ.0 .AND.       &
+                    LVLREF.LT.LVLREFT )
+             NX0 = NX0/2
+             NY0 = NY0/2
+             LVLREF = LVLREF + 1
+          END DO
+          LVLMXB = LVLREF
+          NINDBG = NINT( NX0*NY0*(4.**(LVLMXB+1) - 1)/3. )
+!
+! 9.b Read subgrid information         
+!
+          ALLOCATE ( LVLREL(0:NSUBGRID), NXSG(0:NSUBGRID),            &
+                     NYSG(0:NSUBGRID) )
+          ALLOCATE ( XYRANGE(0:NSUBGRID,4) )
+          IF ( NSUBGRID.GT.0 ) THEN
+             ALLOCATE ( IJPRANGE(NSUBGRID,4), IPSG(NSUBGRID) )
+             ALLOCATE ( NDSGS(NSUBGRID), VSCS(NSUBGRID),              &
+                        IDLAS(NSUBGRID), IDFMS(NSUBGRID),             &
+                        RFORMS(NSUBGRID), FNAMES(NSUBGRID),           &
+                        ZLIMS(NSUBGRID) )
+             IF ( TRFLAG .NE. 0 ) THEN          
+                ALLOCATE ( NDSTRS(NSUBGRID), VSCTRS(NSUBGRID),        &
+                           IDLATRS(NSUBGRID), IDFTRS(NSUBGRID),       &
+                           RFORMTRS(NSUBGRID), TNAMES(NSUBGRID) )
+             END IF
+          END IF
+          LVLREL(0) = 0
+          NXSG(0) = NX
+          NYSG(0) = NY
+          DO ISG=1,NSUBGRID
+             CALL NEXTLN ( COMSTR , NDSI , NDSE )
+             READ (NDSI,*,END=2001,ERR=2002) IDUM, IPSG(ISG),         &
+                     (IJPRANGE(ISG,K), K=1,4), LVLREL(ISG)
+             CALL NEXTLN ( COMSTR , NDSI , NDSE )
+             READ (NDSI,*,END=2001,ERR=2002) ZLIMS(ISG), NDSGS(ISG),  &
+                     VSCS(ISG), IDLAS(ISG), IDFMS(ISG), RFORMS(ISG),  &
+                     FNAMES(ISG)
+             IF ( TRFLAG .NE. 0 ) THEN
+                CALL NEXTLN ( COMSTR , NDSI , NDSE )
+                READ (NDSI,*,END=2001,ERR=2002) NDSTRS(ISG), VSCTRS(ISG), &
+                     IDLATRS(ISG), IDFTRS(ISG), RFORMTRS(ISG),            &
+                     TNAMES(ISG)
+             END IF
+             LVLMXB = MAX(LVLMXB, LVLREF + LVLREL(ISG))
+             LVLDIF = LVLREL(ISG) - LVLREL(IPSG(ISG))
+             SCALE = 2.**LVLDIF
+             NXP = IJPRANGE(ISG,2) - IJPRANGE(ISG,1) + 1
+             NYP = IJPRANGE(ISG,4) - IJPRANGE(ISG,3) + 1
+             NXSG(ISG) = NINT(SCALE*NXP)
+             NYSG(ISG) = NINT(SCALE*NYP)
+             NINDBG = NINDBG + CEILING( NXP*NYP*(4.**LVLDIF - 1.)*4./3. )
+          END DO  ! loop over subgrids 
+!
+! 9.c Allocate arrays
+!
+          ALLOCATE ( ARRQ(NINDBG,3) )
+          ALLOCATE ( NEWCELL(NINDBG) )
+          NINDML = NINT( NX0*NY0*(4.**(LVLMXB+1) - 1)/3. )
+          ALLOCATE ( MAPML(NINDML) )
+          ! Initialise MAPML, using TMPSTA on the reference grid
+          MAP_TYPES(1) =  -999  ! flag for cells with type yet to be determined             
+          MAP_TYPES(2) =  1     ! flag for default wet cells 
+          MAP_TYPES(3) =  2     ! flag for cells not to be refined
+          MAPML = MAP_TYPES(1)
+          IML = NINT( NX0*NY0*(4.**LVLREF - 1)/3. )
+          DO IY=1,NYREF
+             DO IX=1,NXREF
+                IML = IML + 1
+                MAPML(IML) = TMPSTA(IY,IX)
+                IF ( TMPSTA(IY,IX).EQ.NSTAT ) THEN
+                   MAPML(IML) = 0
+                   TMPSTA(IY,IX) = 3
+                END IF
+             END DO
+          END DO
+            
+!
+! Set up a quadtree structure for the level zero grid, and compute cell neighbours
+          IQGB = 1
+          CALL W3QALL( IQGB, NINDBG, NINDBG, 0, 0 )
+          CALL QA_RECT ( NX0, NY0, LVLREF, ICLOSE.EQ.ICLOSE_SMPL,     &
+                         1, 0, QTREE(IQGB), ierr=IERR, ndse=NDSE )
+          !CALL QA_FINDNBR ( QTREE(IQGB), ierr=IERR, ndse=NDSE )
+!
+!  Allow cell indices to be retained when they are refined
+!
+          QTREE(IQGB)%KEEP_REF = .TRUE.
+          QTREE(IQGB)%DYNAMIC = .FALSE.
+          QTREE(IQGB)%LVLMAX = LVLMXB
+          ! Valid ranges, data types for:
+          !  bed elevation 
+          ARANGE(1,1) = -999999.
+          ARANGE(1,2) = ZLIM
+          ATYPE(1) = 1
+          !  X transmission 
+          ARANGE(2,1) = -0.1
+          ARANGE(2,2) = 1.1
+          ATYPE(2) = 3
+          !  Y transmission 
+          ARANGE(3,1) = -0.1
+          ARANGE(3,2) = 1.1
+          ATYPE(3) = 4    
+!
+! 9.d Process quadtree subgrids
+!
+          DO ISG=0,NSUBGRID
+             DO K=1,4
+                XYRANGE(ISG,K) = 0.
+             END DO
+          END DO
+          IML = 0
+          NBG = 0
+          DO ISG=0,NSUBGRID
+             IF ( ALLOCATED (ARRIN) ) DEALLOCATE ( ARRIN )
+             ALLOCATE ( ARRIN(NXSG(ISG),NYSG(ISG),3) )
+             ARRIN (:,:,1) = 0.
+             ARRIN (:,:,2) = 1.
+             ARRIN (:,:,3) = 1.
+             IF (ISG.EQ.0) THEN 
+                LV0 = -LVLREF
+                LVP = 0
+                XYRANGE(ISG,1) = 0.5
+                XYRANGE(ISG,2) = NXSG(ISG) + 0.5
+                XYRANGE(ISG,3) = 0.5
+                XYRANGE(ISG,4) = NYSG(ISG) + 0.5
+                NXP = NX0
+                NYP = NY0
+             ELSE
+                IPAR = IPSG(ISG)
+                LV0 = LVLREL(IPAR) + 1
+                LVP = LVLREL(IPAR) + LVLREF
+                SCALE = 2.**( -LVLREL(IPAR) )
+                XYRANGE(ISG,1) = (IJPRANGE(ISG,1) - 1)*SCALE +            &
+                                  XYRANGE(IPAR,1)
+                XYRANGE(ISG,2) = IJPRANGE(ISG,2)*SCALE + XYRANGE(IPAR,1)
+                XYRANGE(ISG,3) = (IJPRANGE(ISG,3) - 1)*SCALE +            &
+                                  XYRANGE(IPAR,3)
+                XYRANGE(ISG,4) = IJPRANGE(ISG,4)*SCALE + XYRANGE(IPAR,3)
+                NXP = IJPRANGE(ISG,2) - IJPRANGE(ISG,1) + 1
+                NYP = IJPRANGE(ISG,4) - IJPRANGE(ISG,3) + 1
+                NDSG = NDSGS(ISG)
+                ZLIM = ZLIMS(ISG)
+                VSC = VSCS(ISG)
+                IDLA = IDLAS(ISG)
+                IDFM = IDFMS(ISG)
+                RFORM = RFORMS(ISG)
+                FNAME = FNAMES(ISG)
+                IF (   ABS(VSC) .LT. 1.E-7  ) VSC    = 1.
+                IF (IDLA.LT.1 .OR. IDLA.GT.4) IDLA   = 1
+                IF (IDFM.LT.1 .OR. IDFM.GT.3) IDFM   = 1
+                WRITE (NDSO,1970) ISG, LVLREL(ISG), NXSG(ISG), NYSG(ISG), &
+                  IPAR, (IJPRANGE(ISG,K), K=1,4), (XYRANGE(ISG,K), K=1,4)
+                WRITE (NDSO,972) NDSG, ZLIM, DMIN, VSC, IDLA, IDFM
+                IF (IDFM.EQ.2) WRITE (NDSO,973) RFORM
+                WRITE (NDSO,974) FNAME
+!
+! 9.e Read bottom depths on subgrids
+!
+                IF ( NDSG .EQ. NDSI ) THEN
+                   WRITE (NDSE,1004) NDSG
+                   CALL EXTCDE (23)
+                END IF
+                IF ( IDFM .EQ. 3 ) THEN
+                   J      = LEN_TRIM(FNMPRE)
+                   OPEN (NDSG,FILE=FNMPRE(:J)//FNAME,FORM='UNFORMATTED',  &
+                            STATUS='OLD',ERR=2000,IOSTAT=IERR)
+                ELSE
+                   J      = LEN_TRIM(FNMPRE)
+                   OPEN (NDSG,FILE=FNMPRE(:J)//FNAME,                     &
+                            STATUS='OLD',ERR=2000,IOSTAT=IERR)
+                END IF
+!
+                DEALLOCATE ( ZBIN, OBSX, OBSY )
+                ALLOCATE ( ZBIN(NXSG(ISG),NYSG(ISG)),                     &
+                  OBSX(NXSG(ISG),NYSG(ISG)), OBSY(NXSG(ISG),NYSG(ISG)) )
+                CALL INA2R ( ZBIN, NXSG(ISG), NYSG(ISG), 1, NXSG(ISG),    &
+                             1, NYSG(ISG), NDSG, NDST, NDSE, IDFM,        &
+                             RFORM, IDLA, VSC, 0.0)
+!
+                IF ( TRFLAG .EQ. 0 ) THEN
+                   WRITE (NDSO,976) 'Not available.'
+                   WRITE (NDSO,*)
+                ELSE IF ( TRFLAG.EQ.1 .OR. TRFLAG.EQ.3 ) THEN
+                   WRITE (NDSO,976) 'In between grid points.'
+                ELSE
+                   WRITE (NDSO,976) 'At grid points.'
+                END IF
+                IF ( TRFLAG .NE. 0 ) THEN
+                   NDSTR = NDSTRS(ISG)
+                   VSC = VSCTRS(ISG)
+                   IDLA = IDLATRS(ISG)
+                   IDFT = IDFTRS(ISG)
+                   RFORM = RFORMTRS(ISG)
+                   TNAME = TNAMES(ISG)
+                   IF (   ABS(VSC) .LT. 1.E-7  ) VSC    = 1.
+                   IF (IDLA.LT.1 .OR. IDLA.GT.4) IDLA   = 1
+                   IF (IDFM.LT.1 .OR. IDFM.GT.3) IDFM   = 1
+!
+                   WRITE (NDSO,977) NDSTR, VSC, IDLA, IDFT
+                   IF (IDFT.EQ.2) WRITE (NDSO,973) RFORM
+                   WRITE (NDSO,974) TNAME
+!
+! 9.f   Read obstruction subgrids
+!
+                   IF ( NDSTR .EQ. NDSI ) THEN
+                      WRITE (NDSE,1004) NDSTR
+                      CALL EXTCDE (23)
+                   END IF
+                   IF ( NDSTR .EQ. NDSG ) THEN
+                      IF ( ( IDFM.EQ.3 .AND. IDFT.NE.3 ) .OR.             &
+                           ( IDFM.NE.3 .AND. IDFT.EQ.3 ) ) THEN
+                             WRITE (NDSE,1005) IDFM, IDFT
+                             CALL EXTCDE (24)
+                      END IF
+                   ELSE
+                      IF ( IDFT .EQ. 3 ) THEN
+                         J      = LEN_TRIM(FNMPRE)
+                         OPEN (NDSTR,FILE=FNMPRE(:J)//TNAME,              &
+                               FORM='UNFORMATTED', STATUS='OLD',ERR=2000, &
+                               IOSTAT=IERR)
+                      ELSE
+                         J      = LEN_TRIM(FNMPRE)
+                         OPEN (NDSTR,FILE=FNMPRE(:J)//TNAME,              &
+                               STATUS='OLD',ERR=2000,IOSTAT=IERR)
+                      END IF
+                   END IF
+                   CALL INA2R ( OBSX, NXSG(ISG), NYSG(ISG), 1, NXSG(ISG), &
+                                1, NYSG(ISG), NDSTR, NDST, NDSE, IDFT,    &
+                                RFORM, IDLA, VSC, 0.0)
+                   CALL INA2R ( OBSY, NXSG(ISG), NYSG(ISG), 1, NXSG(ISG), &
+                                1, NYSG(ISG), NDSTR, NDST, NDSE, IDFT,    &
+                                RFORM, IDLA, VSC, 0.0)
+                END IF  ! test value of TRFLAG
+             END IF   ! test value of subgrid index ISG
+!
+!            Store bed elevation
+             ARRIN(:,:,1) = ZBIN
+!
+             IF ( TRFLAG .NE. 0 ) THEN
+!
+! 9.g   Limit and convert obstruction to transmission
+!
+                DO IX=1, NXSG(ISG)
+                   DO IY=1, NYSG(ISG)
+                      ARRIN(IX,IY,2) = 1. - MAX( 0. , MIN(1.,OBSX(IX,IY)) )
+                      ARRIN(IX,IY,3) = 1. - MAX( 0. , MIN(1.,OBSY(IX,IY)) )
+                   END DO
+                END DO
+             END IF
+!
+! 9.h Add cells for this subgrid to the quadtree grid structure
+!
+             CALL QA_MLG2QT( LVLREL(ISG)-LV0, LVLREL(ISG), LVLREF,   &
+                    NX0, NY0, XYRANGE(ISG,1), XYRANGE(ISG,3), ARRIN, &
+                    QTREE(IQGB), MAPML, ARRQ, atype=ATYPE,           &
+                    arange=ARANGE, map_types=MAP_TYPES, ierr=IERR,   &
+                    ndse=NDSE )
+             IF ( IERR .NE. 0 ) CALL EXTCDE ( IERR )
+             NSEAMXB = QTREE(IQGB)%NCELL
+             NQMXB = QTREE(IQGB)%NQUAD
+             !call qa_ioqt(NDSO,QTREE(IQGB),3,IERR, NDSE)
+             !call qa_ioqt(NDSO,QTREE(IQGB),4,IERR, NDSE)
+!
+! 9.i Remove any undefined cells from the quadtree grid structure, and
+!     make the correponding changes to the data array:
+!
+             CALL QA_REMUNDEF( QTREE(IQGB), newcell=NEWCELL,         &
+                               ierr=IERR, ndse=NDSE )
+             IF ( IERR .NE. 0 ) CALL EXTCDE ( IERR )
+             IF ( NSEAMXB.GT.QTREE(IQGB)%NCELL ) THEN
+                !write(NDSO,*) 'QA_REMUNDEF: NSEA reduced from ',     &
+                !              NSEAMXB, ' to ', QTREE(IQGB)%NCELL
+                DO ISEA=1,NSEAMXB
+                   IST = NEWCELL(ISEA)
+                   IF ( IST.GT.0 ) ARRQ(IST,:) = ARRQ(ISEA,:)
+                   !write(NDSO,*) 'ISEA1, ISEA2, ARRQ(1): ',ISEA, IST, ARRQ(ISEA,1)
+                END DO
+                NSEAMXB = QTREE(IQGB)%NCELL
+                NQMXB = QTREE(IQGB)%NQUAD
+                !call qa_ioqt(NDSO,QTREE(IQGB),3,IERR, NDSE)
+                !call qa_ioqt(NDSO,QTREE(IQGB),4,IERR, NDSE)
+             END IF
+          END DO  ! loop over subgrids
+!
+          WRITE (NDSO,9996) NX0, NY0, LVLREF, LVLMXB, NSUBGRID,       &
+                            NINDBG, NSEAMXB, NQMXB
+!
+!         Overwrite NSEA, NX, NY for quadtree grid
+!
+          NXREF = NX
+          NYREF = NY
+          NSEA = NSEAMXB
+          NQUAD = NQMXB
+          NX = NSEA
+          NY = 1
+!
+        END IF
+!
+!
+! 10. Set up all maps
+!
 !/PR2! These need to be defined for W3DIMX, though the arrays won't be used
 !/PR2          NUFc = 1
 !/PR2          NVFc = 1
@@ -4217,6 +4524,7 @@
 !Li  Shelter MAPSTA etc LLG definitions for SMC by logical RGLGRD 
 !    Handle quadtrees here, but with a different treatment
 !AR  This is only .FALSE. for SMC ..
+!    Handle quadtrees here, but with a different treatment
       IF( RGLGRD ) THEN
       ISEA   = 0
       DO IY=1, NY
