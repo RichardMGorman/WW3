@@ -139,6 +139,7 @@
 !/    06-Mar-2014 : Writes out a help message on error  ( version 4.18 )
 !/    10-Mar-2014 : Add IC2 parameters                  ( version 5.01 )
 !/    29-May-2014 : Add IC3 parameters                  ( version 5.01 )
+!/    11-Nov-2017 : Include quadtrees (R.Gorman)        ( version  )
 !/
 !/    Copyright 2009-2013 National Weather Service (NWS),
 !/       National Oceanic and Atmospheric Administration.  All rights
@@ -231,6 +232,7 @@
       USE W3SERVMD, ONLY: EXTCDE
 !/S      USE W3SERVMD, ONLY: STRACE
       USE W3DISPMD
+      USE QA_UTILS
 !
       IMPLICIT NONE
 !
@@ -562,6 +564,11 @@
                 CROSSDIFF, LEN, IEN, ANGLE0, ANGLE, SI, MAXX, MAXY,   &
                 DXYMAX, INDEX_CELL, CCON, VNEIGH, COUNTCON, IE_CELL,  &
                 POS_CELL, IOBP, IOBPA, IOBPD, IAA, JAA, POSI
+            CASE ( QAGTYPE )
+              WRITE (NDSM)                                            &
+                   SX, SY, X0, Y0, NQUAD
+              CALL QA_IOQT( NDSM, QTREE(IQGB), 1, IERR, ndse=NDSE )
+              IF ( IERR.NE.0 ) GOTO 803
             END SELECT !GTYPE
 !
           WRITE (NDSM)                                                &
@@ -634,9 +641,20 @@
                 POS_CELL, IOBP, IOBPA, IOBPD, IAA, JAA, POSI
                 XGRD(1,:)=XYB(:,1)
                 YGRD(1,:)=XYB(:,2)
+            CASE ( QAGTYPE )
+              READ (NDSM,END=801,ERR=802,IOSTAT=IERR)                 &
+                   SX, SY, X0, Y0, NQUAD
+              CALL W3QALL( IQGB, NSEA, NQUAD, 0, 0 )
+              CALL QA_IOQT( NDSM, QTREE(IQGB), -1, IERR, ndse=NDSE )
+              IF ( IERR.NE.0 ) GOTO 804
+              DO IX=1,NX
+                  XGRD(1,IX) = X0 + (QTREE(IQGB)%XYVAL(IX,1)-1.)*SX
+                  YGRD(1,IX) = Y0 + (QTREE(IQGB)%XYVAL(IX,2)-1.)*SY
+                END DO
             END SELECT !GTYPE
 !
-          IF (GTYPE.NE.UNGTYPE) CALL W3GNTX ( IGRD, NDSE, NDST ) 
+          IF (GTYPE.NE.UNGTYPE .AND. GTYPE.NE.QAGTYPE)                &
+                CALL W3GNTX ( IGRD, NDSE, NDST ) 
           READ (NDSM,END=801,ERR=802,IOSTAT=IERR)                     &
                ZB, MAPTMP, MAPFS, MAPSF, TRFLAG
 !
@@ -707,6 +725,41 @@
 !/T                        FLSOU, FLBPI, FLBPO
 !/T      WRITE (NDST,9017) (CLATS(ISEA),ISEA=1,1),                    &
 !/T                        (CLATIS(ISEA),ISEA=1,1), (CTHG0S(IY),ISEA=1,1)
+!/T
+!/T      IF ( GTYPE.EQ.QAGTYPE ) THEN 
+!/T          WRITE (NDST,9018) IQGB, NQUAD, NSEA,                        &
+!/T                        QTREE(IQGB)%NQUAD,                            &
+!/T                        QTREE(IQGB)%NCELL,                            &
+!/T                        QTREE(IQGB)%NCELL_DEF,                        &
+!/T                        QTREE(IQGB)%LVLREF,                           &
+!/T                        QTREE(IQGB)%LVLMAX,                           &
+!/T                        QTREE(IQGB)%LVLHI,                            &
+!/T                        QTREE(IQGB)%NX0,                              &
+!/T                        QTREE(IQGB)%NY0,                              &
+!/T                        QTREE(IQGB)%UNDEF_TYPE,                       &
+!/T                        QTREE(IQGB)%KEEP_REF,                         &
+!/T                        QTREE(IQGB)%DYNAMIC,                          &
+!/T                        QTREE(IQGB)%IWTORDER
+!/T
+!/T          J = LEN_TRIM(FNMPRE)
+!/T          OPEN (91,FILE=FNMPRE(:J)//'Bquad.txt',FORM='FORMATTED')
+!/T          CALL QA_IOQT( 91, QTREE(IQGB), 3, ierr=IERR, ndse=NDSE )
+!/T          CLOSE (91)
+!/T
+!/T          OPEN (91,FILE=FNMPRE(:J)//'Bcell.txt',FORM='FORMATTED')
+!/T          CALL QA_IOQT( 91, QTREE(IQGB), 4, ierr=IERR, ndse=NDSE )
+!/T          CLOSE (91)
+!/T
+!/T          OPEN (91,FILE=FNMPRE(:J)//'Bdata.txt',FORM='FORMATTED')
+!/T          WRITE(91,*) '  3   No. of lines in the header'
+!/T          WRITE(91,*) '  4   No. of columns of data'
+!/T          WRITE(91,*) ' ISEA   ZB   TRNX    TRNY'
+!/T          DO ISEA=1,NSEA
+!/T             WRITE(91,'(1X,I8,1X,F8.1,2(1X,F5.3))') ISEA, ZB(ISEA),   &
+!/T                     TRNX(1,ISEA), TRNY(1,ISEA)
+!/T          END DO
+!/T          CLOSE (91)
+!/T        END IF
 !
 ! Spectral parameters ------------------------------------------------ *
 !                                                 Module W3GDATMD SGRD
@@ -1170,6 +1223,14 @@
                                                   MESSAGE
       CALL EXTCDE ( 52 )
 !
+  803 CONTINUE
+      IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,1003) FILEXT(:I), IERR
+      CALL EXTCDE ( 53 )
+!
+  804 CONTINUE
+      IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,1004) FILEXT(:I), IERR
+      CALL EXTCDE ( 54 )
+!
 ! Formats
 !
   900 FORMAT (/' *** WAVEWATCH III ERROR IN W3IOGR :'/                &
@@ -1214,6 +1275,13 @@
                '     PREMATURE END OF mod_def.',A,' FILE'/)
  1002 FORMAT (/' *** WAVEWATCH III ERROR IN W3IOGR : '/,              &
                '     ERROR IN READING FROM mod_def.',A,' FILE'/       &
+               '     IOSTAT =',I5,                                    &
+               5(A,/) /)
+ 1003 FORMAT (/' *** WAVEWATCH III ERROR IN QA_IOQT FROM W3IOGR : '/, &
+               '     ERROR IN WRITING mod_def.',A,' FILE'/            &
+               '     IOSTAT =',I5)
+ 1004 FORMAT (/' *** WAVEWATCH III ERROR IN QA_IOQT FROM W3IOGR : '/, &
+               '     ERROR IN READING mod_def.',A,' FILE'/            &
                '     IOSTAT =',I5,                                    &
                5(A,/) /)
 !
@@ -1266,6 +1334,23 @@
 !/T 9017 FORMAT ('      CLATS   : ',3F8.3,' ...'/                      &
 !/T              '      CLATIS  : ',3F8.3,' ...'/                      &
 !/T              '      CTHG0S  : ',3E11.3,' ...')
+!/T
+!/T 9018 FORMAT ('QUADTREE NO.  : ',I9/                               &
+!/T              ' NQUAD(ALLOC) : ',I9/                               &
+!/T              '  NSEA(ALLOC) : ',I9/                               &
+!/T              '  QTREE PARS. : '/                                  &
+!/T              '        NQUAD : ',I9/                               &
+!/T              '        NCELL : ',I9/                               &
+!/T              '    NCELL_DEF : ',I9/                               &
+!/T              '       LVLREF : ',I9/                               &
+!/T              '       LVLMAX : ',I9/                               &
+!/T              '        LVLHI : ',I9/                               &
+!/T              '          NX0 : ',I9/                               &
+!/T              '          NY0 : ',I9/                               &
+!/T              '   UNDEF_TYPE : ',I9/                               &
+!/T              '     KEEP_REF : ',L9/                               &
+!/T              '      DYNAMIC : ',L9/                               &
+!/T              '     IWTORDER : ',I9)
 !
 !/T 9020 FORMAT (' TEST W3IOGR : MODULE W3ODATMD OUT5')
 !/T 9021 FORMAT ('      INTERPOLATION DATA : FILE ',I1)
