@@ -267,8 +267,12 @@
             IF ( IXC.LE.0 ) CYCLE
 !/SMC        ENDIF
 
+            IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
+            ! If a quadtree current array is used, find index to it:
+            IXC = IX
+            IF ( IS_QA .AND. IQGC0.GT.0 ) IXC = IAUX_QA(ISEA,IQGC0)
+            IF ( IXC.LE.0 ) CYCLE
             CA0(ISEA) = SQRT ( CX0(IXC,IY)**2 + CY0(IXC,IY)**2 )
-            CAI(ISEA) = SQRT ( CXN(IXC,IY)**2 + CYN(IXC,IY)**2 )
             IF ( CA0(ISEA) .GT. 1.E-7) THEN
                 D0     = MOD ( TPI+ATAN2(CY0(IXC,IY),CX0(IXC,IY)) , TPI )
               ELSE
@@ -431,6 +435,7 @@
 !/    27-Aug-2015 : Rename DT0,DTT by DT0T,DT0N         ( version 5.10 )
 !/    11-Nov-2017 : Allow for quadtrees (R. Gorman)     ( version 6.02 )
 !/    26-Mar-2018 : Sea-point only wind for SMC grid.   ( version 6.xx )
+!/    11-Nov-2017 : Allow for quadtrees (R. Gorman)     ( version 6.02 )
 !/
 !  1. Purpose :
 !
@@ -561,8 +566,12 @@
             IF ( IXA.LE.0 ) CYCLE
 !/SMC        ENDIF
 
+            IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
+            IXA = IX
+            ! If a quadtree wind array is used, find index to it:
+            IF ( IS_QA .AND. IQGA0.GT.0 ) IXA = IAUX_QA(ISEA,IQGA0)
+            IF ( IXA.LE.0 ) CYCLE
             UA0(ISEA) = SQRT ( WX0(IXA,IY)**2 + WY0(IXA,IY)**2 )
-            UAI(ISEA) = SQRT ( WXN(IXA,IY)**2 + WYN(IXA,IY)**2 )
             IF ( UA0(ISEA) .GT. 1.E-7) THEN
                 D0     = MOD ( TPI+ATAN2(WY0(IXA,IY),WX0(IXA,IY)) , TPI )
               ELSE
@@ -1709,6 +1718,8 @@
       LOGICAL                 :: IS_QA
       INTEGER                 :: IXL
       INTEGER                 :: IBELONG
+      LOGICAL                 :: IS_QA
+      INTEGER                 :: IXL
 !
 !/TIDE      INTEGER          :: J
 !/TIDE      INTEGER(KIND=4)  :: TIDE_KD0, INT24, INTDYS       ! "Gregorian day constant"
