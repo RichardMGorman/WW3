@@ -573,6 +573,8 @@
       NREC0 = NREC
 !/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, step 5'
 !/DEBUGIO        FLUSH(740+IAPROC)
+      NREC = NREC + 1
+      NREC0 = NREC
       IF (TYPE.EQ.'FULL') THEN
           RPOS  = 1_8 + LRECL*(NREC-1_8)
           IF ( WRITE ) THEN
