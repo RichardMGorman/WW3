@@ -95,6 +95,8 @@
 !/                  (S. Zieger, BOM)
 !/    09-Aug-2017 : Bug fix for MPI restart read issue  ( version 6.02 )
 !/                  (T. Campbell, NRL)
+!/    11-Nov-2017 : Quadtree data, 'GRID' option        ( version )
+!/                  (R. Gorman, NIWA)
 !/
 !/    Copyright 2009-2013 National Weather Service (NWS),
 !/       National Oceanic and Atmospheric Administration.  All rights
@@ -130,6 +132,7 @@
 !                          'WIND' Initialize fields using first wind
 !                                 field.
 !                          'CALM' Starting from calm conditions.
+!                          'GRID' Read only the grid sizes (for quadtree).
 !       NDSR    Int.  I/O  File unit number.
 !       DUMFPI  Real   I   Dummy values for FPIS for cold start.
 !       INTYPE  Int.   O   Type of input field,
@@ -184,6 +187,17 @@
 !     | Write identifiers and         | Write identifiers and         |
 !     |   dimensions.                 |   dimensions.                 |
 !     |                               | Check ident. and dimensions.  |
+!     |-------------------------------|-------------------------------|
+!     |                               |        INXOUT = 'GRID' ?      |
+!     |                               | Y                           N |
+!     |                               |---------------|---------------|
+!     |                               | RETURN        |               |
+!     |-------------------------------+---------------+---------------|
+!     |  GTYPE = QAGTYPE (quadtree) ? |  GTYPE = QAGTYPE (quadtree) ? |
+!     | Y                           N | Y                           N |
+!     |---------------|---------------|---------------|---------------|
+!     | write quadtree|               | read quadtree |               |
+!     | grid data     |               | grid data     |               |
 !     +-------------------------------+-------------------------------|
 !     |                       Full restart ?                          |
 !     | Y                                                           N |
@@ -229,11 +243,13 @@
       USE W3ODATMD, ONLY: W3SETO
 !/
       USE W3GDATMD, ONLY: NX, NY, NSEA, NSEAL, NSPEC, MAPSTA, MAPST2, &
-                          GNAME, FILEXT, GTYPE, UNGTYPE
+                          GNAME, FILEXT, GTYPE, UNGTYPE, QAGTYPE,     &
+                          IQGW, NQUAD, QTREE
       USE W3TRIAMD, ONLY: SETUGIOBP
       USE W3WDATMD
       USE W3ODATMD, ONLY: NDSE, NDST, IAPROC, NAPROC, NAPERR, NAPRST, &
                           IFILE => IFILE4, FNMPRE, NTPROC, IOSTYP
+      USE QA_UTILS
 !/MPI      USE W3ODATMD, ONLY: NRQRS, NBLKRS, RSBLKS, IRQRS, IRQRSS, VAAUX
 !/MPI      USE W3ADATMD, ONLY: MPI_COMM_WCMP
 !/
@@ -263,6 +279,8 @@
                                  NSEAT, MSPEC, TTIME(2), ISEA, JSEA,  &
                                  NREC, NPART, IPART, IX, IY, IXL, IP, &
                                  NPRTX2
+      INTEGER                 :: NDSEN, NREC0
+      INTEGER                 :: GTYPET, NXT
       INTEGER, ALLOCATABLE    :: MAPTMP(:,:)
 !/S      INTEGER, SAVE           :: IENT = 0
 !/MPI      INTEGER                 :: IERR_MPI, IH, IB, ISEA0, ISEAN, &
@@ -291,6 +309,9 @@
 
       IOSFLG = IOSTYP .GT. 0
 !
+      NDSEN = -1
+      IF ( IAPROC .EQ. NAPERR ) NDSEN = NDSE
+!
 ! test parameter list input ------------------------------------------ *
 !
       IF ( PRESENT(IMOD) ) THEN
@@ -305,12 +326,12 @@
 !
       IF (INXOUT.NE.'READ' .AND. INXOUT.NE.'HOT'  .AND.               &
           INXOUT.NE.'COLD' .AND. INXOUT.NE.'WIND' .AND.               &
-          INXOUT.NE.'CALM' ) THEN
+          INXOUT.NE.'CALM' .AND. INXOUT.NE.'GRID' ) THEN
           IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,900) INXOUT
           CALL EXTCDE ( 1 )
         END IF
 !
-      WRITE = INXOUT .NE. 'READ'
+      WRITE = INXOUT .NE. 'READ' .AND. INXOUT .NE. 'GRID'
       IF ( INXOUT .EQ. 'HOT' ) THEN
           TYPE   = 'FULL'
         ELSE
@@ -321,18 +342,27 @@
 !
 ! initializations ---------------------------------------------------- *
 !
-      IF ( .NOT.DINIT ) THEN
-          IF ( IAPROC .LE. NAPROC ) THEN
-              CALL W3DIMW ( IMOD, NDSE, NDST )
-            ELSE
-              CALL W3DIMW ( IMOD, NDSE, NDST, .FALSE. )
+      IF ( INXOUT .NE. 'GRID' ) THEN
+          IF ( .NOT.DINIT ) THEN
+              IF ( IAPROC .LE. NAPROC ) THEN
+                  CALL W3DIMW ( IMOD, NDSE, NDST )
+                ELSE
+                  CALL W3DIMW ( IMOD, NDSE, NDST, .FALSE. )
+                END IF
             END IF
+!
+          IF ( IAPROC .LE. NAPROC ) VA(:,0) = 0.
         END IF
 !
-      IF ( IAPROC .LE. NAPROC ) VA(:,0) = 0.
-!
-      LRECL  = MAX ( LRB*NSPEC ,                                      &
-                     LRB*(6+(25/LRB)+(9/LRB)+(29/LRB)+(3/LRB)) )
+!     Set the record length to ensure that one record can contain
+!        all the header records, or
+!        full spectra for one cell, or
+!        all quadtree header info (if GTYPE=QAGTYPE), or
+!        one row of the spatial grid  (other grid types)
+      NXT = NX
+      IF ( GTYPE.EQ.QAGTYPE ) NXT = 500
+      LRECL  = MAX ( LRB*NSPEC , LRB*NXT,                             &
+                     LRB*(12+(25/LRB)+(9/LRB)+(29/LRB)+(3/LRB)) )
       NSIZE  = LRECL / LRB
 !     --- Allocate buffer array with zeros (used to
 !         fill bytes up to size LRECL). ---
@@ -351,14 +381,14 @@
           IF ( WRITE .AND. IAPROC.EQ.NAPRST )                         &
                WRITE (FNAME(8:10),'(I3.3)') IFILE
         END IF
-      IFILE  = IFILE + 1
+      IF ( INXOUT.NE.'GRID' ) IFILE  = IFILE + 1
 !
 !/T      WRITE (NDST,9001) FNAME, LRECL
 !
 
       IF(NDST.EQ.NDSR)THEN
          IF ( IAPROC .EQ. NAPERR )                                    &
-            WRITE(NDSE,'(A,I8)')'UNIT NUMBERS OF RESTART FILE AND '&
+            WRITE(NDSE,'(A,I8)')'UNIT NUMBERS OF RESTART FILE AND '   &
             //'TEST OUTPUT ARE THE SAME : ',NDST
          CALL EXTCDE ( 15 )
       ENDIF
@@ -375,8 +405,10 @@
 !
 ! test info ---------------------------------------------------------- *
 !
+      NREC = 0
       IF ( WRITE ) THEN
 !
+          NREC = NREC + 1
           IF ( IAPROC .EQ. NAPRST ) THEN
 !           Because data has mixed data types we do not know how many
 !           bytes remain to fill up to LRECL. ---
@@ -384,13 +416,26 @@
             WRITEBUFF(:) = 0.
             WRITE (NDSR,POS=1) WRITEBUFF
 !           --- Replace zeros with data ---
-            WRITE (NDSR,POS=1) IDSTR, VERINI, GNAME, TYPE, NSEA, NSPEC
+            IF ( GTYPE.EQ.QAGTYPE ) THEN
+                WRITE (NDSR,POS=1) IDSTR, VERINI, GNAME, TYPE,        &
+                                   NSEA, NSPEC, GTYPE, NQUAD
+              ELSE
+                WRITE (NDSR,POS=1) IDSTR, VERINI, GNAME, TYPE,        &
+                                   NSEA, NSPEC, GTYPE
+              END IF
           END IF
           INTYPE = 3
 !
         ELSE
-          READ (NDSR,POS=1,ERR=802,IOSTAT=IERR)                       &
-            IDTST, VERTST, TNAME, TYPE, NSEAT, MSPEC
+          NREC = NREC + 1
+          IF ( GTYPE.EQ.QAGTYPE ) THEN
+              READ (NDSR,POS=1,ERR=802,IOSTAT=IERR) IDTST,            &
+                 VERTST, TNAME, TYPE, NSEAT, MSPEC, GTYPET, NQUAD
+              NSEA = NSEAT
+            ELSE
+              READ (NDSR,POS=1,ERR=802,IOSTAT=IERR) IDTST,            &
+                 VERTST, TNAME, TYPE, NSEAT, MSPEC, GTYPET
+            END IF
 !
           IF ( IDTST .NE. IDSTR ) THEN
               IF ( IAPROC .EQ. NAPERR )                               &
@@ -417,6 +462,11 @@
                   WRITE (NDSE,905) MSPEC, NSEAT, NSPEC, NSEA
               CALL EXTCDE ( 13 )
             END IF
+          IF (GTYPET.NE.GTYPE) THEN
+              IF ( IAPROC .EQ. NAPERR )                               &
+                  WRITE (NDSE,907) GTYPET, GTYPE
+              CALL EXTCDE ( 14 )
+            END IF
           IF (TYPE.EQ.'FULL') THEN
               INTYPE = 2
             ELSE IF (TYPE.EQ.'WIND') THEN
@@ -427,17 +477,84 @@
               INTYPE = 0
             END IF
 !
+!         Bail out if INXOUT.EQ.'GRID' 
+!
+          IF ( INXOUT.EQ.'GRID' ) THEN
+              CLOSE ( NDSR )
+              RETURN
+            END IF
+!
         END IF
 !
   100 CONTINUE
+!
+! Quadtree information
+!
+      IF ( GTYPE.EQ.QAGTYPE ) THEN
+!/SHRD          NSEAL  = NSEA
+!
+!/DIST          IF ( IAPROC .LE. NAPROC ) THEN
+!/DIST              NSEAL  = 1 + (NSEA-IAPROC)/NAPROC
+!/DIST            ELSE
+!/DIST              NSEAL  = 0
+!/DIST            END IF
+          IF ( WRITE ) THEN
+              IF ( IAPROC .EQ. NAPRST ) THEN 
+                  CALL QA_IOQT( NDSR, QTREE(IQGW), 2, ierr=IERR,      &
+                                ndse=NDSEN, nrec=NREC, nsize=NSIZE )
+                  IF ( IERR.NE.0 ) GO TO 805
+                END IF
+            ELSE
+              CALL QA_IOQT( NDSR, QTREE(IQGW), -2, ierr=IERR,         &
+                            ndse=NDSEN, nrec=NREC, nsize=NSIZE )
+              IF ( IERR.NE.0 ) GO TO 804
+            END IF
+!/T
+!/T          WRITE (NDST,9009) IQGW, NQUAD, NSEA,                        &
+!/T                        QTREE(IQGW)%NQUAD,                            &
+!/T                        QTREE(IQGW)%NCELL,                            &
+!/T                        QTREE(IQGW)%NCELL_DEF,                        &
+!/T                        QTREE(IQGW)%LVLREF,                           &
+!/T                        QTREE(IQGW)%LVLMAX,                           &
+!/T                        QTREE(IQGW)%LVLHI,                            &
+!/T                        QTREE(IQGW)%NX0,                              &
+!/T                        QTREE(IQGW)%NY0,                              &
+!/T                        QTREE(IQGW)%UNDEF_TYPE,                       &
+!/T                        QTREE(IQGW)%KEEP_REF,                         &
+!/T                        QTREE(IQGW)%DYNAMIC,                          &
+!/T                        QTREE(IQGW)%IWTORDER
+!/T
+!/T          J = LEN_TRIM(FNMPRE)
+!/T          IF ( IFILE.EQ.1 ) THEN
+!/T              FNAME  = 'Wquad.txt'
+!/T            ELSE
+!/T              FNAME  = 'WquadNNN.txt'
+!/T              WRITE (FNAME(6:8),'(I3.3)') IFILE-1
+!/T            END IF
+!/T          OPEN (91,FILE=FNMPRE(:J)//FNAME,FORM='FORMATTED')
+!/T          CALL QA_IOQT( 91, QTREE(IQGW), 3, ierr=IERR, ndse=NDSEN )
+!/T          CLOSE (91)
+!/T
+!/T          IF ( IFILE.EQ.1 ) THEN
+!/T              FNAME  = 'Wcell.txt'
+!/T            ELSE
+!/T              FNAME  = 'WcellNNN.txt'
+!/T              WRITE (FNAME(6:8),'(I3.3)') IFILE-1
+!/T            END IF
+!/T          OPEN (91,FILE=FNMPRE(:J)//FNAME,FORM='FORMATTED')
+!/T          CALL QA_IOQT( 91, QTREE(IQGW), 4, ierr=IERR, ndse=NDSEN )
+!/T          CLOSE (91)
+        END IF
 !
 !/T      WRITE (NDST,9002) IDSTR, VERINI, GNAME, TYPE,                &
 !/T                        NSEA, NSEAL, NSPEC
 !
 ! TIME if required --------------------------------------------------- *
 !
+      NREC = NREC + 1
+      NREC0 = NREC
       IF (TYPE.EQ.'FULL') THEN
-          RPOS  = 1_8 + LRECL*(2-1_8)
+          RPOS  = 1_8 + LRECL*(NREC-1_8)
           IF ( WRITE ) THEN
               IF ( IAPROC .EQ. NAPRST ) THEN
                 WRITEBUFF(:) = 0.
@@ -475,7 +592,7 @@
                   DO JSEA=1, NSEAL
 !/DIST                    ISEA   = IAPROC + (JSEA-1)*NAPROC
 !/SHRD                    ISEA   = JSEA
-                    NREC   = ISEA + 2
+                    NREC   = ISEA + NREC0
                     RPOS  = 1_8 + LRECL*(NREC-1_8)
                     WRITEBUFF(:) = 0.
                     WRITEBUFF(1:NSPEC) = VA(1:NSPEC,JSEA)
@@ -514,7 +631,7 @@
 !/MPI                          END IF
 !
 !/MPI                        DO ISEA=ISEA0, ISEAN
-!/MPI                          NREC   = ISEA + 2
+!/MPI                          NREC   = ISEA + NREC0
 !/MPI                          JSEA   = 1 + (ISEA-1)/NAPROC
 !/MPI                          IP     = 1 + MOD(ISEA-1,NAPROC)
 !/MPI                          RPOS   = 1_8 + LRECL*(NREC-1_8)
@@ -568,7 +685,7 @@
 !/MPI               DO JSEA = 1, NSEAL_MIN
 !/MPI!                Read NAPROC records into buffer VGBUFF. ------------- *
 !/MPI                 IF ( IAPROC .EQ. NAPROC ) THEN
-!/MPI                     RPOS = 1_8 + (2 + (JSEA - 1_8) * NAPROC) * LRECL
+!/MPI                     RPOS = 1_8 + (NREC0 + (JSEA - 1_8) * NAPROC) * LRECL
 !/MPI                     READ(NDSR, POS=RPOS,ERR=802,IOSTAT=IERR) VGBUFF(:)
 !/MPI                   ELSE
 !/MPI                     VGBUFF(:) = 0.
@@ -585,7 +702,7 @@
 !/MPI               JSEA = NSEAL_MIN + 1
 !/MPI               IF ( JSEA.EQ.NSEAL ) THEN
 !/MPI                  ISEA = IAPROC + (JSEA - 1) * NAPROC
-!/MPI                  NREC = ISEA + 2
+!/MPI                  NREC = ISEA + NREC0
 !/MPI                  RPOS = 1_8 + LRECL*(NREC-1_8)
 !/MPI                  READ (NDSR, POS=RPOS, ERR=802, IOSTAT=IERR)          &
 !/MPI                            (VA(I,JSEA), I=1,NSPEC)
@@ -601,7 +718,7 @@
               DO JSEA=1, NSEAL
 !/DIST                ISEA   = IAPROC + (JSEA-1)*NAPROC
 !/SHRD                ISEA   = JSEA
-                NREC   = ISEA + 2
+                NREC   = ISEA + NREC0
                 RPOS   = 1_8 + LRECL*(NREC-1_8)
                 READ (NDSR,POS=RPOS,ERR=802,IOSTAT=IERR)              &
                          (VA(I,JSEA),I=1,NSPEC)
@@ -617,7 +734,7 @@
 !       water levels. Note that MAPSTA overwrites the one read from the
 !       model definition file, so that it need not be initialized. )
 !
-      NREC   = NSEA + 3
+      NREC   = NSEA + NREC0 + 1
       NPART  = 1 + (NSEA-1)/NSIZE
       NPRTX2 = 1 + (NX-1)/NSIZE
 !
@@ -821,12 +938,20 @@
       CALL EXTCDE ( 30 )
 !
   802 CONTINUE
-      IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,992) IERR
+      IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,992) IERR, RPOS
       CALL EXTCDE ( 31 )
 !
   803 CONTINUE
       IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,993) IERR, RPOS
-      CALL EXTCDE ( 31 )
+      CALL EXTCDE ( 32 )
+!
+  804 CONTINUE
+      IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,994) IERR, NREC
+      CALL EXTCDE ( 33 )
+!
+  805 CONTINUE
+      IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,995) IERR, NREC
+      CALL EXTCDE ( 34 )
 !
 !
 ! Formats
@@ -850,6 +975,9 @@
   906 FORMAT (/' *** WAVEWATCH III ERROR IN W3IORS :'/                &
                '     CONFLICTING TIMES: FILE : ',I10.8,I8.6/          &
                '                       MODEL : ',I10.8,I8.6/)
+  907 FORMAT (/' *** WAVEWATCH III ERROR IN W3IORS :'/                &
+               '     CONFLICTING GTYPE: FILE : ',I8/                  &
+               '                       MODEL : ',I8/)
 !
   990 FORMAT (/' *** WAVEWATCH III WARNING IN W3IORS : '/             &
                '     NO READABLE RESTART FILE, ',                     &
@@ -859,10 +987,16 @@
                '     PREMATURE END OF FILE'/)
   992 FORMAT (/' *** WAVEWATCH III ERROR IN W3IORS : '/               &
                '     ERROR IN READING FROM FILE'/                     &
-               '     IOSTAT =',I5/)
+               '     IOSTAT =',I5,', POS =',I11 /)
   993 FORMAT (/' *** WAVEWATCH III ERROR IN W3IORS : '/               &
                '     ERROR IN WRITING TO FILE'/                       &
                '     IOSTAT =',I5,', POS =',I11 /)
+  994 FORMAT (/' *** WAVEWATCH III ERROR IN QA_IOQT FROM W3IORS : '/  &
+               '     ERROR IN READING FROM FILE'/                     &
+               '     IOSTAT =',I5,', NREC =',I11 /)
+  995 FORMAT (/' *** WAVEWATCH III ERROR IN QA_IOQT FROM W3IORS : '/  &
+               '     ERROR IN WRITING TO FILE'/                       &
+               '     IOSTAT =',I5,', NREC =',I11 /)
 !
 !
 !/T 9000 FORMAT (' TEST W3IORS : TEST PARAMETERS :'/                  &
@@ -887,6 +1021,22 @@
 !/T 9006 FORMAT (' TEST W3IORS : SPECTRA PROCESSED ')
 !/T 9007 FORMAT (' TEST W3IORS : WATER LEVELS ETC. PROCESSED ')
 !/T 9008 FORMAT (' TEST W3IORS : WATER LEVELS ETC. PROCESSED (DUMMY)')
+!/T 9009 FORMAT ('QUADTREE NO.  : ',I9/                               &
+!/T              ' NQUAD(ALLOC) : ',I9/                               &
+!/T              '  NSEA(ALLOC) : ',I9/                               &
+!/T              '  QTREE PARS. : '/                                  &
+!/T              '        NQUAD : ',I9/                               &
+!/T              '        NCELL : ',I9/                               &
+!/T              '    NCELL_DEF : ',I9/                               &
+!/T              '       LVLREF : ',I9/                               &
+!/T              '       LVLMAX : ',I9/                               &
+!/T              '        LVLHI : ',I9/                               &
+!/T              '          NX0 : ',I9/                               &
+!/T              '          NY0 : ',I9/                               &
+!/T              '   UNDEF_TYPE : ',I9/                               &
+!/T              '     KEEP_REF : ',L9/                               &
+!/T              '      DYNAMIC : ',L9/                               &
+!/T              '     IWTORDER : ',I9)
 !
 !/T 9020 FORMAT (' TEST W3IORS : INTYPE = ',A,', PERFORMED BY W3INIT')
 !/
