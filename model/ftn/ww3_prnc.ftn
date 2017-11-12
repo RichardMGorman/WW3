@@ -23,6 +23,8 @@
 !/    24-Oct-2014 : Allows "As Is" curvilinear grids    ( version 5.02 )
 !/    14-Oct-2015 : Add a check for latitude reversed   ( version 5.11 )
 !/    20-Jan-2017 : Update to new W3GSRUMD APIs         ( version 6.02 )
+!/    12-Nov-2017 : Allow for quadtrees, arbitrary      ( version  )
+!/                  time/spatial dim & var names (R. Gorman)
 !/
 !/    Copyright 2009 National Weather Service (NWS),
 !/       National Oceanic and Atmospheric Administration.  All rights
@@ -209,7 +211,11 @@
       CHARACTER(LEN=100)      :: FIELDSNAME(4)
       CHARACTER(LEN=1024)     :: STRDIMSNAME
       CHARACTER(LEN=100)      :: DIMSNAME(2)
-      INTEGER                 :: NIDIMS, NFIELDS
+      CHARACTER(LEN=1024)     :: STRVARSNAME
+      CHARACTER(LEN=100)      :: SPVARSNAME(2)
+      CHARACTER(LEN=100)      :: TDIMNAME
+      CHARACTER(LEN=100)      :: TVARNAME
+      INTEGER                 :: NIDIMS, NFIELDS, NISPVARS
       INTEGER                 :: JPC
       INTEGER(KIND=4)         :: IX, IY, JX, NXLM
       INTEGER                 :: NDSI, NDSM, NDSDAT, NDSTRC, NTRACE,  &
@@ -282,8 +288,10 @@
       CHARACTER*256             :: TIDE_file
       INTEGER                   :: TIDEFLAG
       CHARACTER                 :: TIDECONSTNAMES*1024
-      CHARACTER(LEN=100)         :: LIST(70)
+      CHARACTER(LEN=100)        :: LIST(70)
       LOGICAL                   :: TIDESWITCH, DISTSWITCH 
+      LOGICAL                   :: NEW_QT, FLQA
+      INTEGER                   :: NYOUT
 
 !/TIDET      INTEGER, PARAMETER      :: LRB = 4
 !/TIDET      INTEGER(KIND=8)         :: RPOS
@@ -377,6 +385,7 @@
 !--- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ! 2.  Read model definition file.
 !
+      IQGB = 1
       CALL W3IOGR ( 'READ', NDSM )
       IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,902) GNAME
       ALLOCATE ( IX21(NX,NY), IX22(NX,NY), IY21(NX,NY), IY22(NX,NY),  &
@@ -466,10 +475,10 @@
       IF ( IAPROC .EQ. NAPOUT .AND.FLBERG ) WRITE (NDSO,938)
       IF ( IAPROC .EQ. NAPOUT .AND.FLSTAB ) WRITE (NDSO,939)
 !
+!     Read the spatial dimension names
       CALL NEXTLN ( COMSTR , NDSI , NDSE )
       READ (NDSI,'(A)',END=801,ERR=802,IOSTAT=IERR) STRDIMSNAME
 !
-      FIELDSNAME(:)=''
       DIMSNAME(:)=''
       CALL STRSPLIT(STRDIMSNAME,DIMSNAME)
       ! Counts the number of dimensions
@@ -477,6 +486,28 @@
       DO I=1,2
         IF (LEN_TRIM(DIMSNAME(I)).NE.0) NIDIMS=NIDIMS+1
       ENDDO
+!
+!     Read the spatial variable names
+      CALL NEXTLN ( COMSTR , NDSI , NDSE )
+      READ (NDSI,'(A)',END=801,ERR=802,IOSTAT=IERR) STRVARSNAME
+!
+      SPVARSNAME(:)=''
+      CALL STRSPLIT(STRVARSNAME,SPVARSNAME)
+      ! Counts the number of spatial variables
+      NISPVARS=0
+      DO I=1,2
+        IF (LEN_TRIM(SPVARSNAME(I)).NE.0) NISPVARS=NISPVARS+1
+      ENDDO
+!
+!     Read the time dimension name
+      CALL NEXTLN ( COMSTR , NDSI , NDSE )
+      READ (NDSI,'(A)',END=801,ERR=802,IOSTAT=IERR) TDIMNAME
+!
+!     Read the time variable name
+      CALL NEXTLN ( COMSTR , NDSI , NDSE )
+      READ (NDSI,'(A)',END=801,ERR=802,IOSTAT=IERR) TVARNAME
+!
+!     Read the names of netcdf variables to use
 !
       CALL NEXTLN ( COMSTR , NDSI , NDSE )
       READ (NDSI,'(A)',END=801,ERR=802,IOSTAT=IERR) STRFIELDSNAME
@@ -524,6 +555,7 @@
 ! gets requested variables ids and dimensions
 !
       DO I=1,NFIELDS
+!/T        WRITE(NDST,*) 'TEST WW3_PRNC: INQ. ',TRIM(FIELDSNAME(I))
         iret = nf90_inq_varid(ncid,TRIM(FIELDSNAME(I)),varidf(I))
         CALL check_err(iret)
         iret = nf90_inquire_variable(ncid, varidf(I), ndims=NDIMSVAR,  &
@@ -548,7 +580,9 @@
       hhref=0.
       mmref=0.
       ssref=0.
-      iret=nf90_inq_varid(ncid,"time",varidtmp)
+!/T        WRITE(NDST,*) 'TEST WW3_PRNC: INQ. ',TRIM(TVARNAME)
+      iret=nf90_inq_varid(ncid,TRIM(TVARNAME),varidtmp)
+      IF ( iret/=nf90_noerr ) iret=nf90_inq_varid(ncid,"time",varidtmp)
       IF ( iret/=nf90_noerr ) iret=nf90_inq_varid(ncid,"MT",varidtmp)
       CALL check_err(iret)
       iret=nf90_get_att(ncid,varidtmp,"calendar",calendar)
@@ -597,7 +631,9 @@
       NYI=0 
       NDIMSGRID=2
       DO i=1,NDIMSVAR
-        IF (dimname(i) .EQ. "time".OR.dimname(i) .EQ."MT") NTI = dimln(i)
+!/T        WRITE(NDST,*) 'TEST WW3_PRNC: DIMENSION ',DIMNAME(I)
+        IF (dimname(i) .EQ. TDIMNAME) NTI = dimln(i)
+        !IF (dimname(i) .EQ. "time".OR.dimname(i) .EQ."MT") NTI = dimln(i)
         IF (dimname(i) .EQ. DIMSNAME(1)) NXI = dimln(i)
         IF (dimname(i) .EQ. DIMSNAME(1).AND.NIDIMS.EQ.1) THEN
           NDIMSGRID=1
@@ -613,12 +649,15 @@
       IF (ITYPE.NE.1.AND.ITYPE.NE.6) THEN
         ALLOCATE (ALA(NXI,NYI))
         ALLOCATE (ALO(NXI,NYI))
-        iret=nf90_inq_varid(ncid,"longitude",varidtmp)
+!/T        WRITE(NDST,*) 'TEST WW3_PRNC: INQ. ',SPVARSNAME(1)
+        iret=nf90_inq_varid(ncid,TRIM(SPVARSNAME(1)),varidtmp)
+        IF ( iret/=nf90_noerr ) iret=nf90_inq_varid(ncid,"longitude",varidtmp)
         IF ( iret/=nf90_noerr ) iret=nf90_inq_varid(ncid,"lon",varidtmp)
         IF ( iret/=nf90_noerr ) iret=nf90_inq_varid(ncid,"Longitude",varidtmp)
         IF ( iret/=nf90_noerr ) iret=nf90_inq_varid(ncid,"x",varidtmp)
         IF ( iret/=nf90_noerr ) iret=nf90_inq_varid(ncid,"X",varidtmp)
-        IRET = nf90_inquire_variable(ncid, varidtmp, ndims = numDimsLon, natts = numAttsLon)
+        call check_err(iret)
+        iret = nf90_inquire_variable(ncid, varidtmp, ndims = numDimsLon, natts = numAttsLon)
         call check_err(iret)
         IF (numDimsLon.EQ.1) THEN
           iret=nf90_get_var(ncid,varidtmp,X0I,start=(/1/))
@@ -639,11 +678,14 @@
           call check_err(iret)
           END IF
 !
-        iret=nf90_inq_varid(ncid,"latitude",varidtmp)
+!/T        WRITE(NDST,*) 'TEST WW3_PRNC: INQ. ',SPVARSNAME(2)
+        iret=nf90_inq_varid(ncid,TRIM(SPVARSNAME(2)),varidtmp)
+        IF ( iret/=nf90_noerr ) iret=nf90_inq_varid(ncid,"latitude",varidtmp)
         IF ( iret/=nf90_noerr ) iret=nf90_inq_varid(ncid,"lat",varidtmp)
         IF ( iret/=nf90_noerr ) iret=nf90_inq_varid(ncid,"Latitude",varidtmp)
         IF ( iret/=nf90_noerr ) iret=nf90_inq_varid(ncid,"y",varidtmp)
         IF ( iret/=nf90_noerr ) iret=nf90_inq_varid(ncid,"Y",varidtmp)
+        CALL check_err(iret)
         iret = nf90_inquire_variable(ncid, varidtmp, ndims = numDimsLon, natts = numAttsLon)
         CALL check_err(iret)
         iret=nf90_get_var(ncid,varidtmp,Y0I, start=(/1/))
@@ -669,7 +711,7 @@
 !
 ! gets FillValue
 !
-      iret=nf90_inq_varid(ncid,FIELDSNAME(1),varidtmp)
+      iret=nf90_inq_varid(ncid,TRIM(FIELDSNAME(1)),varidtmp)
       CALL check_err(iret)
       iret=nf90_get_att(ncid,varidtmp,"_FillValue", fillvalue)
 !
@@ -687,6 +729,11 @@
 !
           RW(1) = FACTOR*X0        ; RW(2) = FACTOR*MAXX
           RW(3) = FACTOR*Y0        ; RW(4) = FACTOR*MAXY
+        ELSE IF ( GTYPE.EQ.QAGTYPE ) THEN
+          RW(1) = FACTOR*MINVAL(XGRD(1,:)) 
+          RW(2) = FACTOR*MAXVAL(XGRD(1,:)) 
+          RW(3) = FACTOR*MINVAL(YGRD(1,:))
+          RW(4) = FACTOR*MAXVAL(YGRD(1,:))
         ELSE
           RW(1) = FACTOR*XGRD(1,1) ; RW(2) = FACTOR*XGRD(NY,NX)
           RW(3) = FACTOR*YGRD(1,1) ; RW(4) = FACTOR*YGRD(NY,NX)
@@ -773,13 +820,14 @@
 ! ... construct Interpolation data
 !
 !/T1              WRITE (NDST,9045)
-          IF (GTYPE .NE. UNGTYPE) THEN
+          IF ( GTYPE .NE. UNGTYPE .AND. GTYPE.NE.QAGTYPE ) THEN
             DO IY=1,NY
               DO IX=1,NX
-                INGRID = W3GRMP( GSI, XGRD(IY,IX), YGRD(IY,IX),      &
+                INGRID = W3GRMP( GSI, XGRD(IY,IX), YGRD(IY,IX),       &
                                  IS, JS, RW )
                 IF ( .NOT.INGRID ) THEN
-                    IF ( IAPROC .EQ. NAPOUT ) WRITE(NDSO,1042) IX, IY, XGRD(IY,IX), YGRD(IY,IX)
+                  IF ( IAPROC .EQ. NAPOUT )                           &
+                      WRITE(NDSO,1042) IX, IY, XGRD(IY,IX), YGRD(IY,IX)
                   IX21(IX,IY) = 1
                   IX22(IX,IY) = 1
                   IY21(IX,IY) = 1
@@ -804,10 +852,15 @@
 !/T1                    RD11(IX,IY),RD12(IX,IY),RD21(IX,IY),RD22(IX,IY)
                 END DO
               END DO
-          ELSE ! GTYPE .NE. UNGTYPE
+          ELSE ! GTYPE .NE. UNGTYPE .AND. GTYPE.NE.QAGTYPE
             DO IX=1, NX
-              X = XYB(IX,1)
-              Y = XYB(IX,2)
+              IF ( GTYPE.EQ.UNGTYPE ) THEN
+                X = XYB(IX,1)
+                Y = XYB(IX,2)
+              ELSE IF ( GTYPE.EQ.QAGTYPE ) THEN
+                X = XGRD(1,IX)
+                Y = YGRD(1,IX)
+              END IF
               IX21(IX,1) =   1 + INT(MOD(360.+(X-X0I),360.)/SXI)
 !
 ! Manages the simple closure of the grid
@@ -869,7 +922,7 @@
               RD12(IX,1) = EFAC * (1.-RW(1)) *    RW(2)
               RD22(IX,1) = EFAC *    RW(1)   *    RW(2)
             END DO ! IX=1, NX
-          END IF ! GTYPE .NE. UNGTYPE
+          END IF ! GTYPE .NE. UNGTYPE .AND. GTYPE.NE.QAGTYPE
 !
           CALL W3GSUD( GSI )
 
@@ -1110,14 +1163,19 @@
 !/TIDE            TIDE_NDEF = NFIELDS
 !/TIDE            CALL TIDE_FIND_INDICES_ANALYSIS(LIST)
 !/TIDE            END IF
+            NYOUT = NY
+            IF ( GTYPE.EQ.QAGTYPE ) NYOUT = QTREE(IQGB)%NQUAD
             IF ( IAPROC .EQ. NAPOUT )  &
                CALL W3FLDO ( 'WRITE', IDFLD, NDSDAT, NDST, NDSE,      &
-               NX, NY, GTYPE, IERR, FPRE=FNMPRE(:J),                  &
+               NX, NYOUT, GTYPE, IERR, FPRE=FNMPRE(:J),               &
                FHDR=FLHDR, TIDEFLAGIN=TIDEFLAG)
+            IF ( GTYPE.EQ.QAGTYPE) CALL QA_IOQT(NDSDAT, QTREE(IQGB),  &
+                                                1, IERR, ndse=0 )
         ELSE
+          NYOUT = 0
           IF ( IAPROC .EQ. NAPOUT )  &
           CALL W3FLDO ( 'WRITE', IDFLD, NDSDAT, NDST, NDSE,           &
-               RECLDT, 0, GTYPEDUM, IERR, FPRE=FNMPRE(:J) )
+               RECLDT, NYOUT, GTYPEDUM, IERR, FPRE=FNMPRE(:J) )
         END IF
 !/TIDET   IF (TIDEFLAG.GT.0) THEN  
 !/TIDET   LRECL  = TIDE_MF*LRB*NFIELDS*2
@@ -1171,7 +1229,8 @@
           IF (NAPROC.EQ.1) WRITE(NDSE,*) 'This can take hours ...Consider running this with MPI '
           END IF
 !/MPI     END IF
-        iret=nf90_inq_varid(ncid,"time",varidtmp)
+        iret=nf90_inq_varid(ncid,TRIM(TVARNAME),varidtmp)
+        IF ( iret/=nf90_noerr ) iret=nf90_inq_varid(ncid,"time",varidtmp)
         IF ( iret/=nf90_noerr ) iret=nf90_inq_varid(ncid,"MT",varidtmp)
         CALL check_err(iret)
         ALLOCATE(ALLTIMES(NTI))
@@ -1845,17 +1904,21 @@
 !
         IF ( ITYPE .LE. 4 .OR. ITYPE.EQ.6 ) THEN
 !/O3      IF ( IAPROC .EQ. NAPOUT )  WRITE (NDSO,977)
-          IF ( IAPROC .EQ. NAPOUT ) CALL W3FLDG ('WRITE', IDFLD, NDSDAT, NDST, NDSE, NX, NY,  &
-                       NX, NY, TIME, TIME, TIME, FX, FY, FA, TIME,  &
-                       FX, FY, FA, IERR)
+          FLQA = GTYPE.EQ.QAGTYPE
+          NEW_QT = .FALSE.
+          IF ( IAPROC .EQ. NAPOUT ) CALL W3FLDG ('WRITE', IDFLD,      &
+                       NDSDAT, NDST, NDSE, NX, NY, NX, NY, TIME,      &
+                       TIME, TIME, FX, FY, FA, TIME, FX, FY, FA,      &
+                       IERR, FLQA, new_qt=NEW_QT )
 
         ELSE IF ( ITYPE .EQ. 5 ) THEN
           IF ( NDAT .EQ. 0 ) THEN
 !/O3        IF ( IAPROC .EQ. NAPOUT )  WRITE (NDSO,978)
           ELSE
 !/O3        IF ( IAPROC .EQ. NAPOUT )  WRITE (NDSO,977)
-            IF ( IAPROC .EQ. NAPOUT ) CALL W3FLDD ('WRITE', IDFLD, NDSDAT, NDST, NDSE, TIME,&
-                         TIME, RECLDT, NDAT, IDAT, DATA, IERR )
+            IF ( IAPROC .EQ. NAPOUT ) CALL W3FLDD ('WRITE', IDFLD,    &
+                              NDSDAT, NDST, NDSE, TIME,               &
+                              TIME, RECLDT, NDAT, IDAT, DATA, IERR )
             DEALLOCATE ( DATA )
           END IF
         END IF
