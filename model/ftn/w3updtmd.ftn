@@ -141,6 +141,7 @@
 !/    15-Dec-2004 : Multiple grid version.              ( version 3.06 )
 !/    27-Aug-2015 : Rename DT0,DTT by DT0T,DT0N         ( version 5.10 )
 !/    23-Mar-2016 : SMC grid Arctic part adjustment.    ( version 5.18 )
+!/    11-Nov-2017 : Allow for quadtrees (R. Gorman)     ( version  )
 !/
 !  1. Purpose :
 !
@@ -202,7 +203,9 @@
 ! 10. Source code :
 !
 !/ ------------------------------------------------------------------- /
-      USE W3GDATMD, ONLY: NX, NY, NSEA, MAPSF
+      USE W3GDATMD, ONLY: NX, NY, NSEA, MAPSF, MAPSTA
+      USE W3GDATMD, ONLY: GTYPE, QAGTYPE, NAUX_QA, IAUX_QA, IQGW,     &
+                          IQGC0, IQGCN
 !/ARC      USE W3GDATMD, ONLY: NARC, NGLO, ANGARC 
       USE W3WDATMD, ONLY: TIME
       USE W3ADATMD, ONLY: CX, CY, CA0, CAI, CD0, CDI
@@ -224,6 +227,8 @@
       INTEGER                 :: ISEA, IX, IY
 !/S      INTEGER, SAVE           :: IENT = 0
       REAL                    :: D0, DN, DD, DT0N, DT0T, RD, CABS, CDIR
+      LOGICAL                 :: IS_QA
+      INTEGER                 :: IXC
 !/CRT2      REAL                    :: RD2, CI2
 !/TIDE      INTEGER          :: J,K
 !/TIDE      INTEGER(KIND=4)  :: TIDE_KD0, INT24, INTDYS       ! "Gregorian day constant"
@@ -235,21 +240,34 @@
 !/
 !/S      CALL STRACE (IENT, 'W3UCUR')
 !
+! 0. For quadtrees, identify columns of the auxiliary index map 
+!    corresponding to the initial & final current quadtrees
+!    
+      IS_QA = GTYPE.EQ.QAGTYPE     
+!
 ! 1.  Prepare auxiliary arrays
 !
       IF ( FLFRST ) THEN
           DO ISEA=1, NSEA
             IX        = MAPSF(ISEA,1)
             IY        = MAPSF(ISEA,2)
-            CA0(ISEA) = SQRT ( CX0(IX,IY)**2 + CY0(IX,IY)**2 )
-            CAI(ISEA) = SQRT ( CXN(IX,IY)**2 + CYN(IX,IY)**2 )
+            IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
+            ! If a quadtree current array is used, find index to it:
+            IXC = IX
+            IF ( IS_QA .AND. IQGC0.GT.0 ) IXC = IAUX_QA(ISEA,IQGC0)
+            IF ( IXC.LE.0 ) CYCLE
+            CA0(ISEA) = SQRT ( CX0(IXC,IY)**2 + CY0(IXC,IY)**2 )
             IF ( CA0(ISEA) .GT. 1.E-7) THEN
-                D0     = MOD ( TPI+ATAN2(CY0(IX,IY),CX0(IX,IY)) , TPI )
+                D0     = MOD ( TPI+ATAN2(CY0(IXC,IY),CX0(IXC,IY)) , TPI )
               ELSE
                 D0     = 0
               END IF
+            ! If a quadtree current array is used, find index to it:
+            IF ( IS_QA .AND. IQGCN.GT.0 ) IXC = IAUX_QA(ISEA,IQGCN)
+            IF ( IXC.LE.0 ) CYCLE
+            CAI(ISEA) = SQRT ( CXN(IXC,IY)**2 + CYN(IXC,IY)**2 )
             IF ( CAI(ISEA) .GT. 1.E-7) THEN
-                DN     = MOD ( TPI+ATAN2(CYN(IX,IY),CXN(IX,IY)) , TPI )
+                DN     = MOD ( TPI+ATAN2(CYN(IXC,IY),CXN(IXC,IY)) , TPI )
               ELSE
                 DN     = D0
               END IF
@@ -306,25 +324,28 @@
 !/TIDE! VUF should only be updated in latitude changes significantly ...
 !/TIDE          IX        = MAPSF(ISEA,1)
 !/TIDE          IY        = MAPSF(ISEA,2)
+!/TIDE          IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
 !/TIDE          CALL SETVUF_FAST(h,pp,s,p,enp,dh,dpp,ds,dp,dnp,tau,YGRD(IY,IX),FX,UX,VX)
-!/TIDE          WCURTIDEX = CXTIDE(IX,IY,1,1)
-!/TIDE          WCURTIDEY = CYTIDE(IX,IY,1,1)
+!/TIDE          IXC = IX
+!/TIDE          IF ( IS_QA .AND. IQGCN.GT.0 ) IXC = IAUX_QA(ISEA,IQGCN)
+!/TIDE          WCURTIDEX = CXTIDE(IXC,IY,1,1)
+!/TIDE          WCURTIDEY = CYTIDE(IXC,IY,1,1)
 !/TIDE 
 !/TIDE            DO J=2,TIDE_MF
-!/TIDE              TIDE_ARGX=(VX(J)+UX(J))*twpi-CXTIDE(IX,IY,J,2)*DERA
-!/TIDE              TIDE_ARGY=(VX(J)+UX(J))*twpi-CYTIDE(IX,IY,J,2)*DERA
-!/TIDE              WCURTIDEX = WCURTIDEX+FX(J)*CXTIDE(IX,IY,J,1)*COS(TIDE_ARGX)
-!/TIDE              WCURTIDEY = WCURTIDEY+FX(J)*CYTIDE(IX,IY,J,1)*COS(TIDE_ARGY)                    
+!/TIDE              TIDE_ARGX=(VX(J)+UX(J))*twpi-CXTIDE(IXC,IY,J,2)*DERA
+!/TIDE              TIDE_ARGY=(VX(J)+UX(J))*twpi-CYTIDE(IXC,IY,J,2)*DERA
+!/TIDE              WCURTIDEX = WCURTIDEX+FX(J)*CXTIDE(IXC,IY,J,1)*COS(TIDE_ARGX)
+!/TIDE              WCURTIDEY = WCURTIDEY+FX(J)*CYTIDE(IXC,IY,J,1)*COS(TIDE_ARGY)                    
 !/TIDE              END DO
 !/TIDE     
 
 !/TIDET !Verification 
 !/TIDET         IF (ISEA.EQ.1) THEN 
 !/TIDET
-!/TIDET            TIDE_AMPC(1:NTIDE,1)=CXTIDE(IX,IY,1:NTIDE,1)
-!/TIDET            TIDE_PHG(1:NTIDE,1 )=CXTIDE(IX,IY,1:NTIDE,2)
-!/TIDET            TIDE_AMPC(1:NTIDE,2)=CYTIDE(IX,IY,1:NTIDE,1)
-!/TIDET            TIDE_PHG(1:NTIDE,2) =CYTIDE(IX,IY,1:NTIDE,2)
+!/TIDET            TIDE_AMPC(1:NTIDE,1)=CXTIDE(IXC,IY,1:NTIDE,1)
+!/TIDET            TIDE_PHG(1:NTIDE,1 )=CXTIDE(IXC,IY,1:NTIDE,2)
+!/TIDET            TIDE_AMPC(1:NTIDE,2)=CYTIDE(IXC,IY,1:NTIDE,1)
+!/TIDET            TIDE_PHG(1:NTIDE,2) =CYTIDE(IXC,IY,1:NTIDE,2)
 !/TIDET
 !/TIDET              WRITE(993,'(A,F20.2,13F8.3)') 'TEST ISEA 0:',    &
 !/TIDET                          d1,H,S,TAU,pp,s,p,enp,dh,dpp,ds,dp,dnp,YGRD(IY,IX)
@@ -396,6 +417,7 @@
 !/    16-Sep-2013 : Rotating wind for Arctic part.      ( version 4.11 )
 !/    27-May-2014 : Adding OMPG parallelizations dir.   ( version 5.02 )
 !/    27-Aug-2015 : Rename DT0,DTT by DT0T,DT0N         ( version 5.10 )
+!/    11-Nov-2017 : Allow for quadtrees (R. Gorman)     ( version  )
 !/
 !  1. Purpose :
 !
@@ -465,7 +487,9 @@
 ! 10. Source code :
 !
 !/ ------------------------------------------------------------------- /
-      USE W3GDATMD, ONLY: NX, NY, NSEA, MAPSF
+      USE W3GDATMD, ONLY: NX, NY, NSEA, MAPSF, MAPSTA
+      USE W3GDATMD, ONLY: GTYPE, QAGTYPE, NAUX_QA, IAUX_QA, IQGW,     &
+                          IQGA0, IQGAN
 !/WCOR      USE W3GDATMD, ONLY:   WWCOR
 !/RWND      USE W3GDATMD, ONLY:   RWINDC
 !/ST2      USE W3GDATMD, ONLY: ZWIND, OFSTAB, FFNG, FFPS, CCNG, CCPS, SHSTAB
@@ -492,10 +516,17 @@
 !/WNT2      REAL                    :: RD2
 !/STAB2      REAL                    :: STAB0, STAB, THARG1, THARG2, COR1, COR2
       REAL                    :: UDARC
+      LOGICAL                 :: IS_QA
+      INTEGER                 :: IXA
 !/
 !/ ------------------------------------------------------------------- /
 !/
 !/S      CALL STRACE (IENT, 'W3UWND')
+!
+! 0. For quadtrees, identify columns of the auxiliary index map 
+!    corresponding to the initial & final wind quadtrees
+!
+      IS_QA = GTYPE.EQ.QAGTYPE
 !
 ! 1.  Prepare auxiliary arrays
 !
@@ -503,15 +534,23 @@
           DO ISEA=1, NSEA
             IX        = MAPSF(ISEA,1)
             IY        = MAPSF(ISEA,2)
-            UA0(ISEA) = SQRT ( WX0(IX,IY)**2 + WY0(IX,IY)**2 )
-            UAI(ISEA) = SQRT ( WXN(IX,IY)**2 + WYN(IX,IY)**2 )
+            IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
+            IXA = IX
+            ! If a quadtree wind array is used, find index to it:
+            IF ( IS_QA .AND. IQGA0.GT.0 ) IXA = IAUX_QA(ISEA,IQGA0)
+            IF ( IXA.LE.0 ) CYCLE
+            UA0(ISEA) = SQRT ( WX0(IXA,IY)**2 + WY0(IXA,IY)**2 )
             IF ( UA0(ISEA) .GT. 1.E-7) THEN
-                D0     = MOD ( TPI+ATAN2(WY0(IX,IY),WX0(IX,IY)) , TPI )
+                D0     = MOD ( TPI+ATAN2(WY0(IXA,IY),WX0(IXA,IY)) , TPI )
               ELSE
                 D0     = 0
               END IF
+            AS0(ISEA) = DT0(IXA,IY)
+            IF ( IS_QA .AND. IQGAN.GT.0 ) IXA = IAUX_QA(ISEA,IQGAN)
+            IF ( IXA.LE.0 ) CYCLE
+            UAI(ISEA) = SQRT ( WXN(IXA,IY)**2 + WYN(IXA,IY)**2 )
             IF ( UAI(ISEA) .GT. 1.E-7) THEN
-                DN     = MOD ( TPI+ATAN2(WYN(IX,IY),WXN(IX,IY)) , TPI )
+                DN     = MOD ( TPI+ATAN2(WYN(IXA,IY),WXN(IXA,IY)) , TPI )
               ELSE
                 DN     = D0
               END IF
@@ -524,8 +563,7 @@
             IF (ABS(DD).GT.PI) DD = DD - TPI*SIGN(1.,DD)
             UDI(ISEA) = DD
             UAI(ISEA) = UAI(ISEA) - UA0(ISEA)
-            AS0(ISEA) = DT0(IX,IY)
-            ASI(ISEA) = DTN(IX,IY) - DT0(IX,IY)
+            ASI(ISEA) = DTN(IXA,IY) - AS0(ISEA)
             END DO
         END IF
 !
@@ -547,6 +585,9 @@
 !/OMPG/!$OMP PARALLEL DO PRIVATE (ISEA,UI2,UXR,UYR,UDARC)
 !
       DO ISEA=1, NSEA
+        IX        = MAPSF(ISEA,1)
+        IY        = MAPSF(ISEA,2)
+        IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
 !
         UA(ISEA) = UA0(ISEA) + RD * UAI(ISEA)
 !/WNT2        UI2      = SQRT ( RD2 *      UA0(ISEA)**2 +             &
@@ -580,6 +621,9 @@
 !/RWND      IF ( FLCUR ) THEN
 !
 !/RWND          DO ISEA=1, NSEA
+!/RWND            IX        = MAPSF(ISEA,1)
+!/RWND            IY        = MAPSF(ISEA,2)
+!/RWND            IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
 !/RWND            UXR        = UA(ISEA)*COS(UD(ISEA)) - RWINDC*CX(ISEA)
 !/RWND            UYR        = UA(ISEA)*SIN(UD(ISEA)) - RWINDC*CY(ISEA)
 !/RWND            U10 (ISEA) = MAX ( 0.001 , SQRT(UXR**2+UYR**2) )
@@ -591,6 +635,9 @@
 !/OMPG/!$OMP PARALLEL DO PRIVATE (ISEA)
 !
           DO ISEA=1, NSEA
+            IX        = MAPSF(ISEA,1)
+            IY        = MAPSF(ISEA,2)
+            IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
             U10 (ISEA) = MAX ( UA(ISEA) , 0.001 )
             U10D(ISEA) = UD(ISEA)
             END DO
@@ -612,6 +659,9 @@
 !/STAB2      STAB0  = ZWIND * GRAV / 273.
 !
 !/STAB2      DO ISEA=1, NSEA
+!/STAB2        IX        = MAPSF(ISEA,1)
+!/STAB2        IY        = MAPSF(ISEA,2)
+!/STAB2        IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
 !/STAB2        STAB   = STAB0 * AS(ISEA) / MAX(5.,U10(ISEA))**2
 !/STAB2        STAB   = MAX ( -1. , MIN ( 1. , STAB ) )
 !
@@ -653,6 +703,7 @@
 !/    30-Oct-2009 : Implement curvilinear grid type.    ( version 3.14 )
 !/                  (W. E. Rogers & T. J. Campbell, NRL)
 !/    30-Oct-2009 : Implement curvilinear grid type.    ( version 3.14 )
+!/    11-Nov-2017 : Allow for quadtrees (R. Gorman)     ( version  )
 !/
 !  1. Purpose :
 !
@@ -707,10 +758,11 @@
 ! 10. Source code :
 !
 !/ ------------------------------------------------------------------- /
-      USE W3GDATMD, ONLY: NX, NY, NSEA, NSEAL, MAPSF,                 &
+      USE W3GDATMD, ONLY: NX, NY, NSEA, NSEAL, MAPSF, MAPSTA,         &
                           NK, NTH, TH, SIG, DTH, DSIP, UNGTYPE,       &
                           RLGTYPE, CLGTYPE, GTYPE, FLAGLL,            &
-                          HPFAC, HQFAC
+                          HPFAC, HQFAC, SX, SY
+      USE W3GDATMD, ONLY: QTREE, IQGW, QAGTYPE   
       USE W3ADATMD, ONLY: U10, U10D, CG
 !/T      USE W3ARRYMD, ONLY : PRTBLK
 !
@@ -748,12 +800,22 @@
 !
 !  this is not clear what is going on betwen w3init and this ... 
       A(:,:,:)=0
+      ALFA =0.
+      FP = 1.
+      YLN =0.
+!/T      write(ndst,*) 'TEST W3UINI, NSEAL = ',NSEAL
       DO JSEA=1, NSEAL
 !/DIST        ISEA   = IAPROC + (JSEA-1)*NAPROC
 !/SHRD        ISEA   = JSEA
 !
         IF (GTYPE.EQ.UNGTYPE) THEN 
           XGR=1.  ! to be fixed later 
+        ELSE IF ( GTYPE.EQ.QAGTYPE ) THEN
+          IX     = MAPSF(ISEA,1)
+          IY     = MAPSF(ISEA,2)
+          IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
+          ! Use the reference grid spacing everywhere
+          XGR    = 0.5 * SQRT(SX**2+SY**2)
         ELSE
           IX     = MAPSF(ISEA,1)
           IY     = MAPSF(ISEA,2)
@@ -783,6 +845,11 @@
       DO IK=1, NK
         FR     = SIG(IK) * TPIINV
         DO JSEA=1, NSEAL
+!/DIST        ISEA   = IAPROC + (JSEA-1)*NAPROC
+!/SHRD        ISEA   = JSEA
+          IX     = MAPSF(ISEA,1)
+          IY     = MAPSF(ISEA,2)
+          IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
 !
 !/ ----- INLINED EJ5P (REDUCED) -------------------------------------- /
 !
@@ -802,6 +869,9 @@
       DO JSEA=1, NSEAL
 !/DIST        ISEA   = IAPROC + (JSEA-1)*NAPROC
 !/SHRD        ISEA   = JSEA
+        IX     = MAPSF(ISEA,1)
+        IY     = MAPSF(ISEA,2)
+        IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
 !
         U10DIR = U10D(ISEA)
         D1INT  = 0.
@@ -829,6 +899,9 @@
 !/T      MAPOUT = 0
 !
 !/T      DO ISEA=IAPROC, NSEA, NAPROC
+!/T        IX     = MAPSF(ISEA,1)
+!/T        IY     = MAPSF(ISEA,2)
+!/T        IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
 !/T        JSEA   = 1 + (ISEA-1)/NAPROC
 !/T        ETOT   = 0.
 !/T        DO IK=1, NK
@@ -1264,6 +1337,7 @@
 !/                  activation of grid point.
 !/    06-Jun-2012 : Porting bugfixes from 3.14 to 4.07  ( version 4.07 )
 !/    28-Mar-2014 : Adapting to ICx source terms        ( version 4.18 )
+!/    11-Nov-2017 : Allow for quadtrees (R. Gorman)     ( version  )
 !/
 !  1. Purpose :
 !
@@ -1323,6 +1397,8 @@
 !/ ------------------------------------------------------------------- /
       USE W3GDATMD, ONLY: NX, NY, NSEA, NSEAL, MAPSF, MAPSTA, MAPST2, &
                           NTH, NK, NSPEC, SIG, TH, DTH, FICEN
+      USE W3GDATMD, ONLY: GTYPE, QAGTYPE, NAUX_QA, IAUX_QA, IQGW,     &
+                          IQGIN
       USE W3WDATMD, ONLY: TIME, TICE, ICE, BERG, UST
 !!    USE W3ADATMD, ONLY: U10, U10D, CG
       USE W3ADATMD, ONLY: CG
@@ -1341,6 +1417,8 @@
 !/S      INTEGER, SAVE            :: IENT = 0
       INTEGER                 :: MAPICE(NY,NX)
       LOGICAL                 :: LOCAL
+      LOGICAL                 :: IS_QA
+      INTEGER                 :: IXI
 !/
 !/ ------------------------------------------------------------------- /
 !/
@@ -1350,6 +1428,11 @@
 !
 !/T      WRITE (NDST,9000) FICEN
 !/T      IF ( .NOT. LOCAL ) WRITE (NDST,9001)
+!
+! 0. For quadtrees, identify columns of the auxiliary index map 
+!    corresponding to the ice quadtree
+!
+      IS_QA = GTYPE.EQ.QAGTYPE
 !
 ! 1.  Preparations --------------------------------------------------- *
 ! 1.a Update times
@@ -1371,32 +1454,37 @@
 !
         IX        = MAPSF(ISEA,1)
         IY        = MAPSF(ISEA,2)
-        ICE(ISEA) = ICEI(IX,IY)
-        BERG(ISEA)= BERGI(IX,IY)
+        IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
+        IXI = IX
+        ! If a quadtree ice array is used, find index to it:
+        IF ( IS_QA .AND. IQGIN.GT.0 ) IXI = IAUX_QA(ISEA,IQGIN)
+        IF ( IXI.LE.0 ) CYCLE
+        ICE(ISEA) = ICEI(IXI,IY)
+        BERG(ISEA)= BERGI(IXI,IY)
 !
 ! 2.b Sea point to be de-activated..
 !
-!/IC0        IF ( ICEI(IX,IY).GE.FICEN .AND. MAPICE(IY,IX).EQ.0 ) THEN
+!/IC0        IF ( ICE(ISEA).GE.FICEN .AND. MAPICE(IY,IX).EQ.0 ) THEN
 !/IC0            MAPSTA(IY,IX) = - ABS(MAPSTA(IY,IX))
 !/IC0            MAPICE(IY,IX) = 1
 !/IC0            IF ( LOCAL .AND. MOD(ISEA-IAPROC,NAPROC) .EQ. 0 ) THEN
 !/T                WRITE (NDST,9021) ISEA, IX, IY, MAPSTA(IY,IX),     &
-!/T                                  ICEI(IX,IY), 'ICE (NEW)'
+!/T                                  ICE(ISEA), 'ICE (NEW)'
 !/IC0                JSEA   = 1 + (ISEA-1)/NAPROC
 !/IC0                VA(:,JSEA) = 0.
 !/IC0              ELSE
 !/T                WRITE (NDST,9021) ISEA, IX, IY, MAPSTA(IY,IX),     &
-!/T                                  ICEI(IX,IY), 'ICE (NEW X)'
+!/T                                  ICE(ISEA), 'ICE (NEW X)'
 !/IC0              END IF
 !
-!/IC0          ELSE IF ( ICEI(IX,IY).GE.FICEN ) THEN
+!/IC0          ELSE IF ( ICE(ISEA).GE.FICEN ) THEN
 !/T            WRITE (NDST,9021) ISEA, IX, IY, MAPSTA(IY,IX),         &
-!/T                              ICEI(IX,IY), 'ICE'
+!/T                              ICE(ISEA), 'ICE'
 !/IC0          END IF
 !
 ! 2.b Ice point to be re-activated.
 !
-!/IC0        IF ( ICEI(IX,IY).LT.FICEN .AND. MAPICE(IY,IX).EQ.1 ) THEN
+!/IC0        IF ( ICE(ISEA).LT.FICEN .AND. MAPICE(IY,IX).EQ.1 ) THEN
 !
 !/IC0            MAPICE(IY,IX) = 0
 !/IC0            UST(ISEA)     = 0.05
@@ -1406,23 +1494,23 @@
 !
 !/IC0                IF ( LOCAL .AND. MOD(ISEA-IAPROC,NAPROC) .EQ. 0 ) THEN
 !/T                    WRITE (NDST,9021) ISEA, IX, IY, MAPSTA(IY,IX), &
-!/T                                      ICEI(IX,IY), 'SEA (NEW)'
+!/T                                      ICE(ISEA), 'SEA (NEW)'
 !/IC0                    JSEA   = 1 + (ISEA-1)/NAPROC
 !/IC0                    VA(:,JSEA) = 0.
 !
 !/IC0                  ELSE
 !/T                    WRITE (NDST,9021) ISEA, IX, IY, MAPSTA(IY,IX), &
-!/T                                      ICEI(IX,IY), 'SEA (NEW X)'
+!/T                                      ICE(ISEA), 'SEA (NEW X)'
 !/IC0                  END IF
 !
 !/IC0              ELSE
 !/T                WRITE (NDST,9021) ISEA, IX, IY, MAPSTA(IY,IX),     &
-!/T                                  ICEI(IX,IY), 'DIS'
+!/T                                  ICE(ISEA), 'DIS'
 !/IC0              END IF
 !
-!/IC0             ELSE IF ( ICEI(IX,IY).LT.FICEN ) THEN
+!/IC0             ELSE IF ( ICE(ISEA).LT.FICEN ) THEN
 !/T                WRITE (NDST,9021) ISEA, IX, IY, MAPSTA(IY,IX),     &
-!/T                                  ICEI(IX,IY), 'SEA'
+!/T                                  ICE(ISEA), 'SEA'
 !
 !/IC0          END IF
 !
@@ -1470,6 +1558,7 @@
 !/                  activation of grid point.
 !/    06-Jun-2012 : Porting bugfixes from 3.14 to 4.07  ( version 4.07 )
 !/    26-Sep-2012 : Adding update from tidal analysis   ( version 4.08 )
+!/    11-Nov-2017 : Allow for quadtrees (R. Gorman)     (  )
 !/
 !  1. Purpose :
 !
@@ -1539,6 +1628,8 @@
       USE W3GDATMD, ONLY: NX, NY, NSEA, NSEAL, MAPSF, MAPSTA, MAPST2, &
                           ZB, DMIN, NK, NTH, NSPEC, SIG, DSIP,        &
                           MAPWN, MAPTH, FACHFA, GTYPE, UNGTYPE, W3SETREF
+      USE W3GDATMD, ONLY: GTYPE, QAGTYPE, NAUX_QA, IAUX_QA, IQGW,     &
+                          IQGLN
       USE W3WDATMD, ONLY: TIME, TLEV, WLV, UST
       USE W3ADATMD, ONLY: CG, WN, DW
       USE W3IDATMD, ONLY: TLN, WLEV
@@ -1572,6 +1663,8 @@
       REAL                    :: KDMAX = 4., RDKMIN = 0.05
 !/T3      REAL                    :: OUT(NK,NTH)
       LOGICAL                 :: LOCAL
+      LOGICAL                 :: IS_QA
+      INTEGER                 :: IXL
 !
 !/TIDE      INTEGER          :: J
 !/TIDE      INTEGER(KIND=4)  :: TIDE_KD0, INT24, INTDYS       ! "Gregorian day constant"
@@ -1585,6 +1678,11 @@
 !/S      CALL STRACE (IENT, 'W3ULEV')
 !
       LOCAL   = IAPROC .LE. NAPROC
+!
+! 0. For quadtrees, identify columns of the auxiliary index map 
+!    corresponding to the water level quadtree
+!
+      IS_QA = GTYPE.EQ.QAGTYPE
 !
 !/T      WRITE (NDST,9000) KDMAX, RDKMIN
 !
@@ -1631,17 +1729,22 @@
       DO ISEA=1, NSEA
         IX     = MAPSF(ISEA,1)
         IY     = MAPSF(ISEA,2)
+        IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
+        IXL = IX
+        ! If a quadtree sea level array is used, find index to it:
+        IF ( IS_QA .AND. IQGLN.GT.0 ) IXL = IAUX_QA(ISEA,IQGLN)
+        IF ( IXL.LE.0 ) CYCLE
         DWO(ISEA) = DW(ISEA)
 !
 !/TIDE        IF (FLLEVTIDE) THEN 
 !/TIDE! VUF should be updated only if latitude changes significantly ...
 !/TIDE          CALL SETVUF_FAST(h,pp,s,p,enp,dh,dpp,ds,dp,dnp,tau,YGRD(IY,IX),FX,UX,VX)
-!/TIDE          WLEVTIDE = WLTIDE(IX,IY,1,1)
+!/TIDE          WLEVTIDE = WLTIDE(IXL,IY,1,1)
 !/TIDE !Verification 
 !/TIDE !          IF (ISEA.EQ.1) THEN 
 !/TIDE
-!/TIDE            TIDE_AMPC(1:NTIDE,1)=WLTIDE(IX,IY,1:NTIDE,1)
-!/TIDE            TIDE_PHG(1:NTIDE,1)=WLTIDE(IX,IY,1:NTIDE,2)
+!/TIDE            TIDE_AMPC(1:NTIDE,1)=WLTIDE(IXL,IY,1:NTIDE,1)
+!/TIDE            TIDE_PHG(1:NTIDE,1)=WLTIDE(IXL,IY,1:NTIDE,2)
 !/TIDE!
 !/TIDE   !           WRITE(991,'(A,F20.2,13F8.3)') 'TEST ISEA 0:',    &
 !/TIDE   !                       d1,H,S,TAU,pp,s,p,enp,dh,dpp,ds,dp,dnp,YGRD(IY,IX)
@@ -1649,8 +1752,8 @@
 !/TIDE   !           WRITE(991,'(A,4I9,F12.0,3F8.3,I4,X,A)') 'TEST ISEA 1:',IX,J,TIME,TIDE_HOUR,    &
 !/TIDE   !                       FX(J),UX(J),VX(J),TIDE_INDEX2(J),TIDECON_ALLNAMES(TIDE_INDEX2(J))
 !/TIDE            DO J=2,TIDE_MF
-!/TIDE              TIDE_ARG=(VX(J)+UX(J))*twpi-WLTIDE(IX,IY,J,2)*DERA
-!/TIDE              WLEVTIDE =WLEVTIDE+FX(J)*WLTIDE(IX,IY,J,1)*COS(TIDE_ARG)
+!/TIDE              TIDE_ARG=(VX(J)+UX(J))*twpi-WLTIDE(IXL,IY,J,2)*DERA
+!/TIDE              WLEVTIDE =WLEVTIDE+FX(J)*WLTIDE(IXL,IY,J,1)*COS(TIDE_ARG)
 !/TIDE   !           WRITE(991,'(A,4I9,F12.0,3F8.3,I4,X,A)') 'TEST ISEA 1:',IX,J,TIME,TIDE_HOUR,    &
 !/TIDE   !                       FX(J),UX(J),VX(J),TIDE_INDEX2(J),TIDECON_ALLNAMES(TIDE_INDEX2(J))
 !/TIDE              END DO
@@ -1658,7 +1761,7 @@
 !/TIDE   !           WRITE(991,'(A,4I9,F12.0,5F8.3)') 'TEST ISEA 2:',IX,J,TIME,TIDE_HOUR,    &
 !/TIDE   !                       FX(J),UX(J),VX(J),TIDE_AMPC(J,1),TIDE_PHG(J,1)
 !/TIDE              END DO
-!/TIDE   !         WRITE(991,'(A,3F7.3)') '#:',WLEV(IX,IY),WLEVTIDE,WLEV(IX,IY)-WLEVTIDE
+!/TIDE   !         WRITE(991,'(A,3F7.3)') '#:',WLEV(IXL,IY),WLEVTIDE,WLEV(IXL,IY)-WLEVTIDE
 
 !/TIDE   !         CLOSE(991)
 !/TIDE   !         END IF
@@ -1666,7 +1769,7 @@
 !/TIDE            WLV(ISEA) = WLEVTIDE
 !/TIDE          ELSE 
 !
-        WLV(ISEA) = WLEV(IX,IY)
+        WLV(ISEA) = WLEV(IXL,IY)
 !/TIDE          ENDIF 
         DW (ISEA) = MAX ( 0. , WLV(ISEA)-ZB(ISEA) )
         END DO
@@ -1679,6 +1782,7 @@
 !
         IX     = MAPSF(ISEA,1)
         IY     = MAPSF(ISEA,2)
+        IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
 !
 ! 2.a Check if deep water
 !
@@ -1918,6 +2022,7 @@
 !/                  (W. E. Rogers & T. J. Campbell, NRL)
 !/    30-Oct-2009 : Implement curvilinear grid type.    ( version 3.14 )
 !/                  (W. E. Rogers & T. J. Campbell, NRL)
+!/    11-Nov-2017 : Allow for quadtrees (R. Gorman)     ( version  )
 !/
 !  1. Purpose :
 !
@@ -1968,10 +2073,10 @@
 ! 10. Source code :
 !
 !/ ------------------------------------------------------------------- /
-      USE W3GDATMD, ONLY: NX, NY, NSEA, MAPSTA, MAPSF,                &
+      USE W3GDATMD, ONLY: NX, NY, NSEA, MAPSTA, MAPSF, SX, SY,        &
                           TRFLAG, FICE0, FICEN, FICEL,                &
-                          RLGTYPE, CLGTYPE, GTYPE, FLAGLL,            &
-                          HPFAC, HQFAC, FFACBERG
+                          RLGTYPE, CLGTYPE, QAGTYPE, GTYPE, FLAGLL,   &
+                          HPFAC, HQFAC, FFACBERG, QTREE, IQGW
       USE W3WDATMD, ONLY: ICE, BERG
       USE W3ADATMD, ONLY: ATRNX, ATRNY
 !
@@ -1990,6 +2095,9 @@
 
       REAL                    :: TRIX(NY*NX), TRIY(NY*NX), DX, DY,    &
                                  LICE0, LICEN
+      INTEGER                 :: INBR1, INBR2
+      REAL                    :: TRNXC, TRNYC, TRNXW, TRNXE, TRNYS,   &
+                                 TRNYN, SCFAC
 !/T      REAL                    :: LEVS(0:10)
 !/
 !/ ------------------------------------------------------------------- /
@@ -2020,18 +2128,46 @@
             IX            = MAPSF(ISEA,1)
             IY            = MAPSF(ISEA,2)
             IXY           = MAPSF(ISEA,3)
-            IF ( IX .EQ. 1 ) THEN
-                ATRNX(IXY,-1) = TRNX(IY+(NX-1)*NY)
-                ATRNX(IXY, 1) = TRNX(IXY)
-              ELSE IF ( IX .EQ. NX ) THEN
-                ATRNX(IXY,-1) = TRNX(IXY-NY)
-                ATRNX(IXY, 1) = TRNX(IY)
+            IF ( GTYPE.EQ.QAGTYPE ) THEN
+                IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
+              ! transmission through the east wall:
+                ATRNX(ISEA, 1) = TRNX(ISEA)
+              ! transmission through the west wall:
+                INBR1 = QTREE(IQGW)%NGBR(ISEA,1)
+                INBR2 = QTREE(IQGW)%NGBR(ISEA,5)
+                IF ( INBR1 .GT. 0 .AND. INBR2 .GT. 0 ) THEN
+                   ATRNX(ISEA,-1) = 0.5*( TRNX(INBR1) + TRNX(INBR2) )
+                ELSE IF ( INBR1 .GT. 0 ) THEN
+                   ATRNX(ISEA,-1) = TRNX(INBR1)
+                ELSE
+                   ATRNX(ISEA,-1) = 0.
+                END IF
+              ! transmission through the north wall:
+                ATRNY(ISEA, 1) = TRNY(ISEA)
+              ! transmission through the south wall:
+                INBR1 = QTREE(IQGW)%NGBR(ISEA,3)
+                INBR2 = QTREE(IQGW)%NGBR(ISEA,7)
+                IF ( INBR1 .GT. 0 .AND. INBR2 .GT. 0 ) THEN
+                   ATRNY(ISEA,-1) = 0.5*( TRNY(INBR1) + TRNY(INBR2) )
+                ELSEIF ( INBR1 .GT. 0 ) THEN
+                   ATRNY(ISEA,-1)  = TRNY(INBR1)
+                ELSE
+                   ATRNY(ISEA,-1)  = 0.
+                END IF
               ELSE
-                ATRNX(IXY,-1) = TRNX(IXY-NY)
-                ATRNX(IXY, 1) = TRNX(IXY)
+                IF ( IX .EQ. 1 ) THEN
+                    ATRNX(IXY,-1) = TRNX(IY+(NX-1)*NY)
+                    ATRNX(IXY, 1) = TRNX(IXY)
+                  ELSE IF ( IX .EQ. NX ) THEN
+                    ATRNX(IXY,-1) = TRNX(IXY-NY)
+                    ATRNX(IXY, 1) = TRNX(IY)
+                  ELSE
+                    ATRNX(IXY,-1) = TRNX(IXY-NY)
+                    ATRNX(IXY, 1) = TRNX(IXY)
+                  END IF
+                ATRNY(IXY,-1) = TRNY(IXY-1)
+                ATRNY(IXY, 1) = TRNY(IXY)
               END IF
-            ATRNY(IXY,-1) = TRNY(IXY-1)
-            ATRNY(IXY, 1) = TRNY(IXY)
 !
 !/T            ILEV          = NINT(10.*MIN(TRNX(IXY),TRNY(IXY)))
 !/T            LEVS(ILEV)    = LEVS(ILEV) + 1.
@@ -2050,34 +2186,89 @@
             IY            = MAPSF(ISEA,2)
             IXY           = MAPSF(ISEA,3)
 !
-            IF ( IX .EQ. 1 ) THEN
-                IXN    = IY + (NX-1)*NY
-                IXP    = IY +  IX   *NY
-              ELSE IF ( IX .EQ. NX ) THEN
-                IXN    = IY + (IX-2)*NY
-                IXP    = IY
-              ELSE
-                IXN    = IY + (IX-2)*NY
-                IXP    = IY +  IX   *NY
-              END IF
-!
-            IF ( IY .EQ. 1 ) THEN
-                IYN    = IXY
-                IYP    = IXY + 1
-              ELSE IF ( IY .EQ. NY ) THEN
-                IYN    = IXY - 1
-                IYP    = IXY
-              ELSE
-                IYN    = IXY - 1
-                IYP    = IXY + 1
-              END IF
+            IF ( GTYPE.EQ.QAGTYPE ) THEN
+                IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
+              ! X transmission in this cell:
+                TRNXC = TRNX(ISEA)
+              ! transmission in the eastern neighbour(s):
+                INBR1 = QTREE(IQGW)%NGBR(ISEA,2)
+                INBR2 = QTREE(IQGW)%NGBR(ISEA,6)
+                IF ( INBR1 .GT. 0 .AND. INBR2 .GT. 0 ) THEN
+                   TRNXE = 0.5*( TRNX(INBR1) + TRNX(INBR2) )
+                ELSEIF ( INBR1 .GT. 0 ) THEN
+                   TRNXE = TRNX(INBR1)
+                ELSE
+                   TRNXE = 0.
+                END IF
+              ! transmission in the western neighbour(s):
+                INBR1 = QTREE(IQGW)%NGBR(ISEA,1)
+                INBR2 = QTREE(IQGW)%NGBR(ISEA,5)
+                IF ( INBR1 .GT. 0 .AND. INBR2 .GT. 0 ) THEN
+                   TRNXW = 0.5*( TRNX(INBR1) + TRNX(INBR2 ) )
+                ELSEIF ( INBR1 .GT. 0 ) THEN
+                   TRNXW = TRNX(INBR1)
+                ELSE
+                   TRNXW = 0.
+                END IF
+              ! Y transmission in this cell:
+                TRNYC = TRNY(ISEA)
+              ! transmission in the northern neighbour(s)
+                INBR1 = QTREE(IQGW)%NGBR(ISEA,4)
+                INBR2 = QTREE(IQGW)%NGBR(ISEA,8)
+                IF ( INBR1 .GT. 0 .AND. INBR2 .GT. 0 ) THEN
+                   TRNYN = 0.5*( TRNY(INBR1) + TRNY(INBR2) )
+                ELSEIF ( INBR1 .GT. 0 ) THEN
+                   TRNYN  = TRNY(INBR1)
+                ELSE
+                   TRNYN  = 0.
+                END IF
+              ! transmission in the southern neighbour(s)
+                INBR1 = QTREE(IQGW)%NGBR(ISEA,3)
+                INBR2 = QTREE(IQGW)%NGBR(ISEA,7)
+                IF ( INBR1 .GT. 0 .AND. INBR2 .GT. 0 ) THEN
+                   TRNYS = 0.5*( TRNY(INBR1) + TRNY(INBR2) )
+                ELSEIF ( INBR1 .GT. 0 ) THEN
+                   TRNYS  = TRNY(INBR1)
+                ELSE
+                   TRNYS  = 0.
+                END IF
 !
 ! factors 0.5 in first term and 2. in second term cancel
 !
-            ATRNX(IXY,-1) = (1.+TRNX(IXY)) * TRNX(IXN)/(1.+TRNX(IXN))
-            ATRNX(IXY, 1) = (1.+TRNX(IXY)) * TRNX(IXP)/(1.+TRNX(IXP))
-            ATRNY(IXY,-1) = (1.+TRNY(IXY)) * TRNY(IYN)/(1.+TRNY(IYN))
-            ATRNY(IXY, 1) = (1.+TRNY(IXY)) * TRNY(IYP)/(1.+TRNY(IYP))
+                ATRNX(ISEA,-1) = (1.+TRNXC) * TRNXW/(1.+TRNXW)
+                ATRNX(ISEA, 1) = (1.+TRNXC) * TRNXE/(1.+TRNXE)
+                ATRNY(ISEA,-1) = (1.+TRNYC) * TRNYS/(1.+TRNYS)
+                ATRNY(ISEA, 1) = (1.+TRNYC) * TRNYN/(1.+TRNYN)
+              ELSE
+                  IF ( IX .EQ. 1 ) THEN
+                    IXN    = IY + (NX-1)*NY
+                    IXP    = IY +  IX   *NY
+                  ELSE IF ( IX .EQ. NX ) THEN
+                    IXN    = IY + (IX-2)*NY
+                    IXP    = IY
+                  ELSE
+                    IXN    = IY + (IX-2)*NY
+                    IXP    = IY +  IX   *NY
+                  END IF
+!
+                IF ( IY .EQ. 1 ) THEN
+                    IYN    = IXY
+                    IYP    = IXY + 1
+                  ELSE IF ( IY .EQ. NY ) THEN
+                    IYN    = IXY - 1
+                    IYP    = IXY
+                  ELSE
+                    IYN    = IXY - 1
+                    IYP    = IXY + 1
+                  END IF
+!
+! factors 0.5 in first term and 2. in second term cancel
+!
+                ATRNX(IXY,-1) = (1.+TRNX(IXY)) * TRNX(IXN)/(1.+TRNX(IXN))
+                ATRNX(IXY, 1) = (1.+TRNX(IXY)) * TRNX(IXP)/(1.+TRNX(IXP))
+                ATRNY(IXY,-1) = (1.+TRNY(IXY)) * TRNY(IYN)/(1.+TRNY(IYN))
+                ATRNY(IXY, 1) = (1.+TRNY(IXY)) * TRNY(IYP)/(1.+TRNY(IYP))
+              END IF
 !
             IF ( MAPSTA(IY,IX) .EQ. 2 ) THEN
                 IF ( IX .EQ. 1  ) THEN
@@ -2136,8 +2327,16 @@
             IY     = MAPSF(ISEA,2)
             IXY    = MAPSF(ISEA,3)
 !
-            DX     = HPFAC(IY,IX)
-            DY     = HQFAC(IY,IX)
+            IF ( GTYPE.EQ.QAGTYPE ) THEN
+                IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
+                SCFAC = 2.**( QTREE(IQGW)%LVLREF -                    &
+                              QTREE(IQGW)%INDLVL(ISEA) )
+                DX = SX*SCFAC
+                DY = SY*SCFAC
+              ELSE
+                DX     = HPFAC(IY,IX)
+                DY     = HQFAC(IY,IX)
+              END IF
             IF ( FLAGLL ) THEN
                 DX     = DX * RADIUS * DERA
                 DY     = DY * RADIUS * DERA
@@ -2198,36 +2397,85 @@
             IY            = MAPSF(ISEA,2)
             IXY           = MAPSF(ISEA,3)
 !
-            IF ( IX .EQ. 1 ) THEN
-                IXN    = IY + (NX-1)*NY
-                IXP    = IY +  IX   *NY
-              ELSE IF ( IX .EQ. NX ) THEN
-                IXN    = IY + (IX-2)*NY
-                IXP    = IY
-              ELSE
-                IXN    = IY + (IX-2)*NY
-                IXP    = IY +  IX   *NY
-              END IF
+            IF ( GTYPE.EQ.QAGTYPE ) THEN
+                IF ( MAPSTA(IY,IX).EQ.0 ) CYCLE
+              ! X transmission in this cell:
+                TRNXC = TRIX(ISEA)
+              ! transmission in the eastern neighbour(s):
+                INBR1 = QTREE(IQGW)%NGBR(ISEA,2)
+                INBR2 = QTREE(IQGW)%NGBR(ISEA,6)
+                IF ( INBR1 .GT. 0 .AND. INBR2 .GT. 0 ) THEN
+                   TRNXE = 0.5*( TRIX(INBR1) + TRIX(INBR2) )
+                ELSEIF ( INBR1 .GT. 0 ) THEN
+                   TRNXE = TRIX(INBR1)
+                ELSE
+                   TRNXE = 0.
+                END IF
+              ! transmission in the western neighbour(s):
+                INBR1 = QTREE(IQGW)%NGBR(ISEA,1)
+                INBR2 = QTREE(IQGW)%NGBR(ISEA,5)
+                IF ( INBR1 .GT. 0 .AND. INBR2 .GT. 0 ) THEN
+                   TRNXW = 0.5*( TRIX(INBR1) + TRIX(INBR2 ) )
+                ELSEIF ( INBR1 .GT. 0 ) THEN
+                   TRNXW = TRIX(INBR1)
+                ELSE
+                   TRNXW = 0.
+                END IF
+              ! Y transmission in this cell:
+                TRNYC = TRNY(ISEA)
+              ! transmission in the northern neighbour(s)
+                INBR1 = QTREE(IQGW)%NGBR(ISEA,4)
+                INBR2 = QTREE(IQGW)%NGBR(ISEA,8)
+                IF ( INBR1 .GT. 0 .AND. INBR2 .GT. 0 ) THEN
+                   TRNYN = 0.5*( TRIY(INBR1) + TRIY(INBR2) )
+                ELSEIF ( INBR1 .GT. 0 ) THEN
+                   TRNYN  = TRIY(INBR1)
+                ELSE
+                   TRNYN  = 0.
+                END IF
+              ! transmission in the southern neighbour(s)
+                INBR1 = QTREE(IQGW)%NGBR(ISEA,3)
+                INBR2 = QTREE(IQGW)%NGBR(ISEA,7)
+                IF ( INBR1 .GT. 0 .AND. INBR2 .GT. 0 ) THEN
+                   TRNYS = 0.5*( TRIY(INBR1) + TRIY(INBR2) )
+                ELSEIF ( INBR1 .GT. 0 ) THEN
+                   TRNYS  = TRIY(INBR1)
+                ELSE
+                   TRNYS  = 0.
+                END IF
 !
-            IF ( IY .EQ. 1 ) THEN
-                IYN    = IXY
-                IYP    = IXY + 1
-              ELSE IF ( IY .EQ. NY ) THEN
-                IYN    = IXY - 1
-                IYP    = IXY
               ELSE
-                IYN    = IXY - 1
-                IYP    = IXY + 1
-              END IF
+                IF ( IX .EQ. 1 ) THEN
+                    IXN    = IY + (NX-1)*NY
+                    IXP    = IY +  IX   *NY
+                  ELSE IF ( IX .EQ. NX ) THEN
+                    IXN    = IY + (IX-2)*NY
+                    IXP    = IY
+                  ELSE
+                    IXN    = IY + (IX-2)*NY
+                    IXP    = IY +  IX   *NY
+                  END IF
 !
-            ATRNX(IXY,-1) = ATRNX(IXY,-1)                             &
+                IF ( IY .EQ. 1 ) THEN
+                    IYN    = IXY
+                    IYP    = IXY + 1
+                  ELSE IF ( IY .EQ. NY ) THEN
+                    IYN    = IXY - 1
+                    IYP    = IXY
+                  ELSE
+                    IYN    = IXY - 1
+                    IYP    = IXY + 1
+                  END IF
+!
+                ATRNX(IXY,-1) = ATRNX(IXY,-1)                         &
                           * (1.+TRIX(IXY)) * TRIX(IXN)/(1.+TRIX(IXN))
-            ATRNX(IXY, 1) = ATRNX(IXY, 1)                             &
+                ATRNX(IXY, 1) = ATRNX(IXY, 1)                         &
                           * (1.+TRIX(IXY)) * TRIX(IXP)/(1.+TRIX(IXP))
-            ATRNY(IXY,-1) = ATRNY(IXY,-1)                             &
+                ATRNY(IXY,-1) = ATRNY(IXY,-1)                         &
                           * (1.+TRIY(IXY)) * TRIY(IYN)/(1.+TRIY(IYN))
-            ATRNY(IXY, 1) = ATRNY(IXY, 1)                             &
+                ATRNY(IXY, 1) = ATRNY(IXY, 1)                         &
                           * (1.+TRIY(IXY)) * TRIY(IYP)/(1.+TRIY(IYP))
+              END IF
 !
             END DO
 !
