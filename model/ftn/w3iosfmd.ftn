@@ -205,7 +205,7 @@
         IY     = MAPSF(ISEA,2)
         ICPRT(JSEA+1,2) = ICPRT(JSEA,2) 
 !
-        IF ( MAPSTA(IY,IX) .LT. 0 ) CYCLE
+        IF ( MAPSTA(IY,IX) .LE. 0 ) CYCLE
 !
 ! -------------------------------------------------------------------- /
 ! 3.  Prepare for partitioning
