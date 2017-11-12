@@ -365,7 +365,7 @@
           CALL EXTCDE (3)
         END IF
 !
-!/T      WRITE (NDST,9000) IMOD
+!/T      WRITE (NDST,9000) IMOD, NSPEC, NSEA
 !
       JGRID  = IGRID
       IF ( JGRID .NE. IMOD ) CALL W3SETG ( IMOD, NDSE, NDST )
@@ -422,7 +422,7 @@
                '                    NWDATA = ',I10/)
  1003 FORMAT (/' *** ERROR W3DIMW : ARRAY(S) ALREADY ALLOCATED *** ')
 !
-!/T 9000 FORMAT (' TEST W3DIMW : MODEL ',I4,' DIM. AT ',2I5,I7)
+!/T 9000 FORMAT (' TEST W3DIMW : MODEL ',I4,' DIM. AT ',I5,I7)
 !
 !/T      WRITE (NDST,9001)
 !
