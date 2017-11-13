@@ -500,12 +500,12 @@
 !/DIST            END IF
           IF ( WRITE ) THEN
               IF ( IAPROC .EQ. NAPRST ) THEN 
-                  CALL QA_IOQT( NDSR, QTREE(IQGW), 2, ierr=IERR,      &
+                  CALL QA_IOQT( NDSR, QTREE(IQGW), 6, ierr=IERR,      &
                                 ndse=NDSEN, nrec=NREC, nsize=NSIZE )
                   IF ( IERR.NE.0 ) GO TO 805
                 END IF
             ELSE
-              CALL QA_IOQT( NDSR, QTREE(IQGW), -2, ierr=IERR,         &
+              CALL QA_IOQT( NDSR, QTREE(IQGW), -6, ierr=IERR,         &
                             ndse=NDSEN, nrec=NREC, nsize=NSIZE )
               IF ( IERR.NE.0 ) GO TO 804
             END IF

@@ -5573,6 +5573,10 @@
 !                        = +5 or +50 to WRITE   ""  ""
 !                        = -5 or -51 to READ weights array data, formatted
 !                        = +5 or +51 to WRITE   ""  ""
+!                        = -6 or -60 to READ header, stream access binary
+!                        = +6 to +60 to WRITE   ""  ""
+!                        = -6 or -61 to READ quad & cell arrays, stream access binary
+!                        = +6 to +61 to WRITE   ""  ""
 !       IERR     Int.    O   Return flag = 1 for error, else 0
 !       NDSE     Int.    I*  Unit number for error output (if >0)
 !       NREC     Int.   I/O* Last record number for direct access 
@@ -5623,9 +5627,12 @@
 !/ ------------------------------------------------------------------- /
 !/ Local parameters
 !/
+      INTEGER, PARAMETER    ::  LRB=4
       INTEGER    ::  NDE, MQ, MC, MC2, MC3, MC4, NQ, NC, NR, IC, IR,  &
                      IPART, NPART, NHD, NCOL, IHD, IR2, ATASK
       LOGICAL    ::  DOWTS, DOQA, DOCA
+      INTEGER    ::  LRECL
+      REAL(KIND=LRB), ALLOCATABLE :: WRITEBUFF(:)
 !
 !  Default for optional parameters
 !
@@ -5633,6 +5640,11 @@
       IF ( PRESENT(NDSE) ) NDE = NDSE
       NR = -1
       IF ( PRESENT(NREC) ) NR = NREC
+!
+      IF ( PRESENT(NSIZE) ) THEN
+         LREC = LRB*NSIZE
+         ALLOCATE ( WRITEBUFF(NSIZE) )
+      END IF
 !
       IERR = 0
 !
@@ -5648,6 +5660,8 @@
 !  Tasks which do I/O on cell arrays:
       DOCA =  ATASK.EQ.1 .OR. ATASK.EQ.2 .OR. ATASK.EQ.4 .OR.         &
               ATASK.EQ.11 .OR. ATASK.EQ.21 .OR. ATASK.EQ.41 
+!  Tasks which do stream I/O:
+      STREAM =  ATASK.EQ.6 .OR. ATASK.EQ.60 .OR. ATASK.EQ.61
 !
       MQ = SIZE(QTREE%QICELL,1)
       MQ = MIN(MQ,SIZE(QTREE%QPARENT,1))
@@ -5698,6 +5712,23 @@
             ! Direct access write
             NR = NR + 1
             WRITE(IUN,REC=NR,IOSTAT=IERR) QTREE%NQUAD, QTREE%NCELL,   &
+               QTREE%NCELL_DEF, QTREE%LVLREF, QTREE%LVLMAX,           &
+               QTREE%LVLHI, QTREE%NX0, QTREE%NY0, QTREE%UNDEF_TYPE,   &
+               QTREE%KEEP_REF, QTREE%DYNAMIC, QTREE%IWTORDER
+      ELSEIF ( TASK.EQ.-6 .OR. TASK.EQ.-60 ) THEN
+            ! Stream access read
+            NR = NR + 1
+            RPOS  = 1_8 + LRECL*(NR-1_8)
+            READ(IUN,POS=RPOS,IOSTAT=IERR) QTREE%NQUAD, QTREE%NCELL,  &
+               QTREE%NCELL_DEF, QTREE%LVLREF, QTREE%LVLMAX,           &
+               QTREE%LVLHI, QTREE%NX0, QTREE%NY0, QTREE%UNDEF_TYPE,   &
+               QTREE%KEEP_REF, QTREE%DYNAMIC, QTREE%IWTORDER
+      ELSEIF ( TASK.EQ.6 .OR. TASK.EQ.60 ) THEN
+            ! Stream access write
+            NR = NR + 1
+            RPOS  = 1_8 + LRECL*(NR-1_8)
+            WRITE(IUN,POS=RPOS) WRITEBUFF
+            WRITE(IUN,POS=RPOS,IOSTAT=IERR) QTREE%NQUAD, QTREE%NCELL, &
                QTREE%NCELL_DEF, QTREE%LVLREF, QTREE%LVLMAX,           &
                QTREE%LVLHI, QTREE%NX0, QTREE%NY0, QTREE%UNDEF_TYPE,   &
                QTREE%KEEP_REF, QTREE%DYNAMIC, QTREE%IWTORDER
@@ -5810,97 +5841,164 @@
          RETURN
       END IF
       IF ( TASK.EQ.-1 .OR. TASK.EQ.-11 ) THEN 
-            ! Sequential read
-            NR = NR + 1
-            READ(IUN,IOSTAT=IERR) QTREE%QICELL(1:NQ,:),               &
-                           QTREE%QLEVEL(1:NQ), QTREE%QPARENT(1:NQ),   &
+         ! Sequential read
+         NR = NR + 1
+         READ(IUN,IOSTAT=IERR) QTREE%QICELL(1:NQ,:),                   &
+                           QTREE%QLEVEL(1:NQ), QTREE%QPARENT(1:NQ),    &
                            QTREE%QNBR(1:NQ,:), QTREE%QCHILD(1:NQ,:)
       ELSEIF ( TASK.EQ.1 .OR. TASK.EQ.11 ) THEN
-            ! Sequential write
-            NR = NR + 1
-            WRITE(IUN,IOSTAT=IERR) QTREE%QICELL(1:NQ,:),              &
-                           QTREE%QLEVEL(1:NQ), QTREE%QPARENT(1:NQ),   &
+         ! Sequential write
+         NR = NR + 1
+         WRITE(IUN,IOSTAT=IERR) QTREE%QICELL(1:NQ,:),                  &
+                           QTREE%QLEVEL(1:NQ), QTREE%QPARENT(1:NQ),    &
                            QTREE%QNBR(1:NQ,:), QTREE%QCHILD(1:NQ,:)
-      ELSEIF ( TASK.EQ.-2 .OR. TASK.EQ.-21 ) THEN
-            ! Direct access read
-            NPART  = 1 + (NQ-1)/NSIZE
-            DO IC=0,4
-              DO IPART=1,NPART
-                NR = NR + 1
-                READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QICELL(IR,IC),   &
+      ELSEIF ( TASK.EQ.-2 .OR. TASK.EQ.-21 .OR.                        &
+               TASK.EQ.-6 .OR. TASK.EQ.-61 ) THEN
+         ! Direct access or stream access read
+         NPART  = 1 + (NQ-1)/NSIZE
+         DO IC=0,4
+           DO IPART=1,NPART
+             NR = NR + 1
+             IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               READ(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%QICELL(IR,IC),   &
                            IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
-              END DO
+             ELSE
+               READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QICELL(IR,IC),     &
+                           IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
+             END IF
+           END DO
+         END DO
+         DO IPART=1,NPART
+             NR = NR + 1
+             IF ( STREAM ) THEN
+                RPOS  = 1_8 + LRECL*(NR-1_8)
+                READ(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%QLEVEL(IR),     &
+                           IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
+             ELSE
+                READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QLEVEL(IR),       &
+                           IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
+             END IF
+         END DO
+         DO IPART=1,NPART
+             NR = NR + 1
+             IF ( STREAM ) THEN
+                RPOS  = 1_8 + LRECL*(NR-1_8)
+                READ(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%QPARENT(IR),    &
+                           IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
+             ELSE
+                READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QPARENT(IR),      &
+                           IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
+             END IF
+         END DO
+         DO IC=1,4
+           DO IPART=1,NPART
+             NR = NR + 1
+             IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               READ(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%QNBR(IR,IC),     &
+                           IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
+             ELSE
+               READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QNBR(IR,IC),       &
+                           IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
+             END IF
+           END DO
+         END DO
+         DO IC=1,4
+           DO IPART=1,NPART
+             NR = NR + 1
+             IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               READ(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%QCHILD(IR,IC),   &
+                           IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
+             ELSE
+               READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QCHILD(IR,IC),     &
+                           IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
+             END IF
             END DO
-            DO IPART=1,NPART
-                NR = NR + 1
-                READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QLEVEL(IR),      &
+         END DO
+      ELSEIF ( TASK.EQ.2 .OR. TASK.EQ.21 .OR.                          &
+               TASK.EQ.6 .OR. TASK.EQ.61 ) THEN
+            ! Direct access or stream access write
+         NPART  = 1 + (NQ-1)/NSIZE
+         DO IC=0,4
+           DO IPART=1,NPART
+             NR = NR + 1
+             IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               WRITE(IUN,POS=RPOS) WRITEBUFF
+               WRITE(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%QICELL(IR,IC),  &
                            IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
-            END DO
-            DO IPART=1,NPART
-                NR = NR + 1
-                READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QPARENT(IR),     &
+             ELSE
+               WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QICELL(IR,IC),    &
                            IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
-            END DO
-            DO IC=1,4
-              DO IPART=1,NPART
-                NR = NR + 1
-                READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QNBR(IR,IC),     &
+             END IF
+           END DO
+         END DO
+         DO IPART=1,NPART
+             NR = NR + 1
+             IF ( STREAM ) THEN
+                 RPOS  = 1_8 + LRECL*(NR-1_8)
+                WRITE(IUN,POS=RPOS) WRITEBUFF
+                WRITE(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%QLEVEL(IR),    &
                            IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
-              END DO
-            END DO
-            DO IC=1,4
-              DO IPART=1,NPART
-                NR = NR + 1
-                READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QCHILD(IR,IC),   &
+             ELSE
+                WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QLEVEL(IR),      &
                            IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
-              END DO
-            END DO
-      ELSEIF ( TASK.EQ.2 .OR. TASK.EQ.21 ) THEN
-            ! Direct access write
-            NPART  = 1 + (NQ-1)/NSIZE
-            DO IC=0,4
-              DO IPART=1,NPART
-                NR = NR + 1
-                WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QICELL(IR,IC),  &
+             END IF
+         END DO
+         DO IPART=1,NPART
+             NR = NR + 1
+             IF ( STREAM ) THEN
+                RPOS  = 1_8 + LRECL*(NR-1_8)
+                WRITE(IUN,POS=RPOS) WRITEBUFF
+                WRITE(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%QPARENT(IR),   &
                            IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
-              END DO
-            END DO
-            DO IPART=1,NPART
-                NR = NR + 1
-                WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QLEVEL(IR),     &
+             ELSE
+                WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QPARENT(IR),     &
                            IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
-            END DO
-            DO IPART=1,NPART
-                NR = NR + 1
-                WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QPARENT(IR),    &
+             END IF
+         END DO
+         DO IC=1,4
+           DO IPART=1,NPART
+             NR = NR + 1
+             IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               WRITE(IUN,POS=RPOS) WRITEBUFF
+               WRITE(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%QNBR(IR,IC),    &
                            IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
-            END DO
-            DO IC=1,4
-              DO IPART=1,NPART
-                NR = NR + 1
-                WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QNBR(IR,IC),    &
+             ELSE
+               WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QNBR(IR,IC),      &
                            IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
-                IF ( IERR.NE.0 ) THEN
-                   IF ( NDE.GT.0 )                                    &
-                        WRITE(NDE,*) 'QA_IOQT ERROR WRITING QNBR ',   &
+             END IF
+             IF ( IERR.NE.0 ) THEN
+                IF ( NDE.GT.0 )                                        &
+                   WRITE(NDE,*) 'QA_IOQT ERROR WRITING QNBR ',         &
                                      'IPART, NR = ', IPART, NR
-                   RETURN
-                END IF
-              END DO
-            END DO
-            DO IC=1,4
-              DO IPART=1,NPART
-                NR = NR + 1
-                WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QCHILD(IR,IC),  &
+                RETURN
+             END IF
+           END DO
+         END DO
+         DO IC=1,4
+           DO IPART=1,NPART
+             NR = NR + 1
+             IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               WRITE(IUN,POS=RPOS) WRITEBUFF
+               WRITE(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%QCHILD(IR,IC),  &
                            IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
-                IF ( IERR.NE.0 ) THEN
-                   IF ( NDE.GT.0 )                                    &
-                        WRITE(NDE,*) 'QA_IOQT ERROR WRITING QCHILD ', &
+             ELSE
+               WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%QCHILD(IR,IC),    &
+                           IR=1+(IPART-1)*NSIZE, MIN(NQ,IPART*NSIZE) )
+             END IF
+             IF ( IERR.NE.0 ) THEN
+                IF ( NDE.GT.0 )                                        &
+                   WRITE(NDE,*) 'QA_IOQT ERROR WRITING QCHILD ',       &
                                      'IPART, NR = ', IPART, NR
-                   RETURN
-                END IF
-              END DO
-            END DO
+                RETURN
+             END IF
+           END DO
+         END DO
       ELSEIF ( TASK.EQ.-3 .OR. TASK.EQ.-31 ) THEN
             ! Formatted read, quad variables
          DO IR=1,NQ
@@ -5951,111 +6049,204 @@
       IF ( TASK.EQ.-1 .OR. TASK.EQ.-11 ) THEN
             ! Sequential read
             NR = NR + 1
-            READ(IUN,IOSTAT=IERR) QTREE%INDQUAD(1:NC),                &
-                         QTREE%INDSUB(1:NC), QTREE%INDLVL(1:NC),      &
-                         QTREE%NGBR(1:NC,:), QTREE%CELL_TYPE(1:NC),   &
+            READ(IUN,IOSTAT=IERR) QTREE%INDQUAD(1:NC),                 &
+                         QTREE%INDSUB(1:NC), QTREE%INDLVL(1:NC),       &
+                         QTREE%NGBR(1:NC,:), QTREE%CELL_TYPE(1:NC),    &
                          QTREE%INDML(1:NC), QTREE%XYVAL(1:NC,:)
       ELSEIF ( TASK.EQ.1 .OR. TASK.EQ.11 ) THEN
             ! Sequential write
             NR = NR + 1
-            WRITE(IUN,IOSTAT=IERR) QTREE%INDQUAD(1:NC),               &
-                         QTREE%INDSUB(1:NC), QTREE%INDLVL(1:NC),      &
-                         QTREE%NGBR(1:NC,:), QTREE%CELL_TYPE(1:NC),   &
+            WRITE(IUN,IOSTAT=IERR) QTREE%INDQUAD(1:NC),                &
+                         QTREE%INDSUB(1:NC), QTREE%INDLVL(1:NC),       &
+                         QTREE%NGBR(1:NC,:), QTREE%CELL_TYPE(1:NC),    &
                          QTREE%INDML(1:NC), QTREE%XYVAL(1:NC,:)
-      ELSEIF ( TASK.EQ.-2 .OR. TASK.EQ.-21 ) THEN
-            ! Direct access read
-            NPART  = 1 + (NC-1)/NSIZE
-            DO IPART=1,NPART
-                NR = NR + 1
-                READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%INDQUAD(IR),     &
+      ELSEIF ( TASK.EQ.-2 .OR. TASK.EQ.-21 .OR.                        &
+               TASK.EQ.-6 .OR. TASK.EQ.-61 ) THEN
+            ! Direct access or stream access read
+         NPART  = 1 + (NC-1)/NSIZE
+         DO IPART=1,NPART
+            NR = NR + 1
+            IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               READ(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%INDQUAD(IR),     &
                            IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
-            END DO
-            DO IPART=1,NPART
-                NR = NR + 1
-                READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%INDSUB(IR),      &
+            ELSE
+               READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%INDQUAD(IR),       &
                            IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
-            END DO
-            DO IPART=1,NPART
-                NR = NR + 1
-                READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%INDLVL(IR),      &
+            END IF
+         END DO
+         DO IPART=1,NPART
+            NR = NR + 1
+            IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               READ(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%INDSUB(IR),      &
                            IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
-            END DO
-            DO IC=1,8
-              DO IPART=1,NPART
-                NR = NR + 1
-                READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%NGBR(IR,IC),     &
+            ELSE
+               READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%INDSUB(IR),        &
                            IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
-              END DO
-            END DO
-            DO IPART=1,NPART
-                NR = NR + 1
-                READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%CELL_TYPE(IR),   &
+            END IF
+         END DO
+         DO IPART=1,NPART
+            NR = NR + 1
+            IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               READ(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%INDLVL(IR),      &
                            IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
-            END DO
-            DO IPART=1,NPART
-                NR = NR + 1
-                READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%INDML(IR),       &
+            ELSE
+               READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%INDLVL(IR),        &
                            IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
-            END DO
-            DO IC=1,2
-              DO IPART=1,NPART
-                NR = NR + 1
-                READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%XYVAL(IR,IC),    &
+            END IF
+         END DO
+         DO IC=1,8
+           DO IPART=1,NPART
+             NR = NR + 1
+             IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               READ(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%NGBR(IR,IC),     &
                            IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
-              END DO
-            END DO
-         ELSEIF ( TASK.EQ.2 .OR. TASK.EQ.21 ) THEN
-            ! Direct access write
-            NPART  = 1 + (NC-1)/NSIZE
-            DO IPART=1,NPART
-                NR = NR + 1
-                WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%INDQUAD(IR),    &
+             ELSE
+               READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%NGBR(IR,IC),       &
                            IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
-            END DO
-            DO IPART=1,NPART
-                NR = NR + 1
-                WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%INDSUB(IR),     &
+             END IF
+           END DO
+         END DO
+         DO IPART=1,NPART
+            NR = NR + 1
+            IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               READ(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%CELL_TYPE(IR),   &
                            IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
-            END DO
-            DO IPART=1,NPART
-                NR = NR + 1
-                WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%INDLVL(IR),     &
+            ELSE
+               READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%CELL_TYPE(IR),     &
                            IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
-            END DO
-            DO IC=1,8
-              DO IPART=1,NPART
-                NR = NR + 1
-                WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%NGBR(IR,IC),    &
+            END IF
+         END DO
+         DO IPART=1,NPART
+            NR = NR + 1
+            IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               READ(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%INDML(IR),       &
                            IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
-              END DO
-            END DO
-            DO IPART=1,NPART
-                NR = NR + 1
-                WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%CELL_TYPE(IR),  &
+            ELSE
+               READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%INDML(IR),         &
                            IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
-            END DO
-            DO IPART=1,NPART
-                NR = NR + 1
-                WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%INDML(IR),      &
+            END IF
+         END DO
+         DO IC=1,2
+           DO IPART=1,NPART
+             NR = NR + 1
+             IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               READ(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%XYVAL(IR,IC),    &
                            IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
-            END DO
-            DO IC=1,2
-              DO IPART=1,NPART
-                NR = NR + 1
-                WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%XYVAL(IR,IC),   &
+             ELSE
+               READ(IUN,REC=NR,IOSTAT=IERR) ( QTREE%XYVAL(IR,IC),      &
                            IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
-              END DO
-            END DO
+             END IF
+           END DO
+         END DO
+      ELSEIF ( TASK.EQ.2 .OR. TASK.EQ.21 .OR.                          &
+               TASK.EQ.6 .OR. TASK.EQ.61 ) THEN
+         ! Direct access write
+         NPART  = 1 + (NC-1)/NSIZE
+         DO IPART=1,NPART
+            NR = NR + 1
+            IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               WRITE(IUN,POS=RPOS) WRITEBUFF
+               WRITE(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%INDQUAD(IR),    &
+                           IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
+            ELSE
+               WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%INDQUAD(IR),      &
+                           IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
+            END IF
+         END DO
+         DO IPART=1,NPART
+            NR = NR + 1
+            IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               WRITE(IUN,POS=RPOS) WRITEBUFF
+               WRITE(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%INDSUB(IR),     &
+                           IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
+            ELSE
+               WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%INDSUB(IR),       &
+                           IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
+            END IF
+         END DO
+         DO IPART=1,NPART
+            NR = NR + 1
+            IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               WRITE(IUN,POS=RPOS) WRITEBUFF
+               WRITE(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%INDLVL(IR),     &
+                           IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
+            ELSE
+               WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%INDLVL(IR),       &
+                           IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
+            END IF
+         END DO
+         DO IC=1,8
+           DO IPART=1,NPART
+             NR = NR + 1
+             IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               WRITE(IUN,POS=RPOS) WRITEBUFF
+               WRITE(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%NGBR(IR,IC),    &
+                           IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
+             ELSE
+               WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%NGBR(IR,IC),      &
+                           IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
+             END IF
+           END DO
+         END DO
+         DO IPART=1,NPART
+            NR = NR + 1
+            IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               WRITE(IUN,POS=RPOS) WRITEBUFF
+               WRITE(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%CELL_TYPE(IR),  &
+                           IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
+            ELSE
+               WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%CELL_TYPE(IR),    &
+                           IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
+            END IF
+         END DO
+         DO IPART=1,NPART
+            NR = NR + 1
+            IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               WRITE(IUN,POS=RPOS) WRITEBUFF
+               WRITE(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%INDML(IR),      &
+                           IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
+            ELSE
+               WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%INDML(IR),        &
+                           IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
+            END IF
+         END DO
+         DO IC=1,2
+           DO IPART=1,NPART
+             NR = NR + 1
+             IF ( STREAM ) THEN
+               RPOS  = 1_8 + LRECL*(NR-1_8)
+               WRITE(IUN,POS=RPOS) WRITEBUFF
+               WRITE(IUN,POS=RPOS,IOSTAT=IERR) ( QTREE%XYVAL(IR,IC),   &
+                           IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
+             ELSE
+               WRITE(IUN,REC=NR,IOSTAT=IERR) ( QTREE%XYVAL(IR,IC),     &
+                           IR=1+(IPART-1)*NSIZE, MIN(NC,IPART*NSIZE) )
+             END IF
+           END DO
+         END DO
       ELSEIF ( TASK.EQ.-4 .OR. TASK.EQ.-41 ) THEN
             ! Formatted read, cell variables
          DO IR=1,NC
-            READ(IUN,2004,IOSTAT=IERR) IR2, QTREE%INDQUAD(IR),        &
-                         QTREE%INDSUB(IR), QTREE%INDLVL(IR),          &
-                         (QTREE%NGBR(IR,IC),IC=1,8),                  &
-                         QTREE%CELL_TYPE(IR), QTREE%INDML(IR),        &
+            READ(IUN,2004,IOSTAT=IERR) IR2, QTREE%INDQUAD(IR),         &
+                         QTREE%INDSUB(IR), QTREE%INDLVL(IR),           &
+                         (QTREE%NGBR(IR,IC),IC=1,8),                   &
+                         QTREE%CELL_TYPE(IR), QTREE%INDML(IR),         &
                          (QTREE%XYVAL(IR,IC),IC=1,2)
             IF ( IERR.NE.0 ) THEN
-               IF ( NDE.GT.0 )                                        &
+               IF ( NDE.GT.0 )                                         &
                   WRITE(NDE,*) 'QA_IOQT: ERROR READING CELL INDEX ',IR
                RETURN
             END IF
@@ -6063,13 +6254,13 @@
       ELSEIF ( TASK.EQ.4 .OR. TASK.EQ.41 ) THEN
             ! Formatted write, cell variables
          DO IR=1,NC
-            WRITE(IUN,2004,IOSTAT=IERR) IR, QTREE%INDQUAD(IR),        &
-                         QTREE%INDSUB(IR), QTREE%INDLVL(IR),          &
-                         (QTREE%NGBR(IR,IC),IC=1,8),                  &
-                         QTREE%CELL_TYPE(IR), QTREE%INDML(IR),        &
+            WRITE(IUN,2004,IOSTAT=IERR) IR, QTREE%INDQUAD(IR),         &
+                         QTREE%INDSUB(IR), QTREE%INDLVL(IR),           &
+                         (QTREE%NGBR(IR,IC),IC=1,8),                   &
+                         QTREE%CELL_TYPE(IR), QTREE%INDML(IR),         &
                          (QTREE%XYVAL(IR,IC),IC=1,2)
             IF ( IERR.NE.0 ) THEN
-               IF ( NDE.GT.0 )                                        &
+               IF ( NDE.GT.0 )                                         &
                   WRITE(NDE,*) 'QA_IOQT: ERROR WRITING CELL INDEX ',IR
                RETURN
             END IF
