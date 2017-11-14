@@ -10835,11 +10835,12 @@
 !
 !/ ------------------------------------------------------------------- /
 !
-      SUBROUTINE QA_TSORDER( NTSUB, LVLMAX, LVLREF, LVLSTEP )
+      SUBROUTINE QA_TSORDER( NTSUB, LVLMAX, LVLREF, LVLSTEP, IOPT )
 !/
 !/       Richard Gorman, NIWA
 !/         23-Sep-2010:      Origination.
 !          Jan-April 2014:   Rename
+!          Nov 2017:         New method for UNO
 !/
 !  1. Purpose :
 !
@@ -10856,6 +10857,13 @@
 !       LVLMAX  Int.   I   Maximum quadtree level
 !       LVLREF  Int.   I   Reference quadtree level
 !       LVLSTEP I.A.   O   Sequence of levels
+!       IOPT    Int.   I*  Option: =0 for "delayed" ordering,
+!                                     where a step at level L is taken immediately
+!                                     after 2 steps at level L+1
+!                                  =1 for "centred" ordering
+!                                     where a step at level L is taken mid way
+!                                     between 2 steps at level L+1
+!                                  default = "centred" (old method)
 !     ----------------------------------------------------------------
 !
 !     Local variables.
@@ -10891,25 +10899,48 @@
 !/
       INTEGER, INTENT(IN)     :: NTSUB, LVLMAX, LVLREF
       INTEGER, INTENT(OUT)    :: LVLSTEP(:)
+      INTEGER, OPTIONAL, INTENT(IN)     :: IOPT
 !/
 !/ ------------------------------------------------------------------- /
 !/ Local parameters
 !/
       INTEGER           ::  IT2, LVL, LVLDIF, ITSUB, MTSUB
+      INTEGER           ::  LS, IOFF, K, KK
 !/
 !/ ------------------------------------------------------------------- /
 !/
       MTSUB = SIZE(LVLSTEP,1)
-      DO ITSUB = 1, MIN ( NTSUB, MTSUB )
-        IT2 = ITSUB - 1
-        DO LVL = LVLREF, LVLMAX
-          LVLDIF = LVLMAX - LVL
-          IF ( BTEST(ITSUB,LVLDIF) .NEQV. BTEST(IT2,LVLDIF) ) THEN
-            LVLSTEP(ITSUB) = LVL
-            EXIT
-          END IF
+      IF ( PRESENT (IOPT) ) THEN
+!
+!  New algorithm for either "delayed" (IOPT=0) or "centred" (IOPT=1) ordering
+        IOFF = MAX(IOPT,0)
+        IOFF = MIN(IOPT,1)
+        LS = 1
+        LVLSTEP(1) = LVLMAX
+        DO LVL = LVLMAX-1,LVLREF,-1
+          KK = (2-IOFF)*LS+1
+          IF (KK.LE.MTSUB) LVLSTEP(KK) = LVL
+          DO K=1,LS
+            KK = LS + K + IOFF
+            IF (KK.LE.MTSUB) LVLSTEP(KK) = LVLSTEP(K)
+          END DO
+          LS = 2*LS+1
+          IF ( LS.GE.MTSUB ) EXIT
         END DO
-      END DO
+      ELSE
+!
+!  Original algorithm for "centred" ordering
+        DO ITSUB = 1, MIN ( NTSUB, MTSUB )
+          IT2 = ITSUB - 1
+          DO LVL = LVLREF, LVLMAX
+            LVLDIF = LVLMAX - LVL
+            IF ( BTEST(ITSUB,LVLDIF) .NEQV. BTEST(IT2,LVLDIF) ) THEN
+              LVLSTEP(ITSUB) = LVL
+              EXIT
+            END IF
+          END DO
+        END DO
+      END IF
 !/
 !/ End of QA_TSORDER ----------------------------------------------------- /
 !/
