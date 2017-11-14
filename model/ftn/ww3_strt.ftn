@@ -822,6 +822,16 @@
                '  WW3 will create a gaussian distribution    '/       &         
                '  that is circular in real space. ')
 !
+  920 FORMAT (/'  Initial wave quadtree parameters:'/                 &
+               '       Target No. of cells (user)        :',I8/       &
+               '       Target No. of cells (final)       :',I8/       &
+               '       Max./Min. diagnostic var. ratio   :',E12.4/    &
+               '       Min. value of diagnostic variable :',E12.4/    &
+               '       Max. value of diagnostic variable :',E12.4/    &
+               '       Final No. of cells                :',I8/       &
+               '       Final No. of quads                :',I8/       &
+               ' --------------------------------------------------')
+!
   930 FORMAT (/'  Initial field ITYPE =',I2/                          &
                ' --------------------------------------------------')
 !
