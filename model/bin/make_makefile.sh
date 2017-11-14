@@ -25,10 +25,9 @@
 # --------------------------------------------------------------------------- #
 # 1.a Internal variables
 # set -x
-  ww3_env="${HOME}/.wwatch3.env"                           # setup file
 # The following line must not be removed: it is a switch for local install
 # so that all bin scripts point to the local wwatch3.env
-# WW3ENV
+  export ww3_env=/export/emc-lw-ynagai/rgorman/build/ww3_gen/wwatch3.env
 # For manual install (without install_ww3_tar or install_ww3_svn) make sure to
 # either use the generic ww3_env or to add your own ww3_env="${my_directory}"
 
@@ -823,14 +822,16 @@
                prop=
              source="w3triamd $stx $nlx $btx $is"
                  IO='w3iogrmd'
-                aux='constants w3servmd w3arrymd w3dispmd w3gsrumd w3timemd' ;;
+                aux='constants w3servmd w3arrymd w3dispmd w3gsrumd w3timemd'
+                aux="$aux qa_utils svd_lapack" ;;
      ww3_strt) IDstring='Initial conditions program'
                core=
                data='w3gdatmd w3wdatmd w3adatmd w3idatmd w3odatmd'
                prop=
              source="$stx $nlx $btx $is"
                  IO='w3iogrmd w3iorsmd'
-                aux='constants w3triamd w3servmd w3arrymd w3dispmd w3gsrumd w3timemd' ;;
+                aux='constants w3triamd w3servmd w3arrymd w3dispmd w3gsrumd w3timemd'
+                aux="$aux w3adgrmd qa_utils svd_lapack" ;;
      ww3_bound) IDstring='boundary conditions program'
                core=
                data='w3adatmd w3gdatmd w3wdatmd w3idatmd w3odatmd'
@@ -858,7 +859,8 @@
                prop=
              source="w3triamd $stx $nlx $btx $is"
                  IO="w3iogrmd $couplmd $agcmmd $ogcmmd $igcmmd"
-                aux="constants w3servmd w3timemd w3arrymd w3dispmd w3gsrumd $tidecode" ;;
+                aux="constants w3servmd w3timemd w3arrymd w3dispmd w3gsrumd $tidecode"
+                aux="$aux qa_utils svd_lapack" ;;
      ww3_prtide) IDstring='Tide prediction'
                core='w3fldsmd'
                data='w3gdatmd w3adatmd w3idatmd w3odatmd'
@@ -869,12 +871,12 @@
      ww3_shel) IDstring='Generic shell'
                core='w3fldsmd w3initmd w3wavemd w3wdasmd w3updtmd'
                data='wmmdatmd w3gdatmd w3wdatmd w3adatmd w3idatmd w3odatmd'
-               prop="$pr"
+               prop="$pr w3proqmd"
              source="w3triamd w3srcemd $dsx $flx $ln $st $nl $bt $ic $is $db $tr $bs $xx $refcode $igcode"
                  IO="w3iogrmd w3iogomd w3iopomd w3iotrmd w3iorsmd w3iobcmd $couplmd $agcmmd $ogcmmd $igcmmd"
                  IO="$IO w3iosfmd w3partmd"
                 aux="constants w3servmd w3timemd $tidecode w3arrymd w3dispmd w3cspcmd w3gsrumd $cplcode"
-                aux="$aux w3namlmd" ;;
+                aux="$aux w3namlmd w3adgrmd qa_utils svd_lapack" ;;
     ww3_multi|ww3_multi_esmf)
                if [ "$prog" = "ww3_multi" ]
                then
@@ -1180,6 +1182,7 @@
                W3REF1MD \
                W3SXXXMD \
               CONSTANTS W3SERVMD W3TIMEMD W3ARRYMD W3DISPMD W3GSRUMD W3TRIAMD \
+               QA_UTILS SVD_LAPACK W3ADGRMD W3PROQMD \
                WMINITMD WMWAVEMD WMFINLMD WMMDATMD WMGRIDMD WMUPDTMD \
                WMUNITMD WMINIOMD WMIOPOMD WMSCRPMD WMESMFMD \
                w3getmem WW_cc CMP_COMM W3OACPMD W3AGCMMD W3OGCMMD W3IGCMMD  W3NAMLMD
@@ -1271,6 +1274,10 @@
          'W3DISPMD'     ) modtest=w3dispmd.o ;;
          'W3GSRUMD'     ) modtest=w3gsrumd.o ;;
          'W3TRIAMD'     ) modtest=w3triamd.o ;;
+         'QA_UTILS'     ) modtest=qa_utils.o ;;
+         'SVD_LAPACK'   ) modtest=svd_lapack.o ;;
+         'W3ADGRMD'     ) modtest=w3adgrmd.o ;;
+         'W3PROQMD'     ) modtest=w3proqmd.o ;;
          'WMINITMD'     ) modtest=wminitmd.o ;;
          'WMWAVEMD'     ) modtest=wmwavemd.o ;;
          'WMFINLMD'     ) modtest=wmfinlmd.o ;;
