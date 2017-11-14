@@ -5630,8 +5630,8 @@
       INTEGER, PARAMETER    ::  LRB=4
       INTEGER    ::  NDE, MQ, MC, MC2, MC3, MC4, NQ, NC, NR, IC, IR,  &
                      IPART, NPART, NHD, NCOL, IHD, IR2, ATASK
-      LOGICAL    ::  DOWTS, DOQA, DOCA
-      INTEGER    ::  LRECL
+      LOGICAL    ::  DOWTS, DOQA, DOCA, STREAM
+      INTEGER    ::  LRECL, RPOS
       REAL(KIND=LRB), ALLOCATABLE :: WRITEBUFF(:)
 !
 !  Default for optional parameters
@@ -5642,7 +5642,7 @@
       IF ( PRESENT(NREC) ) NR = NREC
 !
       IF ( PRESENT(NSIZE) ) THEN
-         LREC = LRB*NSIZE
+         LRECL = LRB*NSIZE
          ALLOCATE ( WRITEBUFF(NSIZE) )
       END IF
 !
