@@ -32,6 +32,7 @@
 !      W3UNO2    Subr. Public   UNO2 scheme for irregular grid.
 !      W3UNO2r   Subr. Public   UNO2 scheme reduced to regular grid.
 !      W3UNO2s   Subr. Public   UNO2 regular grid with subgrid obstruction.
+!      QT1DUNO2  Subr. Public   UNO2 quadtree grid with subgrid obstruction.
 !     ----------------------------------------------------------------
 !
 !  4. Subroutines and functions used :
@@ -950,6 +951,164 @@
 !/ End of W3UNO2s ---------------------------------------------------- /
 !/
       END SUBROUTINE W3UNO2s
+!/
+!/-------------------------------------------------------------------- /
+!/
+      SUBROUTINE QT1DUNO2( LBC, JWS, JWE, IJKFc, CF, UC, LEN_CELL,     &
+                           AKDIF, WIDFC, FTS, UFLX, FU, FX )
+!/
+!/    Richard Gorman, NIWA
+!/    19-Oct-2017 : Derived from SMCxUNO2, SMCyUNO2 (J-G Li).
+!/
+!  1. Purpose :
+!
+!     Compute mid-flux values for 1 dimension of propagation
+!     under the UNO2 scheme
+!
+!  2. Method :
+!
+!  3. Parameters :
+!
+!     Parameter list
+!     ----------------------------------------------------------------
+!       LBC       I    I   Lower bound for cell indices (to allow for
+!                          indices <= 0 representing extra dummy cells)
+!       JWS, JWE  I    I   First and last wall indices to compute
+!       IJKFc    I.A.  I   Mapping from well index to indices of cells
+!                          either side of the wall.
+!                          Cells IJKFc(j,1-4) are successive in the +ve
+!                          direction, with wall j between cells IJKFc(j,2)
+!                          and IJKFc(j,3)
+!       CF       R.A.  I   Tracer to be advected (at each cell centre)
+!       UC       R.A.  I   Courant number (velocity component * DT/DX,
+!                          where DT, DX are reference time and spatial
+!                          increments) at each cell centre
+!       LEN_CELL I.A.  I   Cell length (in the propagation dimension)
+!                          relative to DX
+!       AKDIF    R.A.  I   Diffusion coefficient*DT/(DX*DX) at each 
+!                          cell centre
+!       WIDFC    I.A.  I   Width (transverse to the propagation 
+!                          dimension) for face, relative to a 
+!                          reference spatial increment DY
+!       FTS      Real  I   Time (sub)step relative to DT
+!       UFLX     R.A.  I   Courant number at each wall 
+!                          = velocity component * dt/DX,
+!                          where dt, is the actual time (sub)step 
+!       FU       R.A.  I   Mid flux value of tracer * actual wall width
+!                          upstream from each wall 
+!       FX       R.A.  I   Mid flux value of diffusive flux
+!                          upstream from each wall 
+!
+!  4. Subroutines used :
+!
+!     See module documentation.
+!
+!  5. Called by :
+!
+!      Name      Type  Module   Description
+!     ---------------------------------------------------------------- 
+!      W3XYQ2    Subr. W3PROQMD Quadtree UNO2 propagation with diffusion.
+!     ----------------------------------------------------------------
+!
+!  6. Error messages :
+!
+!       None.
+!
+!  7. Remarks :
+!
+!
+!  8. Structure :
+!
+!  9. Switches :
+!
+! 10. Source code :
+!
+!
+      IMPLICIT NONE
+      INTEGER, INTENT( IN) :: LBC
+      INTEGER, INTENT( IN) :: JWS, JWE
+      INTEGER, INTENT( IN) :: IJKFc(:,:)
+      REAL,    INTENT( IN) :: CF(LBC:), UC(LBC:)
+      INTEGER, INTENT( IN) :: LEN_CELL(LBC:)
+      REAL,    INTENT( IN) :: AKDIF(LBC:)
+      INTEGER, INTENT( IN) :: WIDFC(:)
+      REAL,    INTENT( IN) :: FTS
+      REAL,    INTENT(OUT) :: UFLX(:), FU(:), FX(:)
+!
+      INTEGER :: JW, K, L, M, N, IU, IC, ID, IJ
+      REAL :: DIFC_TS, CNWALL, LEN_U, LEN_C, LEN_D, LEN_W
+      REAL :: GRAD_DC, GRAD_CU, GRAD_MIN
+!
+!    Two layer of boundary cells are added to each boundary cell face
+!    with all boundary cell values CF(LBC:0)=0.0.
+
+!    Notice an extra side length L is multiplied to mid-flux to give correct
+!    proportion of flux into the cells.  This length will be removed by the
+!    cell length when the tracer concentration is updated.
+
+      !write(*,*) 'JW, IU, IC, ID, DIFC_TS, GRAD_DC, GRAD_CU, LEN_C,',  &
+      !            ' LEN_D, LEN_W, CF(IU), CF(IC), CF(ID) CNWALL, CNST'
+      DO JW=JWS,JWE
+
+!    Select Upstream, Central and Downstream cells
+         K=IJKFc(1,JW)
+         L=IJKFc(2,JW)
+         M=IJKFc(3,JW)
+         N=IJKFc(4,JW)
+!    Courant number at the wall arithmetic average, rescaled for
+!    time step being a fraction FTS of the reference time step.
+         CNWALL = 0.5*( UC(L)+UC(M) )*FTS
+         IF(CNWALL >= 0.0)  THEN
+           IU = K
+           IC = L
+           ID = M
+         ELSE
+           IU = N
+           IC = M
+           ID = L
+         END IF
+         UFLX(JW) = CNWALL
+!
+!    Use central cell velocity for boundary flux.  JGLi06Apr2011
+         IF( ID .LE. 0) UFLX(JW) = UC(IC)*FTS
+
+!    Face bounding cell lengths and (half of) central gradient
+         LEN_C = MAX(LEN_CELL(IC),1) 
+         LEN_D = MAX(LEN_CELL(ID),1) 
+         GRAD_DC = (CF(ID)-CF(IC))/(LEN_C + LEN_D)
+
+
+!    Length of the wall
+         LEN_W = WIDFC(JW)
+
+!    Diffusion Fourier no. at sub-time-step, proportional to face size,
+!    which is also equal to the sub-time-step factor FTS.
+!    The maximum cell number is used to avoid the boundary cell number
+!    in selection of the cosine factor.
+         IJ = MAX(IC, ID)
+         !DIFC_TS = AKDif(IJ)*FTS   ?
+         DIFC_TS = AKDif(IJ)*FTS*FTS
+
+!    Upstream cell length and (half-)gradient
+         LEN_U = MAX(LEN_CELL(IU),1)
+         GRAD_CU = (CF(IC)-CF(IU))/(LEN_C + LEN_U)
+
+!    Use minimum (half-)gradient all region.
+         GRAD_MIN = SIGN(1.0, GRAD_DC)*MIN( ABS(GRAD_CU), ABS(GRAD_DC) )
+
+!    Mid-flux value inside central cell
+         FU(JW) = (CF(IC) + GRAD_MIN*(LEN_C - ABS(CNWALL)))*LEN_W
+!    First order scheme:
+!         FU(JW) = CF(IC)*LEN_W
+
+!    Diffusion flux by face gradient x DT 
+         FX(JW) = 2.0*DIFC_TS*GRAD_DC*LEN_W
+         !write(*,*) JW, IU, IC, ID, DIFC_TS, GRAD_DC, GRAD_CU, LEN_C,  &
+         !           LEN_D, LEN_W, CF(IU), CF(IC), CF(ID), CNWALL, CNST 
+      END DO
+
+      RETURN
+      END SUBROUTINE QT1DUNO2
 !/
 !/ End of module W3UNO2MD -------------------------------------------- /
 !/

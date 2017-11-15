@@ -380,7 +380,7 @@
 !/IC3      USE W3SIC3MD
 !/IS2      USE W3SIS2MD
       USE W3ADGRMD
-      USE W3PROQMD
+!      USE W3PROQMD
       USE QA_UTILS
 
 !/OASIS      USE W3OACPMD, ONLY: ID_OASIS_TIME
@@ -953,7 +953,7 @@
                           END IF
                       END DO
                   ! Recompute level ranges for propagation
-                    CALL W3MPQ1 ( MAPSTA, LVRANGE_QA )
+!/PR1                    CALL W3MPQ1 ( MAPSTA, LVRANGE_QA )
                     FLFRSTSAV = FLFRST
                     FLFRST = .TRUE.
                   ELSE

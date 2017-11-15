@@ -344,7 +344,8 @@
                           NCTARGET_QA, GTYPE, QAGTYPE, NQUAD,         &
                           IAUX_QA, EXAUX_QA, LVRANGE_QA, WTS1_QA,     &
                           MAPML_QA
-!/PR2      USE W3GDATMD, ONLY: NUFc, NVFc, NRLv
+!/PR2      USE W3GDATMD, ONLY: NUFc, NVFc, NRLv, IJKCel, IJKUFc, IJKVFc,    &
+!/PR2                          NLvUFc, NLvVFc   
       USE W3WDATMD, ONLY: TIME, TLEV, TICE, WLV, UST, USTDIR, VA
       USE W3ODATMD, ONLY: NDSO, NDSE, NDST, SCREEN, NDS, NTPROC,      &
                           NAPROC, IAPROC, NAPLOG, NAPOUT, NAPERR,     &
@@ -362,7 +363,7 @@
                           FLMVS, FLIC1, FLIC2, FLIC3, FLIC4, FLIC5 
       USE W3DISPMD, ONLY: WAVNU1
       USE W3ADGRMD, ONLY: W3ADG1
-      USE W3PROQMD, ONLY: W3MPQ1
+!/PR1      USE W3PRO1MD, ONLY: W3MPQ1
       USE QA_UTILS
 !/
       IMPLICIT NONE

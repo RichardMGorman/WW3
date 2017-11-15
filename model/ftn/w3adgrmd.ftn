@@ -91,6 +91,8 @@
                              IAUX_QA, EXAUX_QA, DATB_QA, NSPEC,       &
                              QTREE, WTS1_QA, NK, DMIN, MAPML_QA,      &
                              NCMXQ
+!/PR2      USE W3GDATMD, ONLY: NUFc, NVFc, NRLv, IJKCel, IJKUFc, IJKVFc,    &
+!/PR2                          NLvUFc, NLvVFc   
       USE W3WDATMD, ONLY: VA
       USE W3ADATMD, ONLY: U10, CG, WN
       USE W3SERVMD, ONLY: EXTCDE

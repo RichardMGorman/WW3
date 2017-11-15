@@ -1524,7 +1524,10 @@
 !
 !  4. Subroutines used :
 !
-!     See module documentation.
+!      Name      Type  Module   Description
+!     ----------------------------------------------------------------
+!      QT1DUNO2  Subr. W3PROQMD UNO2 scheme for quadtree grid.
+!     ----------------------------------------------------------------
 !
 !  5. Called by :
 !
@@ -1581,6 +1584,7 @@
       USE W3IDATMD, ONLY: FLCUR
       USE W3ODATMD, ONLY: NDST, FLBPI, NBI, TBPI0, TBPIN, ISBPI,       &
                           BBPI0, BBPIN
+!/UNO      USE W3UNO2MD, ONLY: QT1DUNO2
 !/S      USE W3SERVMD, ONLY: STRACE
 !/
       IMPLICIT NONE
@@ -1807,9 +1811,9 @@
 !
 !     In X dimension
 !
-           CALL QT1DUNO2( -9, IUF, JUF, IJKUFc(4:7,:), CQ, UCFL,       &
-                          IJKCel(3,:), DNND, IJKUFc(3,:), FMR, ULCFLX, &
-                          FUMD, FUDIFX )
+!/UNO           CALL QT1DUNO2( -9, IUF, JUF, IJKUFc(4:7,:), CQ, UCFL,       &
+!/UNO                          IJKCel(3,:), DNND, IJKUFc(3,:), FMR, ULCFLX, &
+!/UNO                          FUMD, FUDIFX )
 !
 !  Store conservative flux in FCNt advective one in AFCN
 !  Add sub-grid transparency for input flux update. 
@@ -1854,9 +1858,9 @@
 !
 !  Compute fluxes in y dimension:
 !
-           CALL QT1DUNO2( -9, IVF, JVF, IJKVFc(4:7,:), CQ, VCFL,       &
-                          IJKCel(4,:), DSSD, IJKVFc(3,:), FMR, VLCFLY, &
-                          FVMD, FVDIFY )
+!/UNO           CALL QT1DUNO2( -9, IVF, JVF, IJKVFc(4:7,:), CQ, VCFL,       &
+!/UNO                          IJKCel(4,:), DSSD, IJKVFc(3,:), FMR, VLCFLY, &
+!/UNO                          FVMD, FVDIFY )
 !
 !  Store conservative flux
 !
