@@ -663,6 +663,10 @@
 !/PR2          NRLv = 1          
 !/DEBUGIOGR     WRITE(740+IAPROC,*) 'W3IOGR, step 7.2'
 !/DEBUGIOGR     FLUSH(740+IAPROC)
+!/PR2! These need to be defined for W3DIMX, though the arrays won't be used
+!/PR2          NUFc = 1
+!/PR2          NVFc = 1
+!/PR2          NRLv = 1          
 !!Li      IF (.NOT.GINIT) CALL W3DIMX ( IGRD, NX, NY, NSEA, NDSE, NDST )
           IF (.NOT.GINIT) CALL W3DIMX ( IGRD, NX, NY, NSEA, NDSE, NDST &
 !/SMC                                 , NCel, NUFc, NVFc, NRLv         &

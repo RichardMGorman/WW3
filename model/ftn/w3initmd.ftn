@@ -350,6 +350,7 @@
 !/PR2      USE W3GDATMD, ONLY: NUFc, NVFc, NRLv, IJKCel, IJKUFc, IJKVFc,    &
 !/PR2                          NLvUFc, NLvVFc   
 !/PDLIB     USE W3GDATMD, ONLY : FLCTH
+!/PR2      USE W3GDATMD, ONLY: NUFc, NVFc, NRLv
       USE W3WDATMD, ONLY: TIME, TLEV, TICE, WLV, UST, USTDIR, VA
       USE W3ODATMD, ONLY: NDSO, NDSE, NDST, SCREEN, NDS, NTPROC,      &
                           NAPROC, IAPROC, NAPLOG, NAPOUT, NAPERR,     &
@@ -996,6 +997,7 @@
 !/PR1          CALL W3MPQ1 ( MAPSTA, LVRANGE_QA )
 !/PR2          CALL QA_QT2SMC ( QTREE(IQGW), -9, IJKCel, IJKUFc, IJKVFc,    &
 !/PR2                           NLvUFc, NLvVFc, ierr=IERR, ndse=NDSE )
+
           ALLOCATE ( MAPTST(NY,NX) )
         ELSE
 !
