@@ -1319,10 +1319,7 @@
                   ELSE IF (GTYPE .EQ. QAGTYPE) THEN
 !/PR1               CALL W3XYQ1 ( ISPEC, DTG, MAPSTA, FIELD, VGX, VGY,     &
 !/PR1                             LVRANGE_QA )
-!/PR2               CALL W3XYQ1 ( ISPEC, DTG, MAPSTA, FIELD, VGX, VGY,     &
-!/PR2                             LVRANGE_QA )
-!/PR3               CALL W3XYQ1 ( ISPEC, DTG, MAPSTA, FIELD, VGX, VGY,     &
-!/PR3                             LVRANGE_QA )
+!/PR2               CALL W3XYQ2 ( ISPEC, DTG, FIELD, VGX, VGY )
 !/PRX               CALL W3XYPX
                   ELSE
 !/PR1               CALL W3XYP1 ( ISPEC, DTG, MAPSTA, FIELD, VGX, VGY )

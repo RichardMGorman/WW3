@@ -8409,16 +8409,16 @@
 !       IJKVFc   I.A.   O   SMC array containing V face locations, sizes, and 
 !                           indices (into IJKCel) of neighbouring cells 
 !                           The array is sorted from finest to coarsest
-!       NLvUFc   I.A.   O   SMC array containing the number of U faces at 
+!       NLvUFc   I.A.   O*  SMC array containing the number of U faces at 
 !                           or above each refinement level, ie. there are 
 !                           NLvUFc(k) U faces with a face refinement level >=
 !                           L = highest refinement level of adjoining cells
 !                             = Max. refinement level - k + 1
-!       NLvVFc   I.A.   O   as above for V faces
-!       NLvUFc2  I.A.   O   NLvUFc2(k)  = No. of U faces with both adjoining
+!       NLvVFc   I.A.   O*  as above for V faces
+!       NLvUFc2  I.A.   O*  NLvUFc2(k)  = No. of U faces with both adjoining
 !                           cells at level >= L
 !                           with L = Max. refinement level - k +1
-!       NLvVFc2  I.A.   O   as above for V faces
+!       NLvVFc2  I.A.   O"  as above for V faces
 !       IERR     Int.   O*  Return flag = 1 for error, else 0
 !       NDSE     Int.   I*  Unit number for error output (if >0)
 !     ----------------------------------------------------------------

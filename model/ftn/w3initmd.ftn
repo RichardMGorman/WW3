@@ -344,6 +344,7 @@
                           NCTARGET_QA, GTYPE, QAGTYPE, NQUAD,         &
                           IAUX_QA, EXAUX_QA, LVRANGE_QA, WTS1_QA,     &
                           MAPML_QA
+!/PR2      USE W3GDATMD, ONLY: NUFc, NVFc, NRLv
       USE W3WDATMD, ONLY: TIME, TLEV, TICE, WLV, UST, USTDIR, VA
       USE W3ODATMD, ONLY: NDSO, NDSE, NDST, SCREEN, NDS, NTPROC,      &
                           NAPROC, IAPROC, NAPLOG, NAPOUT, NAPERR,     &
@@ -595,6 +596,9 @@
           NQMXQ(IQGW) = MAX(NQUAD, NQMXQ(IQGW))
           NX = NSEA
           NY = 1
+!/PR2          NUFc = 2*NCMXQ(IQGW)          
+!/PR2          NVFc = NUFc          
+!/PR2          NRLv = 1 + QTREE(IQGW)%LVLMAX          
 !
 !         Allocate quadtree arrays, and deallocate those arrays
 !         from the model definition file that need to be resized          
@@ -602,7 +606,9 @@
                          NINDML, NDSEN, NDST )
 !         ... and reallocate:
           IF ( NCMXQ(IQGW).NE.NCMXQ(IQGB) ) CALL W3DIMX( IMOD,        &
-                         NCMXQ(IQGW), NY, NCMXQ(IQGW), NDSEN, NDST )
+                         NCMXQ(IQGW), NY, NCMXQ(IQGW)                 &
+!/PR2                         ,NUFc, NVFc, NRLv                            &
+                         , NDSEN, NDST )
 !
 !         MAPSTA etc. will be recomputed later, after the quadtree grid 
 !         is read from the restart file
@@ -811,7 +817,11 @@
           DO ISEA=1,NSEA
               CALL W3ADG1 ( ISEA )
             END DO
-          CALL W3MPQ1 ( MAPSTA, LVRANGE_QA )
+!  Compute maps for propagation
+!/PR1          CALL W3MPQ1 ( MAPSTA, LVRANGE_QA )
+!/PR2          CALL QA_QT2SMC ( QTREE(IQGW), -9, IJKCel, IJKUFc, IJKVFc,    &
+!/PR2                           NLvUFc, NLvVFc, ierr=IERR, ndse=NDSE )
+
           ALLOCATE ( MAPTST(NY,NX) )
         ELSE
 !

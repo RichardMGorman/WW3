@@ -537,7 +537,7 @@
       END SUBROUTINE W3XYQ1
 !      
 !/ ------------------------------------------------------------------- /
-      SUBROUTINE W3XYQ2 ( ISP, DTG, MAPSTA, FIELD, VGX, VGY, LVRANGE )
+      SUBROUTINE W3XYQ2 ( ISP, DTG, FIELD, VGX, VGY )
 !/
 !/                  +-----------------------------------+
 !/                  | WAVEWATCH-III           NOAA/NCEP |
@@ -565,13 +565,9 @@
 !     ----------------------------------------------------------------
 !       ISP     Int.   I   Number of spectral bin (IK-1)*NTH+ITH
 !       DTG     Real   I   Total time step.
-!       MAPSTA  I.A.   I   Grid point status map.
 !       FIELD   R.A.  I/O  Wave action spectral densities on full
 !                          grid.
 !       VGX/Y   Real   I   Speed of grid.
-!       LVRANGE I.A.   I   For each cell, gives the minimum and maximum
-!                          refinement level of the cell and its immediate
-!                          neighbours
 !     ----------------------------------------------------------------
 !
 !     Local variables.
@@ -632,12 +628,11 @@
 !
       USE W3TIMEMD, ONLY: DSEC21
 !
-      USE W3GDATMD, ONLY: NK, NTH, SIG, ECOS, ESIN, NSEA, MAPSF,       &
+      USE W3GDATMD, ONLY: NTH, SIG, ECOS, ESIN, NSEA,                  &
                           DTCFL, CLATS, IQGW, QTREE, FLAGLL, FLCX,     &
-                          FLCY, SX, SY, DTH, XFR,                      &
-                          IJKCel, IJKUFc, IJKVFc, NCel, NUFc, NVFc,    &
-                          NLvCel, NLvUFc, NLvVFc, NRLv, MRFct,         &
-                          DTME, CLATMN
+                          FLCY, SX, SY, DTH, XFR, DTCFL, DTME,         &
+                          IJKCel, IJKUFc, IJKVFc, NLvUFc, NLvVFc,      &
+                          NUFc, NVFc
       USE W3WDATMD, ONLY: TIME
       USE W3ADATMD, ONLY: CG, CX, CY, ATRNX, ATRNY
       USE W3IDATMD, ONLY: FLCUR
@@ -650,32 +645,29 @@
 !/ ------------------------------------------------------------------- /
 !/ Parameter list
 !/
-      INTEGER, INTENT(IN)     :: ISP, MAPSTA(NSEA)
+      INTEGER, INTENT(IN)     :: ISP
       REAL, INTENT(IN)        :: DTG, VGX, VGY
       REAL, INTENT(INOUT)     :: FIELD(0:NSEA+2)
-      INTEGER, INTENT(IN)     :: LVRANGE(NSEA,2)
 !/
 !/ ------------------------------------------------------------------ /
 !/ Local parameters
 !/
-      INTEGER                 :: IK, ITH, NTLOC, ITLOC, ISEA, NTSUB,   &
-                                 ITSUB, JXN, JXP, JYN, JYP, IBI,       &
-                                 INBRX1, INBRX2, INBRY1, INBRY2, IXY
-      INTEGER                 :: LVLR, LVLT, LVLM, LVLCALC, LVL1,      &
-                                 LVL2, LVL
-!/T3      INTEGER                 :: IX, IXF, IYF
+      INTEGER                 :: IK, ITH, NTLOC, ITLOC, ISEA, NTSUB
+      INTEGER                 :: ITSUB, IBI, IUF, IVF, JUF, JVF
+      INTEGER                 :: IFC, M, N
+      INTEGER                 :: LVLR, LVLT, LVLM, LVLCALC, LVL
 !/S      INTEGER, SAVE           :: IENT = 0
-      REAL                    :: CG0, CGL, CGA, CC, CGN, CP, CQ
-      REAL                    :: VCB
+      REAL                    :: CG0, CGL, CGA, CC, CGN, CGD
       REAL                    :: RD1, RD2, DXYFAC, DTLOC, DTRAD
-      REAL                    :: FNBR
       REAL                    :: TRAT, TSUBFAC
+      REAL                    :: DX0, DY0, DFRR, DNN, FMR
+      REAL                    :: TRANS1, TRANS2, FUTRN, FVTRN
       INTEGER                 :: UNDEF
-!/T3      REAL                    :: AOLD
 !/
 !/ Automatic work arrays
 !/
       REAL                    :: CXTOT(NSEA), CYTOT(NSEA)
+      REAL                    :: DNND(NSEA), DSSD(NSEA)
       INTEGER, ALLOCATABLE    :: LVLSTEP(:)
       REAL, Dimension(-9:NSEA) ::  FCNt, AFCN, BCNt, UCFL, VCFL, CQ, CQA
       REAL, Dimension(   NUFc) ::  FUMD, FUDIFX, ULCFLX
@@ -692,6 +684,8 @@
 !
       ITH    = 1 + MOD(ISP-1,NTH)
       IK     = 1 + (ISP-1)/NTH
+!
+!/T      WRITE (NDST,9001) ISP, ITH, IK
 !
       CG0    = 0.575 * GRAV / SIG(1)
       CGL    = 0.575 * GRAV / SIG(IK)
@@ -718,9 +712,35 @@
       DTLOC  = DTG / REAL(NTLOC)
       DTRAD  = DTLOC
 !
+!/T      WRITE (NDST,9000) NTLOC
+!
       LVLR = QTREE(IQGW)%LVLREF
       LVLM = QTREE(IQGW)%LVLHI
-!    Base-cell grid length at Equator (reference refinement level).
+      LVLT = LVLR
+      !LVLT = LVLM   ! Turn off substepping
+! 1.c Level-dependent time substepping
+!      In each universal time step, cells with level 0 to LVLT will be 
+!       updated once, while cells with level L > LVLT will
+!       be updated 2**(L - LVLT) times.
+!      That makes a total number of substeps
+!        NTSUB = 1 + 2 + ... + 2**(LVLMAX-LVLT) = 2**(LVLM-LVLT+1) - 1
+!      First determine LVLT, so that one step at that level won't exceed 
+!      the CFL time step (which applies at the reference level).
+!      Then call QA_TSORDER to compute the sequence of levels calculated 
+!      at each substep
+      DO WHILE ( TRAT.LT.1. .AND. LVLT.LE.LVLM )
+          TRAT = 2.*TRAT
+          IF ( TRAT.LT.1. ) LVLT = LVLT + 1
+      END DO
+      NTSUB = 2**(LVLM-LVLT+1) - 1
+!
+!/T      WRITE (NDST,9002) LVLT, NTSUB
+!
+      ALLOCATE ( LVLSTEP(NTSUB) )
+      CALL QA_TSORDER( NTSUB, LVLM, LVLT, LVLSTEP, iopt=0 )
+!
+!     cell grid lengths at Equator (at finest refinement level).
+!
       DX0    = SX*2.**(LVLR-LVLM)
       DY0    = SY*2.**(LVLR-LVLM)
       IF ( FLAGLL ) THEN
@@ -737,46 +757,24 @@
       END IF
 
 !
-!/T      WRITE (NDST,9000) NTLOC
-!/T      WRITE (NDST,9001) ISP, ITH, IK
-!
-! 1.c Level-dependent time substepping
-!      In each universal time step, cells with level 0 to LVLT will be 
-!       updated once, while cells with level L > LVLT will
-!       be updated 2**(L - LVLT) times.
-!      That makes a total number of substeps
-!        NTSUB = 1 + 2 + ... + 2**(LVLMAX-LVLT) = 2**(LVLM-LVLT+1) - 1
-!      First determine LVLT, so that one step at that level won't exceed 
-!      the CFL time step (which applies at the reference level).
-!      Then call QA_TSORDER to compute the sequence of levels calculated 
-!      at each substep
-!
-      LVLT = LVLR
-      !LVLT = LVLM   ! Turn off substepping
-      DO WHILE ( TRAT.LT.1. .AND. LVLT.LE.LVLM )
-         TRAT = 2.*TRAT
-         IF ( TRAT.LT.1. ) LVLT = LVLT + 1
-      END DO
-      NTSUB = 2**(LVLM-LVLT+1) - 1
-      ALLOCATE ( LVLSTEP(NTSUB) )
-      CALL QA_TSORDER( NTSUB, LVLM, LVLT, LVLSTEP, iopt=0 )
-!
-!/T      WRITE (NDST,9002) LVLT, NTSUB
-!
 ! 1.d Initialize arrays
 !
-      CXTOT  = 0.
-      CYTOT  = 0.
       CQ = 0.0
+      CQA = 0.0
+      CXTOT = 0.0
+      CYTOT = 0.0
+      AFCN = 0.0
+      BCNt = 0.0
+      FCNt = 0.0
+!
       UCFL = 0.0
       VCFL = 0.0
+      DNND = 0.0
+      DSSD = 0.0
 !
 !
 ! 2.  Calculate field and velocities --------------------------------- *
 !
-!     FIELD = A / CG * CLATQ
-!     VCX   = COS*CG / CLATQ
-!     VCY   = SIN*CG
 !
 !/T1      WRITE (NDST,9020)
 !     Propagation velocity components (relative to water):
@@ -800,24 +798,21 @@
          END DO
       END IF
 !
+!     Convert propagation velocities to CFL numbers, using global
+!     time substep dT and cell sizes dX, dY at finest refinement
+!     Similarly for diffusion coefficients
 !     Multiply x- component by dT(s)/dX(m)          
 !     Multiply y- component by dT(s)/dY(m)          
+!     Multiply diffusion coefficient by dT/dX^2, dT/dY^2
       DO ISEA=1, NSEA
          IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. UNDEF ) CYCLE
-         UCFL(ISEA) = CXTOT(ISEA)*DTRAD/(SX*CLATS(ISEA))
-         VCFL(ISEA) = CYTOT(ISEA)*DTRAD/SY
-      END DO
-!     Multiply diffusion coefficient by dT/dX^2, dT/dY^2
-      IF ( DTME .GT. 0. ) THEN
-         DO ISEA=1, NSEA
-            IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. UNDEF ) CYCLE
+         UCFL(ISEA) = CXTOT(ISEA)*DTRAD/(DX0*CLATS(ISEA))
+         VCFL(ISEA) = CYTOT(ISEA)*DTRAD/DY0
+         IF ( DTME .GT. 0. ) THEN
             DNND(ISEA) = DNN*DTLOC/(DX0*CLATS(ISEA))**2
             DSSD(ISEA) = DNN*DTLOC/(DY0*DY0)
-         END DO
-      ELSE
-          DSSD = 0.0
-          DNND = 0.0
-      END IF
+         END IF
+      END DO
 !
 ! ====================== Loop partial ================================ *
 !     Applies to all cells
@@ -834,16 +829,26 @@
            ! of that size on either side
            IF ( LVLCALC.GT.LVLT ) THEN
               ! Cells at one refinement level are updated.
-              iuf = NLvUFc2(LVLM-LVLCALC+1)
-              juf = NLvUFc(LVLM-LVLCALC+1)
-              ivf = NLvVFc2(LVLM-LVLCALC+1)
-              jvf = NLvVFc(LVLM-LVLCALC+1)
+              IF (LVLM-LVLCALC.GT.0) THEN
+                 IUF = NLvUFc(LVLM-LVLCALC) + 1
+                 IVF = NLvVFc(LVLM-LVLCALC) + 1
+              ELSE
+                 IUF = 1
+                 IVF = 1
+              END IF
+              JUF = NLvUFc(LVLM-LVLCALC+1)
+              JVF = NLvVFc(LVLM-LVLCALC+1)
            ELSE
               ! Cells at all refinement levels <= LVLT are updated.
-              iuf = NLvUFc2(LVLM-LVLT+1)
-              juf = NLvUFc(LVLM+1)
-              ivf = NLvVFc2(LVLM-LVLT+1)
-              jvf = NLvVFc(LVLM+1)
+              IF (LVLM-LVLT.GT.0) THEN
+                 IUF = NLvUFc(LVLM-LVLT) + 1
+                 IVF = NLvVFc(LVLM-LVLT) + 1
+              ELSE
+                 IUF = 1
+                 IVF = 1
+              END IF
+              JUF = NLvUFc(LVLM+1)
+              JVF = NLvVFc(LVLM+1)
            END IF
            ! Time step for this iteration, as a fraction of the universal 
            ! partial time step
@@ -857,39 +862,42 @@
 ! 3.  Calculate propagation fluxes ----------------------------------- *
 !     Only for boundaries of cells that will be updated
 !
+!     In X dimension
 !
-           CALL QT1DUNO2( iuf, juf, IJKUFc(4:7,:), CQ, UCFL, IJKCel(3,:),  &
-                          DNND, IJKUFc(3,:), FMR, ULCFLX, FUMD, FUDIFX )
-
+           CALL QT1DUNO2( -9, IUF, JUF, IJKUFc(4:7,:), CQ, UCFL,       &
+                          IJKCel(3,:), DNND, IJKUFc(3,:), FMR, ULCFLX, &
+                          FUMD, FUDIFX )
+!
 !  Store conservative flux in FCNt advective one in AFCN
 !  Add sub-grid transparency for input flux update. 
 !  Transparency is also applied on diffusion flux.  
-           DO i=iuf, juf 
-              M=IJKUFc(5,i)
-              N=IJKUFc(6,i)
-              IF( ULCFLX(i) .GE. 0.0 )  THEN
-                 FUTRN = (FUMD(i)*ULCFLX(i) - FUDIFX(i))*ATRNX(M,1)
+           DO IFC=IUF, JUF 
+              M=IJKUFc(5,IFC)
+              N=IJKUFc(6,IFC)
+              TRANS1 = 1.
+              IF ( M.GT.0 ) TRANS1 = ATRNX(M,1)
+              TRANS2 = 1.
+              IF ( N.GT.0 ) TRANS2 = ATRNX(N,-1)
+              IF( ULCFLX(IFC) .GE. 0.0 )  THEN
+                 FUTRN = (FUMD(IFC)*ULCFLX(IFC) - FUDIFX(IFC))*TRANS1
                  FCNt(M) = FCNt(M) - FUTRN
-                 FCNt(N) = FCNt(N) + FUTRN*ATRNX(N,-1)
+                 FCNt(N) = FCNt(N) + FUTRN*TRANS2
               ELSE
-                 FUTRN = (FUMD(i)*ULCFLX(i) - FUDIFX(i))*ATRNX(N,-1)
-                 FCNt(M) = FCNt(M) - FUTRN*ATRNX(M,1)
+                 FUTRN = (FUMD(IFC)*ULCFLX(IFC) - FUDIFX(IFC))*TRANS2
+                 FCNt(M) = FCNt(M) - FUTRN*TRANS1
                  FCNt(N) = FCNt(N) + FUTRN 
               ENDIF
-              AFCN(M) = AFCN(M) - FUMD(i)*UCFL(M)*FMR + FUDIFX(i)
-              AFCN(N) = AFCN(N) + FUMD(i)*UCFL(N)*FMR - FUDIFX(i)
+              AFCN(M) = AFCN(M) - FUMD(IFC)*UCFL(M)*FMR + FUDIFX(IFC)
+              AFCN(N) = AFCN(N) + FUMD(IFC)*UCFL(N)*FMR - FUDIFX(IFC)
+              !write(*,*) IFC, IJKUFc(3:7,IFC), ULCFLX(IFC), FUMD(IFC), &
+              !           FUDIFX(IFC), M, N, TRANS1, TRANS2, FUTRN,     &
+              !           FCNt(M), FCNt(N)
            ENDDO
-
-!  Store conservative update in D and advective update in C
-!  The side length in MF value has to be cancelled with cell y-length.
-!  Also divided by another cell x-size as UCFL is in size-1 unit.
+!
+!  Store conservative update and advective update
            DO ISEA=1,NSEA
-              IXY = MAPSF(ISEA,3)
-              IF ( MAPSTA(IXY).EQ.0 ) CYCLE
+              IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. UNDEF ) CYCLE
               LVL = QTREE(IQGW)%INDLVL(ISEA)
-              ! Inverse ratio squared of cell DX and DY to those at the 
-              ! reference level
-              !DXYFAC = 4.**(LVL-LVLR)
               ! Inverse ratio squared of cell DX and DY to those at the 
               ! finest reference level
               DXYFAC = 4.**(LVL-LVLM)
@@ -901,37 +909,42 @@
               AFCN(ISEA) = 0.0
            END DO
 !
-!  Call SMCyUNO2 to calculate MFy value
-           CALL QT1DUNO2( ivf, jvf, IJKVFc(4:7,:), CQ, VCFL, IJKCel(4,:),  &
-                          DSSD, IJKVFc(3,:), FMR, VLCFLY, FVMD, FVDIFY )
+!  Compute fluxes in y dimension:
 !
-!  Store conservative flux in F
-           DO j=ivf, jvf 
-              M=IJKVFc(5,j)
-              N=IJKVFc(6,j)
-              IF( VLCFLY(j) .GE. 0.0 )  THEN
-                 FVTRN = (FVMD(j)*VLCFLY(j) - FVDIFY(j))*ATRNY(M,1)
+           CALL QT1DUNO2( -9, IVF, JVF, IJKVFc(4:7,:), CQ, VCFL,       &
+                          IJKCel(4,:), DSSD, IJKVFc(3,:), FMR, VLCFLY, &
+                          FVMD, FVDIFY )
+!
+!  Store conservative flux
+!
+           DO IFC=ivf, jvf 
+              M=IJKVFc(5,IFC)
+              N=IJKVFc(6,IFC)
+              TRANS1 = 1.
+              IF (M.GT.0) TRANS1 = ATRNY(M,1)
+              TRANS2 = 1.
+              IF (N.GT.0) TRANS2 = ATRNY(N,-1)
+              IF( VLCFLY(IFC) .GE. 0.0 )  THEN
+                 FVTRN = (FVMD(IFC)*VLCFLY(IFC) - FVDIFY(IFC))*TRANS1
                  BCNt(M) = BCNt(M) - FVTRN
-                 BCNt(N) = BCNt(N) + FVTRN*ATRNY(N,-1) 
+                 BCNt(N) = BCNt(N) + FVTRN*TRANS2 
               ELSE
-                 FVTRN = (FVMD(j)*VLCFLY(j) - FVDIFY(j))*ATRNY(N,-1)
-                 BCNt(M) = BCNt(M) - FVTRN*ATRNY(M,1) 
+                 FVTRN = (FVMD(IFC)*VLCFLY(IFC) - FVDIFY(IFC))*TRANS2
+                 BCNt(M) = BCNt(M) - FVTRN*TRANS1
                  BCNt(N) = BCNt(N) + FVTRN 
               ENDIF
+              !write(*,*) IFC, IJKVFc(3:7,IFC), VLCFLY(IFC), FVMD(IFC), &
+              !           FVDIFY(IFC), M, N, TRANS1, TRANS2, FVTRN,     &
+              !           BCNt(M), BCNt(N)
            ENDDO
            DO ISEA=1,NSEA
-              IXY = MAPSF(ISEA,3)
-              IF ( MAPSTA(IXY).EQ.0 ) CYCLE
+              IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. UNDEF ) CYCLE
               LVL = QTREE(IQGW)%INDLVL(ISEA)
-              ! Inverse ratio squared of cell DX and DY to those at the 
-              ! reference level
-              !DXYFAC = 4.**(LVL-LVLR)
               ! Inverse ratio squared of cell DX and DY to those at the 
               ! finest reference level
               DXYFAC = 4.**(LVL-LVLM)
               LVL = MAX(LVL,LVLT)
               IF ( LVL.NE.LVLCALC ) CYCLE
-              IXY = MAPSF(ISEA,3)
               CQ(ISEA) = CQA(ISEA) + BCNt(ISEA)*DXYFAC
               BCNt(ISEA) = 0.0
            END DO
@@ -968,8 +981,7 @@
 ! Rescale FIELD
 !
       DO ISEA=1,NSEA
-        IXY = MAPSF(ISEA,3)
-        IF ( MAPSTA(IXY).EQ.0 ) CYCLE
+        IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. UNDEF ) CYCLE
         FIELD(ISEA) = CG(IK,ISEA) / CLATS(ISEA) * CQ(ISEA)
       END DO
 !
@@ -977,24 +989,15 @@
 !
 ! Formats
 !
-!/T 9000 FORMAT (' TEST W3XYQ1 : NTLOC :',I4)
-!/T 9001 FORMAT (' TEST W3XYQ1 : ISP, ITH, IK :',I8,2I4)
-!/T 9002 FORMAT (' TEST W3XYQ1 : LVLT, NTSUB :',2I4)
+!/T 9000 FORMAT (' TEST W3XYQ2 : NTLOC :',I4)
+!/T 9001 FORMAT (' TEST W3XYQ2 : ISP, ITH, IK :',I8,2I4)
+!/T 9002 FORMAT (' TEST W3XYQ2 : LVLT, NTSUB :',2I4)
 !
-!/T1 9010 FORMAT (' TEST W3XYQ1 : ITLOC =',I3)
+!/T1 9010 FORMAT (' TEST W3XYQ2 : ITLOC =',I3)
 !
-!/T1 9020 FORMAT (' TEST W3XYQ1 : ISEA, IXY, FIELD, VCX, VCY')
+!/T1 9020 FORMAT (' TEST W3XYQ2 : ISEA, IXY, FIELD, VCX, VCY')
 !/T1 9021 FORMAT ('           ',2I8,3E12.4)
-!/T1 9025 FORMAT ('               ',I4,2E12.4)
 !
-!/T2 9032 FORMAT (' TEST W3XYQ1 : CLOSE. : IY, VFLX')
-!/T2 9033 FORMAT ('            ',I4,E12.4)
-!
-!/T3 9040 FORMAT (' TEST W3XYQ1 : PROPAGATION '/                      &
-!/T3              '      ISEA, ISEAW, ISEAE, ISEAS, ISEAN',           &
-!/T3              '  FLXW, FLXE, FLXS, FLXN, FAC, A(2)')
-!/T3 9041 FORMAT (2X,5I5,1X,4E10.3,1X,E10.3,1X,2E10.3)
-!/T3 9042 FORMAT (2X,I5,'( MAP = ',I2,' )',56X,2E10.3)
 !/
 !/
 !/ End of W3XYQ1 ----------------------------------------------------- /
@@ -1113,8 +1116,10 @@
 !/
       END SUBROUTINE W3MPQ1
 !/
-      SUBROUTINE QT1DUNO2( JWS, JWE, IJKFc, CF, UC, LEN_CELL, AKDIF,   &
-                           WIDFC, FTS, UFLX, FU, FX )
+!/-------------------------------------------------------------------- /
+!/
+      SUBROUTINE QT1DUNO2( LBC, JWS, JWE, IJKFc, CF, UC, LEN_CELL,     &
+                           AKDIF, WIDFC, FTS, UFLX, FU, FX )
 !/
 !/    Richard Gorman, NIWA
 !/    19-Oct-2017 : Derived from SMCxUNO2, SMCyUNO2 (J-G Li).
@@ -1130,6 +1135,8 @@
 !
 !     Parameter list
 !     ----------------------------------------------------------------
+!       LBC       I    I   Lower bound for cell indices (to allow for
+!                          indices <= 0 representing extra dummy cells)
 !       JWS, JWE  I    I   First and last wall indices to compute
 !       IJKFc    I.A.  I   Mapping from well index to indices of cells
 !                          either side of the wall.
@@ -1164,7 +1171,7 @@
 !
 !      Name      Type  Module   Description
 !     ---------------------------------------------------------------- 
-!      W3XYQ1    Subr. W3WAVEMD Wave model routine.
+!      W3XYQ2    Subr. W3PROQMD Quadtree UNO2 propagation with diffusion.
 !     ----------------------------------------------------------------
 !
 !  6. Error messages :
@@ -1173,8 +1180,6 @@
 !
 !  7. Remarks :
 !
-!     - The local work arrays are initialized on the first entry to
-!       the routine.
 !
 !  8. Structure :
 !
@@ -1184,26 +1189,29 @@
 !
 !
       IMPLICIT NONE
+      INTEGER, INTENT( IN) :: LBC
       INTEGER, INTENT( IN) :: JWS, JWE
       INTEGER, INTENT( IN) :: IJKFc(:,:)
-      REAL,    INTENT( IN) :: CF(:), UC(:)
-      INTEGER, INTENT( IN) :: LEN_CELL(:)
-      REAL,    INTENT( IN) :: AKDIF(:)
+      REAL,    INTENT( IN) :: CF(LBC:), UC(LBC:)
+      INTEGER, INTENT( IN) :: LEN_CELL(LBC:)
+      REAL,    INTENT( IN) :: AKDIF(LBC:)
       INTEGER, INTENT( IN) :: WIDFC(:)
       REAL,    INTENT( IN) :: FTS
       REAL,    INTENT(OUT) :: UFLX(:), FU(:), FX(:)
 !
       INTEGER :: JW, K, L, M, N, IU, IC, ID, IJ
       REAL :: DIFC_TS, CNWALL, LEN_U, LEN_C, LEN_D, LEN_W
-      REAL :: GRAD_DC, GRAD_CU, CNST
+      REAL :: GRAD_DC, GRAD_CU, GRAD_MIN
 !
 !    Two layer of boundary cells are added to each boundary cell face
-!    with all boundary cell values CF(-9:0)=0.0.
+!    with all boundary cell values CF(LBC:0)=0.0.
 
 !    Notice an extra side length L is multiplied to mid-flux to give correct
 !    proportion of flux into the cells.  This length will be removed by the
 !    cell length when the tracer concentration is updated.
 
+      !write(*,*) 'JW, IU, IC, ID, DIFC_TS, GRAD_DC, GRAD_CU, LEN_C,',  &
+      !            ' LEN_D, LEN_W, CF(IU), CF(IC), CF(ID) CNWALL, CNST'
       DO JW=JWS,JWE
 
 !    Select Upstream, Central and Downstream cells
@@ -1212,7 +1220,7 @@
          M=IJKFc(3,JW)
          N=IJKFc(4,JW)
 !    Courant number at the wall arithmetic average, rescaled for
-!    time step.
+!    time step being a fraction FTS of the reference time step.
          CNWALL = 0.5*( UC(L)+UC(M) )*FTS
          IF(CNWALL >= 0.0)  THEN
            IU = K
@@ -1229,8 +1237,8 @@
          IF( ID .LE. 0) UFLX(JW) = UC(IC)*FTS
 
 !    Face bounding cell lengths and (half of) central gradient
-         LEN_C = LEN_CELL(IC) 
-         LEN_D = LEN_CELL(ID) 
+         LEN_C = MAX(LEN_CELL(IC),1) 
+         LEN_D = MAX(LEN_CELL(ID),1) 
          GRAD_DC = (CF(ID)-CF(IC))/(LEN_C + LEN_D)
 
 
@@ -1245,19 +1253,22 @@
          !DIFC_TS = AKDif(IJ)*FTS   ?
          DIFC_TS = AKDif(IJ)*FTS*FTS
 
-!    Upstream cell length and gradient
-         LEN_U = LEN_CELL(IU)
+!    Upstream cell length and (half-)gradient
+         LEN_U = MAX(LEN_CELL(IU),1)
          GRAD_CU = (CF(IC)-CF(IU))/(LEN_C + LEN_U)
 
-!    Use minimum gradient all region.
-         CNST = SIGN(1.0, GRAD_DC)*MIN( ABS(GRAD_CU), ABS(GRAD_DC) )
+!    Use minimum (half-)gradient all region.
+         GRAD_MIN = SIGN(1.0, GRAD_DC)*MIN( ABS(GRAD_CU), ABS(GRAD_DC) )
 
 !    Mid-flux value inside central cell
-         FU(JW) = (CF(IC) + CNST*(LEN_C - ABS(CNWALL)))*LEN_W
+         FU(JW) = (CF(IC) + GRAD_MIN*(LEN_C - ABS(CNWALL)))*LEN_W
+!    First order scheme:
+!         FU(JW) = CF(IC)*LEN_W
 
 !    Diffusion flux by face gradient x DT 
          FX(JW) = 2.0*DIFC_TS*GRAD_DC*LEN_W
-
+         !write(*,*) JW, IU, IC, ID, DIFC_TS, GRAD_DC, GRAD_CU, LEN_C,  &
+         !           LEN_D, LEN_W, CF(IU), CF(IC), CF(ID), CNWALL, CNST 
       END DO
 
       RETURN

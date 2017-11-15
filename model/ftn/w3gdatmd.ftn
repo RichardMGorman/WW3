@@ -640,9 +640,15 @@
                             MAPFS(:,:), MAPSF(:,:)
 !
 !/SMC !!Li     Cell and face arrays for SMC grid.  
-!/SMC        INTEGER               :: NCel, NUFc, NVFc, NRLv, MRFct
-!/SMC        INTEGER, POINTER      :: NLvCel(:), NLvUFc(:), NLvVFc(:)
+!/SMC        INTEGER               :: NCel, MRFct
+!/SMC        INTEGER               :: NRLv, NUFc, NVFc
+!/SMC        INTEGER, POINTER      :: NLvCel(:)
+!/SMC        INTEGER, POINTER      :: NLvUFc(:), NLvVFc(:)
 !/SMC        INTEGER, POINTER      :: IJKCel(:,:), IJKUFc(:,:), IJKVFc(:,:)
+!/PR2 !RMG     Cell and face arrays for 2nd order quadtree propagation.  
+!/PR2        INTEGER               :: NRLv, NUFc, NVFc
+!/PR2        INTEGER, POINTER      :: NLvUFc(:), NLvVFc(:)
+!/PR2        INTEGER, POINTER      :: IJKCel(:,:), IJKUFc(:,:), IJKVFc(:,:)
 !
 !/ARC        INTEGER               :: NGLO, NARC, NBGL, NBAC
 !/ARC        INTEGER, POINTER      :: ICLBAC(:)
@@ -988,9 +994,14 @@
       INTEGER, POINTER        :: MAPSTA(:,:), MAPST2(:,:),            &
                                  MAPFS(:,:), MAPSF(:,:)
 !
-!/SMC        INTEGER, POINTER      :: NCel, NUFc, NVFc, NRLv, MRFct
-!/SMC        INTEGER, POINTER      :: NLvCel(:), NLvUFc(:), NLvVFc(:)
+!/SMC        INTEGER, POINTER      :: NCel, MRFct
+!/SMC        INTEGER, POINTER      :: NRLv, NUFc, NVFc
+!/SMC        INTEGER, POINTER      :: NLvCel(:)
+!/SMC        INTEGER, POINTER      :: NLvUFc(:), NLvVFc(:)
 !/SMC        INTEGER, POINTER      :: IJKCel(:,:), IJKUFc(:,:), IJKVFc(:,:)
+!/PR2        INTEGER, POINTER      :: NRLv, NUFc, NVFc
+!/PR2        INTEGER, POINTER      :: NLvUFc(:), NLvVFc(:)
+!/PR2        INTEGER, POINTER      :: IJKCel(:,:), IJKUFc(:,:), IJKVFc(:,:)
 !
 !/ARC        INTEGER, POINTER      :: NGLO, NARC, NBGL, NBAC
 !/ARC        INTEGER, POINTER      :: ICLBAC(:)
@@ -1311,6 +1322,7 @@
 !/ ------------------------------------------------------------------- /
       SUBROUTINE W3DIMX  ( IMOD, MX, MY, MSEA, NDSE, NDST   & 
 !/SMC                    , MCel, MUFc, MVFc, MRLv           &
+!/PR2                    , MUFc, MVFc, MRLv                 &
 !/ARC                    , MARC, MBAC, MSPEC                &
                          )
 !/SMC  !!Li    A few dimensional numbers for SMC grid.  
@@ -1401,6 +1413,7 @@
 !/
       INTEGER, INTENT(IN)     :: IMOD, MX, MY, MSEA, NDSE, NDST
 !/SMC       INTEGER, INTENT(IN)     :: MCel, MUFc, MVFc, MRLv 
+!/PR2       INTEGER, INTENT(IN)     :: MUFc, MVFc, MRLv 
 !/ARC       INTEGER, INTENT(IN)     :: MARC, MBAC, MSPEC 
 !/
 !/ ------------------------------------------------------------------- /
@@ -1485,6 +1498,14 @@
 !/SMC                 GRIDS(IMOD)%CLATF(MVFc),        &
 !/SMC                 STAT=ISTAT                      )
 !/SMC      CHECK_ALLOC_STATUS ( ISTAT )
+!
+!/PR2      ALLOCATE ( GRIDS(IMOD)%NLvUFc(0:MRLv),     &
+!/PR2                 GRIDS(IMOD)%NLvVFc(0:MRLv),     &
+!/PR2                 GRIDS(IMOD)%IJKCel(5, -9:MSEA), &
+!/PR2                 GRIDS(IMOD)%IJKUFc(7,MUFc),     &
+!/PR2                 GRIDS(IMOD)%IJKVFc(8,MVFc),     &
+!/PR2                 STAT=ISTAT                      )
+!/PR2      CHECK_ALLOC_STATUS ( ISTAT )
 !
 !/ARC      ALLOCATE ( GRIDS(IMOD)%ICLBAC(MBAC),       &
 !/ARC                 GRIDS(IMOD)%ANGARC(MARC),       &
@@ -1976,6 +1997,12 @@
 !/SMC                 GRIDS(IMOD)%CTRNY,                                   &
 !/SMC                 GRIDS(IMOD)%CLATF ) 
 !
+!/PR2      DEALLOCATE ( GRIDS(IMOD)%NLvUFc,                                &
+!/PR2                 GRIDS(IMOD)%NLvVFc,                                  &
+!/PR2                 GRIDS(IMOD)%IJKCel,                                  &
+!/PR2                 GRIDS(IMOD)%IJKUFc,                                  &
+!/PR2                 GRIDS(IMOD)%IJKVFc )
+!
 !/ARC      DEALLOCATE ( GRIDS(IMOD)%ICLBAC,                                &
 !/ARC                 GRIDS(IMOD)%ANGARC,                                  &
 !/ARC                 GRIDS(IMOD)%SPCBAC ) 
@@ -2155,6 +2182,10 @@
 !/SMC      NVFc   => GRIDS(IMOD)%NVFc 
 !/SMC      NRLv   => GRIDS(IMOD)%NRLv 
 !/SMC      MRFct  => GRIDS(IMOD)%MRFct 
+!
+!/PR2      NUFc   => GRIDS(IMOD)%NUFc 
+!/PR2      NVFc   => GRIDS(IMOD)%NVFc 
+!/PR2      NRLv   => GRIDS(IMOD)%NRLv 
 !
 !/ARC      NGLO   => GRIDS(IMOD)%NGLO 
 !/ARC      NARC   => GRIDS(IMOD)%NARC 
@@ -2336,6 +2367,12 @@
 !/SMC          CTRNX  => GRIDS(IMOD)%CTRNX
 !/SMC          CTRNY  => GRIDS(IMOD)%CTRNY
 !/SMC          CLATF  => GRIDS(IMOD)%CLATF
+!
+!/PR2          NLvUFc => GRIDS(IMOD)%NLvUFc
+!/PR2          NLvVFc => GRIDS(IMOD)%NLvVFc
+!/PR2          IJKCel => GRIDS(IMOD)%IJKCel
+!/PR2          IJKUFc => GRIDS(IMOD)%IJKUFc
+!/PR2          IJKVFc => GRIDS(IMOD)%IJKVFc
 !
 !/ARC          ICLBAC => GRIDS(IMOD)%ICLBAC
 !/ARC          ANGARC => GRIDS(IMOD)%ANGARC

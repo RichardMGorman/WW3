@@ -3524,6 +3524,8 @@
 !/SMC          CALL EXTCDE(1) 
 !/ARC          WRITE(NDSE,*) '/ARC NOT SUPPORTED FOR QUADTREE GRIDS' 
 !/ARC          CALL EXTCDE(1) 
+!/PR3          WRITE(NDSE,*) '/PR3 NOT YET SUPPORTED FOR QUADTREE GRIDS' 
+!/PR3          CALL EXTCDE(1) 
 !/RTD          WRITE(NDSE,*) '/RTD NOT YET SUPPORTED FOR QUADTREE GRIDS' 
 !/RTD          CALL EXTCDE(1) 
 !/REF1          WRITE(NDSE,*) '/REF1 NOT YET SUPPORTED FOR QUADTREE GRIDS' 
@@ -3840,9 +3842,14 @@
 !
 ! 10. Set up all maps
 !
+!/PR2! These need to be defined for W3DIMX, though the arrays won't be used
+!/PR2          NUFc = 1
+!/PR2          NVFc = 1
+!/PR2          NRLv = 1          
 !!Li  CALL W3DIMX ( 1, NX, NY, NSEA, NDSE, NDST )
       CALL W3DIMX ( 1, NX, NY, NSEA, NDSE, NDST  &
 !/SMC                , NCel, NUFc, NVFc, NRLv     &
+!/PR2                , NUFc, NVFc, NRLv           &
 !/ARC                , NARC, NBAC, NSPEC          &
                   )
 !/SMC       WRITE (NDSO,4021)   NCel

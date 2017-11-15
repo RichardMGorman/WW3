@@ -251,6 +251,18 @@
             CALL EXTCDE ( 3 )
          END IF
          NSEA = QTREE(IQGW)%NCELL
+!
+!/PR2!  Recompute maps for propagation
+!/PR2         CALL QA_QT2SMC ( QTREE(IQGW), -9, IJKCel, IJKUFc, IJKVFc,     &
+!/PR2                          NLvUFc, NLvVFc, ierr=IERR, ndse=IUN )
+!/PR2         IF ( IERR.GT.0 ) THEN
+!/PR2            IF ( IUN.GT.0 ) THEN
+!/PR2               WRITE (IUN,*) ' ERROR IN W3ADGR'
+!/PR2               WRITE (IUN,*) ' WHILE CALLING QA_QT2SMC'
+!/PR2               WRITE (IUN,*) '    RETURNED IERR = ', IERR
+!/PR2            END IF
+!/PR2            CALL EXTCDE ( 3 )
+!/PR2         END IF
       END IF
 !
       IF ( SIZE(ADAPT_VARS,1).LT.2 ) RETURN
