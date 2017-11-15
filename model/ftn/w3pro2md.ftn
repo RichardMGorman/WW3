@@ -33,6 +33,8 @@
 !/    01-Jul-2013 : Adding UQ and UNO switches to chose between third
 !/                  and second order schemes.           ( version 4.12 )
 !/    29-May-2014 : Adding OMPH switch.                 ( version 5.02 )
+!/    15-Nov-2017 : Adding quadtree subroutines         ( version  )
+!/                  (R. Gorman, NIWA)
 !/
 !/    Copyright 2009-2014 National Weather Service (NWS),
 !/       National Oceanic and Atmospheric Administration.  All rights
@@ -41,7 +43,7 @@
 !/
 !  1. Purpose :
 !
-!     Bundles routines for third order porpagation scheme in single
+!     Bundles routines for third order propagation scheme in single
 !     module.
 !
 !  2. Variables and types :
@@ -58,6 +60,8 @@
 !      W3MAP2    Subr. Public   Set up auxiliary maps.
 !      W3XYP2    Subr. Public   Third order spatial propagation.
 !      W3KTP2    Subr. Public   Third order spectral propagation.
+!      W3XYQ2    Subr. Public   Second order spatial propagation, with
+!                               diffusion, on a quadtree mesh
 !     ----------------------------------------------------------------
 !
 !  4. Subroutines and functions used :
@@ -72,6 +76,7 @@
 !      W3UNO2r   Subr.   Id.    UNO2 scheme reduced to regular grid.
 !      W3UNO2s   Subr.   Id.    UNO2 regular grid with subgrid
 !                               obstruction.
+!      QT1DUNO2  Subr. W3PROQMD UNO2 scheme for quadtree grid.
 !     ----------------------------------------------------------------
 !
 !  5. Remarks :
@@ -1471,6 +1476,477 @@
 !/ End of W3KTP2 ----------------------------------------------------- /
 !/
       END SUBROUTINE W3KTP2
+!      
+!/ ------------------------------------------------------------------- /
+!      
+      SUBROUTINE W3XYQ2 ( ISP, DTG, FIELD, VGX, VGY )
+!/
+!/                  +-----------------------------------+
+!/                  | WAVEWATCH-III           NOAA/NCEP |
+!/                  |           H. L. Tolman            |
+!/                  | QUADTREE version             NIWA |
+!/                  |           R. M. Gorman            |
+!/                  |                        FORTRAN 90 |
+!/                  | Last update :         17-Oct-2017 |
+!/                  +-----------------------------------+
+!/
+!/    17-Oct-2017 : Origination, based on W3XYQ1 and W3PSMC (J-G. Li)
+!/
+!  1. Purpose :
+!
+!     Propagation in physical space for a given spectral component,
+!     on a quadtree grid. 
+!
+!  2. Method :
+!
+!     Second order UNO2 scheme with flux formulation, including
+!     diffusion and sub-grid obstruction
+!
+!  3. Parameters :
+!
+!     Parameter list
+!     ----------------------------------------------------------------
+!       ISP     Int.   I   Number of spectral bin (IK-1)*NTH+ITH
+!       DTG     Real   I   Total time step.
+!       FIELD   R.A.  I/O  Wave action spectral densities on full
+!                          grid.
+!       VGX/Y   Real   I   Speed of grid.
+!     ----------------------------------------------------------------
+!
+!     Local variables.
+!     ----------------------------------------------------------------
+!       NTLOC   Int.  Number of local steps.
+!       VCX     R.A.  Propagation velocities.
+!       VCY     R.A.
+!       VFLX    R.A.  Discrete fluxes between grid points.
+!       VFLY    R.A.
+!     ----------------------------------------------------------------
+!
+!  4. Subroutines used :
+!
+!     See module documentation.
+!
+!  5. Called by :
+!
+!      Name      Type  Module   Description
+!     ---------------------------------------------------------------- 
+!      W3WAVE    Subr. W3WAVEMD Wave model routine.
+!     ----------------------------------------------------------------
+!
+!  6. Error messages :
+!
+!       None.
+!
+!  7. Remarks :
+!
+!     - The local work arrays are initialized on the first entry to
+!       the routine.
+!
+!  8. Structure :
+!
+!     ---------------------------------------
+!       1.  Preparations
+!         a Set constants
+!         b Initialize arrays
+!       2.  Calculate local discrete fluxes
+!       3.  Calculate propagation fluxes
+!       4.  Propagate
+!       5.  Update boundary conditions
+!     ---------------------------------------
+!
+!  9. Switches :
+!
+!     !/S   Enable subroutine tracing.
+!
+!     !/T   Enable general test output.
+!     !/T1  Test output local fluxes (V)FX-YL.
+!     !/T2  Test output propagation fluxes (V)FLX-Y.
+!     !/T3  Test output propagation.
+!
+! 10. Source code :
+!
+!/ ------------------------------------------------------------------- /
+      USE CONSTANTS
+      USE QA_UTILS
+!
+      USE W3TIMEMD, ONLY: DSEC21
+!
+      USE W3GDATMD, ONLY: NTH, SIG, ECOS, ESIN, NSEA,                  &
+                          DTCFL, CLATS, IQGW, QTREE, FLAGLL, FLCX,     &
+                          FLCY, SX, SY, DTH, XFR, DTCFL, DTME,         &
+                          IJKCel, IJKUFc, IJKVFc, NLvUFc, NLvVFc,      &
+                          NUFc, NVFc
+      USE W3WDATMD, ONLY: TIME
+      USE W3ADATMD, ONLY: CG, CX, CY, ATRNX, ATRNY
+      USE W3IDATMD, ONLY: FLCUR
+      USE W3ODATMD, ONLY: NDST, FLBPI, NBI, TBPI0, TBPIN, ISBPI,       &
+                          BBPI0, BBPIN
+!/S      USE W3SERVMD, ONLY: STRACE
+!/
+      IMPLICIT NONE
+!/
+!/ ------------------------------------------------------------------- /
+!/ Parameter list
+!/
+      INTEGER, INTENT(IN)     :: ISP
+      REAL, INTENT(IN)        :: DTG, VGX, VGY
+      REAL, INTENT(INOUT)     :: FIELD(0:NSEA+2)
+!/
+!/ ------------------------------------------------------------------ /
+!/ Local parameters
+!/
+      INTEGER                 :: IK, ITH, NTLOC, ITLOC, ISEA, NTSUB
+      INTEGER                 :: ITSUB, IBI, IUF, IVF, JUF, JVF
+      INTEGER                 :: IFC, M, N
+      INTEGER                 :: LVLR, LVLT, LVLM, LVLCALC, LVL
+!/S      INTEGER, SAVE           :: IENT = 0
+      REAL                    :: CG0, CGL, CGA, CC, CGN, CGD
+      REAL                    :: RD1, RD2, DXYFAC, DTLOC, DTRAD
+      REAL                    :: TRAT, TSUBFAC
+      REAL                    :: DX0, DY0, DFRR, DNN, FMR
+      REAL                    :: TRANS1, TRANS2, FUTRN, FVTRN
+      INTEGER                 :: UNDEF
+!/
+!/ Automatic work arrays
+!/
+      REAL                    :: CXTOT(NSEA), CYTOT(NSEA)
+      REAL                    :: DNND(NSEA), DSSD(NSEA)
+      INTEGER, ALLOCATABLE    :: LVLSTEP(:)
+      REAL, Dimension(-9:NSEA) ::  FCNt, AFCN, BCNt, UCFL, VCFL, CQ, CQA
+      REAL, Dimension(   NUFc) ::  FUMD, FUDIFX, ULCFLX
+      REAL, Dimension(   NVFc) ::  FVMD, FVDIFY, VLCFLY
+!/
+!/ ------------------------------------------------------------------- /
+!/
+!/S      CALL STRACE (IENT, 'W3XYQ2')
+!
+! 1.  Preparations --------------------------------------------------- *
+! 1.a Set constants
+!
+      UNDEF = QTREE(IQGW)%UNDEF_TYPE
+!
+      ITH    = 1 + MOD(ISP-1,NTH)
+      IK     = 1 + (ISP-1)/NTH
+!
+!/T      WRITE (NDST,9001) ISP, ITH, IK
+!
+      CG0    = 0.575 * GRAV / SIG(1)
+      CGL    = 0.575 * GRAV / SIG(IK)
+!
+      IF ( FLCUR ) THEN
+          CGA    = SQRT(MAXVAL((CGL*ECOS(ITH)+CX(1:NSEA))**2          &
+                              +(CGL*ESIN(ITH)+CY(1:NSEA))**2))
+          CC     = SQRT(MAXVAL(CX(1:NSEA)**2+CY(1:NSEA)**2))
+!/MGP          CGA    = SQRT(MAXVAL((CGL*ECOS(ITH)+CX(1:NSEA)-VGX)**2      &
+!/MGP                              +(CGL*ESIN(ITH)+CY(1:NSEA)-VGY)**2))
+!/MGP          CC     = SQRT(MAXVAL((CX(1:NSEA)-VGX)**2+(CY(1:NSEA)-VGY)**2))
+        ELSE
+          CGA    = CGL
+!/MGP          CGA    = SQRT((CGL*ECOS(ITH)-VGX)**2+(CGL*ESIN(ITH)-VGY)**2)
+          CC     = 0.
+        END IF
+!
+      CGN    = 0.9999 * MAX ( CGA, CC, 0.001*CG0 )
+!
+! 1.b Universal time stepping
+!
+      TRAT = DTG/(DTCFL*CG0/CGN)
+      NTLOC  = 1 + INT(TRAT)
+      DTLOC  = DTG / REAL(NTLOC)
+      DTRAD  = DTLOC
+!
+!/T      WRITE (NDST,9000) NTLOC
+!
+      LVLR = QTREE(IQGW)%LVLREF
+      LVLM = QTREE(IQGW)%LVLHI
+      LVLT = LVLR
+      !LVLT = LVLM   ! Turn off substepping
+! 1.c Level-dependent time substepping
+!      In each universal time step, cells with level 0 to LVLT will be 
+!       updated once, while cells with level L > LVLT will
+!       be updated 2**(L - LVLT) times.
+!      That makes a total number of substeps
+!        NTSUB = 1 + 2 + ... + 2**(LVLMAX-LVLT) = 2**(LVLM-LVLT+1) - 1
+!      First determine LVLT, so that one step at that level won't exceed 
+!      the CFL time step (which applies at the reference level).
+!      Then call QA_TSORDER to compute the sequence of levels calculated 
+!      at each substep
+      DO WHILE ( TRAT.LT.1. .AND. LVLT.LE.LVLM )
+          TRAT = 2.*TRAT
+          IF ( TRAT.LT.1. ) LVLT = LVLT + 1
+      END DO
+      NTSUB = 2**(LVLM-LVLT+1) - 1
+!
+!/T      WRITE (NDST,9002) LVLT, NTSUB
+!
+      ALLOCATE ( LVLSTEP(NTSUB) )
+      CALL QA_TSORDER( NTSUB, LVLM, LVLT, LVLSTEP, iopt=0 )
+!
+!     cell grid lengths at Equator (at finest refinement level).
+!
+      DX0    = SX*2.**(LVLR-LVLM)
+      DY0    = SY*2.**(LVLR-LVLM)
+      IF ( FLAGLL ) THEN
+         DTRAD = DTRAD/(DERA*RADIUS)
+         DX0   = DX0 * DERA * RADIUS
+         DY0   = DY0 * DERA * RADIUS
+      END IF
+!
+!     Homogenous diffusion coefficient DNN.
+      IF ( DTME .GT. 0. ) THEN
+          DFRR   = XFR - 1.
+          CGD    = 0.5 * GRAV / SIG(IK)
+          DNN    = ((DTH*CGD)**2)*DTME / 12.
+      END IF
+
+!
+! 1.d Initialize arrays
+!
+      CQ = 0.0
+      CQA = 0.0
+      CXTOT = 0.0
+      CYTOT = 0.0
+      AFCN = 0.0
+      BCNt = 0.0
+      FCNt = 0.0
+!
+      UCFL = 0.0
+      VCFL = 0.0
+      DNND = 0.0
+      DSSD = 0.0
+!
+!
+! 2.  Calculate field and velocities --------------------------------- *
+!
+!
+!/T1      WRITE (NDST,9020)
+!     Propagation velocity components (relative to water):
+      DO ISEA=1, NSEA
+        IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. UNDEF ) CYCLE
+        CQ(ISEA) = FIELD(ISEA) / CG(IK,ISEA) * CLATS(ISEA)
+        CXTOT(ISEA) = ECOS(ITH) * CG(IK,ISEA) / CLATS(ISEA)
+        CYTOT(ISEA) = ESIN(ITH) * CG(IK,ISEA)
+!
+!/MGP        CXTOT(ISEA) = CXTOT(ISEA) - VGX/CLATS(ISEA)
+!/MGP        CXTOT(ISEA) = CYTOT(ISEA) - VGY
+!/T1          WRITE (NDST,9021) ISEA, ISEA, CQ(ISEA), CXTOT(ISEA), CYTOT(ISEA)
+      END DO
+!
+!     Propagation velocity components (adjusted for currents):
+      IF ( FLCUR ) THEN
+         DO ISEA=1, NSEA
+           IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. UNDEF ) CYCLE
+           IF ( FLCX ) CXTOT(ISEA) = CXTOT(ISEA) + CX(ISEA)/CLATS(ISEA)
+           IF ( FLCY ) CYTOT(ISEA) = CYTOT(ISEA) + CY(ISEA)
+         END DO
+      END IF
+!
+!     Convert propagation velocities to CFL numbers, using global
+!     time substep dT and cell sizes dX, dY at finest refinement
+!     Similarly for diffusion coefficients
+!     Multiply x- component by dT(s)/dX(m)          
+!     Multiply y- component by dT(s)/dY(m)          
+!     Multiply diffusion coefficient by dT/dX^2, dT/dY^2
+      DO ISEA=1, NSEA
+         IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. UNDEF ) CYCLE
+         UCFL(ISEA) = CXTOT(ISEA)*DTRAD/(DX0*CLATS(ISEA))
+         VCFL(ISEA) = CYTOT(ISEA)*DTRAD/DY0
+         IF ( DTME .GT. 0. ) THEN
+            DNND(ISEA) = DNN*DTLOC/(DX0*CLATS(ISEA))**2
+            DSSD(ISEA) = DNN*DTLOC/(DY0*DY0)
+         END IF
+      END DO
+!
+! ====================== Loop partial ================================ *
+!     Applies to all cells
+!
+      DO ITLOC=1, NTLOC
+!
+!       Time substep loop
+!      
+        DO ITSUB=1, NTSUB
+           ! Level of cells processed at this iteration of the substep loop:
+           ! (if LVCALC = LVLT, all levels <= LVLT are processed)
+           LVLCALC = LVLSTEP(ITSUB)
+           ! Corresponding range of wall indices, for walls with cells
+           ! of that size on either side
+           IF ( LVLCALC.GT.LVLT ) THEN
+              ! Cells at one refinement level are updated.
+              IF (LVLM-LVLCALC.GT.0) THEN
+                 IUF = NLvUFc(LVLM-LVLCALC) + 1
+                 IVF = NLvVFc(LVLM-LVLCALC) + 1
+              ELSE
+                 IUF = 1
+                 IVF = 1
+              END IF
+              JUF = NLvUFc(LVLM-LVLCALC+1)
+              JVF = NLvVFc(LVLM-LVLCALC+1)
+           ELSE
+              ! Cells at all refinement levels <= LVLT are updated.
+              IF (LVLM-LVLT.GT.0) THEN
+                 IUF = NLvUFc(LVLM-LVLT) + 1
+                 IVF = NLvVFc(LVLM-LVLT) + 1
+              ELSE
+                 IUF = 1
+                 IVF = 1
+              END IF
+              JUF = NLvUFc(LVLM+1)
+              JVF = NLvVFc(LVLM+1)
+           END IF
+           ! Time step for this iteration, as a fraction of the universal 
+           ! partial time step
+           TSUBFAC = 2.**(LVLT-LVLCALC)
+           ! Time step for this iteration, as a multiple of the finest
+           ! refinement level time step
+           FMR = 2.**(LVLM-LVLCALC)
+!
+!/T1        WRITE (NDST,9010) ITLOC
+!
+! 3.  Calculate propagation fluxes ----------------------------------- *
+!     Only for boundaries of cells that will be updated
+!
+!     In X dimension
+!
+           CALL QT1DUNO2( -9, IUF, JUF, IJKUFc(4:7,:), CQ, UCFL,       &
+                          IJKCel(3,:), DNND, IJKUFc(3,:), FMR, ULCFLX, &
+                          FUMD, FUDIFX )
+!
+!  Store conservative flux in FCNt advective one in AFCN
+!  Add sub-grid transparency for input flux update. 
+!  Transparency is also applied on diffusion flux.  
+           DO IFC=IUF, JUF 
+              M=IJKUFc(5,IFC)
+              N=IJKUFc(6,IFC)
+              TRANS1 = 1.
+              IF ( M.GT.0 ) TRANS1 = ATRNX(M,1)
+              TRANS2 = 1.
+              IF ( N.GT.0 ) TRANS2 = ATRNX(N,-1)
+              IF( ULCFLX(IFC) .GE. 0.0 )  THEN
+                 FUTRN = (FUMD(IFC)*ULCFLX(IFC) - FUDIFX(IFC))*TRANS1
+                 FCNt(M) = FCNt(M) - FUTRN
+                 FCNt(N) = FCNt(N) + FUTRN*TRANS2
+              ELSE
+                 FUTRN = (FUMD(IFC)*ULCFLX(IFC) - FUDIFX(IFC))*TRANS2
+                 FCNt(M) = FCNt(M) - FUTRN*TRANS1
+                 FCNt(N) = FCNt(N) + FUTRN 
+              ENDIF
+              AFCN(M) = AFCN(M) - FUMD(IFC)*UCFL(M)*FMR + FUDIFX(IFC)
+              AFCN(N) = AFCN(N) + FUMD(IFC)*UCFL(N)*FMR - FUDIFX(IFC)
+              !write(*,*) IFC, IJKUFc(3:7,IFC), ULCFLX(IFC), FUMD(IFC), &
+              !           FUDIFX(IFC), M, N, TRANS1, TRANS2, FUTRN,     &
+              !           FCNt(M), FCNt(N)
+           ENDDO
+!
+!  Store conservative update and advective update
+           DO ISEA=1,NSEA
+              IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. UNDEF ) CYCLE
+              LVL = QTREE(IQGW)%INDLVL(ISEA)
+              ! Inverse ratio squared of cell DX and DY to those at the 
+              ! finest reference level
+              DXYFAC = 4.**(LVL-LVLM)
+              LVL = MAX(LVL,LVLT)
+              IF ( LVL.NE.LVLCALC ) CYCLE
+              CQA(ISEA) = CQ(ISEA) + FCNt(ISEA)*DXYFAC
+              CQ (ISEA) = CQ(ISEA) + AFCN(ISEA)*DXYFAC
+              FCNt(ISEA) = 0.0
+              AFCN(ISEA) = 0.0
+           END DO
+!
+!  Compute fluxes in y dimension:
+!
+           CALL QT1DUNO2( -9, IVF, JVF, IJKVFc(4:7,:), CQ, VCFL,       &
+                          IJKCel(4,:), DSSD, IJKVFc(3,:), FMR, VLCFLY, &
+                          FVMD, FVDIFY )
+!
+!  Store conservative flux
+!
+           DO IFC=ivf, jvf 
+              M=IJKVFc(5,IFC)
+              N=IJKVFc(6,IFC)
+              TRANS1 = 1.
+              IF (M.GT.0) TRANS1 = ATRNY(M,1)
+              TRANS2 = 1.
+              IF (N.GT.0) TRANS2 = ATRNY(N,-1)
+              IF( VLCFLY(IFC) .GE. 0.0 )  THEN
+                 FVTRN = (FVMD(IFC)*VLCFLY(IFC) - FVDIFY(IFC))*TRANS1
+                 BCNt(M) = BCNt(M) - FVTRN
+                 BCNt(N) = BCNt(N) + FVTRN*TRANS2 
+              ELSE
+                 FVTRN = (FVMD(IFC)*VLCFLY(IFC) - FVDIFY(IFC))*TRANS2
+                 BCNt(M) = BCNt(M) - FVTRN*TRANS1
+                 BCNt(N) = BCNt(N) + FVTRN 
+              ENDIF
+              !write(*,*) IFC, IJKVFc(3:7,IFC), VLCFLY(IFC), FVMD(IFC), &
+              !           FVDIFY(IFC), M, N, TRANS1, TRANS2, FVTRN,     &
+              !           BCNt(M), BCNt(N)
+           ENDDO
+           DO ISEA=1,NSEA
+              IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. UNDEF ) CYCLE
+              LVL = QTREE(IQGW)%INDLVL(ISEA)
+              ! Inverse ratio squared of cell DX and DY to those at the 
+              ! finest reference level
+              DXYFAC = 4.**(LVL-LVLM)
+              LVL = MAX(LVL,LVLT)
+              IF ( LVL.NE.LVLCALC ) CYCLE
+              CQ(ISEA) = CQA(ISEA) + BCNt(ISEA)*DXYFAC
+              BCNt(ISEA) = 0.0
+           END DO
+!
+!
+! 5.  Update boundary conditions ------------------------------------- *
+!
+          IF ( FLBPI ) THEN
+            RD1    = DSEC21 ( TBPI0, TIME ) - DTG *                   &
+                                   REAL(NTLOC - ITLOC)/REAL(NTLOC)
+            RD2    = DSEC21 ( TBPI0, TBPIN )
+            IF ( RD2 .GT. 0.001 ) THEN
+              RD2    = MIN(1.,MAX(0.,RD1/RD2))
+              RD1    = 1. - RD2
+            ELSE
+              RD1    = 0.
+              RD2    = 1.
+            END IF
+            DO IBI=1, NBI
+              ISEA = ISBPI(IBI)
+              CQ(ISEA) = ( RD1*BBPI0(ISP,IBI) +                        &
+                       RD2*BBPIN(ISP,IBI) ) * CLATS(ISEA)/CG(IK,ISEA)
+            END DO
+          END IF
+!
+! ... End of partial time substep loop
+!
+        END DO
+!
+! ... End of partial time step loop
+!
+      END DO
+!
+! Rescale FIELD
+!
+      DO ISEA=1,NSEA
+        IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. UNDEF ) CYCLE
+        FIELD(ISEA) = CG(IK,ISEA) / CLATS(ISEA) * CQ(ISEA)
+      END DO
+!
+      RETURN
+!
+! Formats
+!
+!/T 9000 FORMAT (' TEST W3XYQ2 : NTLOC :',I4)
+!/T 9001 FORMAT (' TEST W3XYQ2 : ISP, ITH, IK :',I8,2I4)
+!/T 9002 FORMAT (' TEST W3XYQ2 : LVLT, NTSUB :',2I4)
+!
+!/T1 9010 FORMAT (' TEST W3XYQ2 : ITLOC =',I3)
+!
+!/T1 9020 FORMAT (' TEST W3XYQ2 : ISEA, IXY, FIELD, VCX, VCY')
+!/T1 9021 FORMAT ('           ',2I8,3E12.4)
+!
+!/
+!/
+!/ End of W3XYQ2 ----------------------------------------------------- /
+!/
+      END SUBROUTINE W3XYQ2
+!      
 !/
 !/ End of module W3PRO2MD -------------------------------------------- /
 !/
