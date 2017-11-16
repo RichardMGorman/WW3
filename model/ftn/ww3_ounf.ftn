@@ -131,6 +131,7 @@
 
       USE QA_UTILS
       USE W3NMLOUNFMD
+      USE QA_UTILS
       USE NETCDF
 
       IMPLICIT NONE
@@ -2913,10 +2914,10 @@
                 Y0D=DBLE(0.000001d0*DNINT(1d6*(DBLE(Y0)) ))
                 LVLR = QTREE(IQGW)%LVLREF
                 DO ISEA=1,NSEA
-                   LON(ISEA)=REAL(X0D+SXD*                             &
-                              (DBLE(QTREE(IQGW)%XYVAL(ISEA,1))-1.DO))
-                   LAT(ISEA)=REAL(Y0D+SYD*                             &
-                              (DBLE(QTREE(IQGW)%XYVAL(ISEA,2))-1.D0))
+                   lon(ISEA) = REAL( X0D +                             &
+                       SXD*( DBLE(QTREE(IQGW)%XYVAL(ISEA,1)) - 1.D0 ) )
+                   lat(ISEA) = REAL( Y0D +                             &
+                       SYD*( DBLE(QTREE(IQGW)%XYVAL(ISEA,2)) - 1.D0 ) )
                    DXYFAC = 2.D0**(LVLR - QTREE(IQGW)%INDLVL(ISEA) - 1)
                    LON_BND(ISEA,1) = LON(ISEA) - DXYFAC*SXD*CLATS(ISEA)
                    LON_BND(ISEA,2) = LON(ISEA) + DXYFAC*SXD*CLATS(ISEA)
