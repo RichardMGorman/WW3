@@ -370,7 +370,6 @@
       VECTOR = .TRUE.
       WRITE (NDSO,3940) IX1, IXN, IY1, IYN
 
-
 !
 !--- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ! 5.  Time management.
@@ -636,7 +635,6 @@
       USE W3GDATMD, ONLY : SIG, GTYPE, FLAGLL, MAPSTA, MAPST2, GNAME
       USE W3GDATMD, ONLY : IQGW, QTREE
       USE QA_UTILS
-      USE W3GDATMD, ONLY : SIG, GTYPE, FLAGLL, MAPSTA, MAPST2
 !/T      USE W3ODATMD, ONLY : NDST
       USE NETCDF
       IMPLICIT NONE
@@ -676,6 +674,10 @@
                                  MAP(NX+1,NY), MP2(NX+1,NY)
 !
 !/NC4    INTEGER                  :: DEFLATE=1
+      REAL,DIMENSION(:,:),  ALLOCATABLE  :: LON_BND, LAT_BND
+      DOUBLE PRECISION        :: DXYFAC
+      INTEGER                 :: LVLR, IXN
+
 !/S      INTEGER, SAVE           :: IENT   =   0
 !
       INTEGER, ALLOCATABLE    :: TRIGP2(:,:)
@@ -743,6 +745,7 @@
 !
 !
       CALL U2D('days since 1990-01-01 00:00:00',REFDATE,IERR)
+      IXN = IXNM
 
 ! 1.1 Set-up transfer files
       MFILL  = NF90_FILL_SHORT
@@ -2730,16 +2733,16 @@
 
             IF (GTYPE.EQ.UNGTYPE) THEN 
             ! If unstructured mesh, initializes the nelem,tri dimension lengths
-              dimln(2)=IXN-IX1+1
-              dimln(3)=NTRI
+              DIMLN(2)=IXN-IX1+1
+              DIMLN(3)=NTRI
             ELSEIF (GTYPE.EQ.QAGTYPE) THEN 
             ! If quadtree mesh, initializes the node and nbound dimension lengths
-              dimln(2)=IXN-IX1+1
-              dimln(3)=2
+              DIMLN(2)=IXN-IX1+1
+              DIMLN(3)=2
             ELSE
             ! If regular grid, initializes the lat/lon or x/y dimension lengths
               DIMLN(2)=IXN-IX1+1
-              DIMLN(3)=NTRI
+              DIMLN(3)=IYN-IY1+1
             ENDIF
 
             ! Defines index of first field variable
@@ -2910,30 +2913,31 @@
                 Y0D=DBLE(0.000001d0*DNINT(1d6*(DBLE(Y0)) ))
                 LVLR = QTREE(IQGW)%LVLREF
                 DO ISEA=1,NSEA
-                   lon(ISEA) = REAL( X0D +                             &
-                       SXD*( DBLE(QTREE(IQGW)%XYVAL(ISEA,1)) - 1.D0 ) )
-                   lat(ISEA) = REAL( Y0D +                             &
-                       SYD*( DBLE(QTREE(IQGW)%XYVAL(ISEA,2)) - 1.D0 ) )
+                   LON(ISEA)=REAL(X0D+SXD*                             &
+                              (DBLE(QTREE(IQGW)%XYVAL(ISEA,1))-1.DO))
+                   LAT(ISEA)=REAL(Y0D+SYD*                             &
+                              (DBLE(QTREE(IQGW)%XYVAL(ISEA,2))-1.D0))
                    DXYFAC = 2.D0**(LVLR - QTREE(IQGW)%INDLVL(ISEA) - 1)
                    LON_BND(ISEA,1) = LON(ISEA) - DXYFAC*SXD*CLATS(ISEA)
                    LON_BND(ISEA,2) = LON(ISEA) + DXYFAC*SXD*CLATS(ISEA)
                    LAT_BND(ISEA,1) = LAT(ISEA) - DXYFAC*SYD
                    LAT_BND(ISEA,2) = LAT(ISEA) + DXYFAC*SYD
                 END DO
-                dimln(2)=NSEA
-                dimln(3)=2
-                WRITE(str2,*) SY
-                str2=ADJUSTL(str2)
+                DIMLN(2)=NSEA
+                DIMLN(3)=2
+                WRITE(STR2,*) SY
+                STR2=ADJUSTL(STR2)
                 IF (FLAGLL) THEN
-                   iret=nf90_put_att(ncid,NF90_GLOBAL,                 &
-                      'reference_grid_latitude_resolution', TRIM(str2))
+                   IRET=NF90_PUT_ATT(NCID,NF90_GLOBAL,                &
+                         'reference_grid_latitude_resolution', TRIM(str2))
                 ELSE
                    iret=nf90_put_att(ncid,NF90_GLOBAL,                 &
                       'reference_grid_y_resolution', TRIM(str2))
                 END IF
                 CALL CHECK_ERR(IRET)
                 WRITE(str2,*) SX 
-                str2=ADJUSTL(str2)
+                STR2=ADJUSTL(STR2)
+                IF (FLAGLL) THEN
                    iret=nf90_put_att(ncid,NF90_GLOBAL,                 &
                       'reference_grid_longitude_resolution',TRIM(str2))
                 ELSE
@@ -3168,12 +3172,12 @@
                 iret=NF90_INQ_DIMID (ncid, 'nbound', dimid(3))
                 ! If it is spherical coordinate
                 IF (FLAGLL) THEN
-                  iret=NF90_INQ_VARID (ncid, 'longitude', varid(1))
-                  iret=NF90_INQ_VARID (ncid, 'latitude', varid(2))
+                  IRET=NF90_INQ_VARID (NCID, 'longitude', varid(1))
+                  IRET=NF90_INQ_VARID (NCID, 'latitude', varid(2))
                 ! If it is cartesian coordinate
                 ELSE
-                  iret=NF90_INQ_VARID (ncid, 'x', varid(1))
-                  iret=NF90_INQ_VARID (ncid, 'y', varid(1))
+                  IRET=NF90_INQ_VARID (NCID, 'x', varid(1))
+                  IRET=NF90_INQ_VARID (NCID, 'y', varid(1))
                 END IF 
                 CALL CHECK_ERR(IRET)
               ELSE
