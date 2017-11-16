@@ -168,6 +168,11 @@
 !
       NDSTRC =  6
       NTRACE = 10
+!
+!     Quadtree indices
+      IQGB = 1
+      IQGW = 2
+!
       CALL ITRACE ( NDSTRC, NTRACE )
 !
 !/S      CALL STRACE (IENT, 'W3OUNF')
@@ -301,7 +306,6 @@
       IYN    = MIN ( IYN , NY )
       VECTOR = .TRUE.
       WRITE (NDSO,3940) IX1, IXN, IY1, IYN
-
 
 ! 4.4 Output of output fields
       WRITE (NDSO,945)
@@ -512,7 +516,7 @@
 !/
       CONTAINS
 !/ ------------------------------------------------------------------- /
-      SUBROUTINE W3EXNC ( NX, NY, IX1, IXN, IY1, IYN, NSEA,             &
+      SUBROUTINE W3EXNC ( NX, NY, IX1, IXNM, IY1, IYN, NSEA,            &
                           FILEPREFIX, E3DF, P2MSF, US3DF, USSPF,NCTYPE, &
                           TOGETHER, NCVARTYPEI, FLREQ, NCIDS, S3, stopdate )
 !/
@@ -540,7 +544,7 @@
 !     Parameter list
 !     ----------------------------------------------------------------
 !       NX/Y    Int.  I  Grid dimensions.
-!       IX1/IXN Int.  I  Grid indexes along X
+!       IX1/IXNM Int.  I  Grid indexes along X
 !       IY1/IYN Int.  I  Grid indexes along Y
 !       NSEA    Int.  I  Number of sea points.
 !     ----------------------------------------------------------------
@@ -593,6 +597,7 @@
       USE W3SERVMD, ONLY : W3S2XY
       USE W3ARRYMD, ONLY : OUTA2I, PRTBLK
       USE W3GDATMD, ONLY : SIG, GTYPE, FLAGLL, MAPSTA, MAPST2, GNAME
+      USE W3GDATMD, ONLY : IQGW, QTREE
       USE NETCDF
       IMPLICIT NONE
 
@@ -600,7 +605,7 @@
 !/ ------------------------------------------------------------------- /
 !/ Parameter list
 !/
-      INTEGER, INTENT(IN)     :: NX, NY, IX1, IXN, IY1, IYN, NSEA,     &
+      INTEGER, INTENT(IN)     :: NX, NY, IX1, IXNM, IY1, IYN, NSEA,    &
                                  E3DF(3,5), P2MSF(3), US3DF(3),        & 
                                  USSPF(2), NCTYPE, NCVARTYPEI
       CHARACTER(30)           :: FILEPREFIX
@@ -630,7 +635,7 @@
                                  iyc, imc, idc, ihc, iminc, isc, NCVARTYPE
 !/NC4    INTEGER                  :: deflate=1
 
-     INTEGER(KIND=4)          :: VMIN, VMAX
+      INTEGER(KIND=4)          :: VMIN, VMAX
 
       INTEGER(KIND=4), ALLOCATABLE       :: TRIGP2(:,:)
 
@@ -642,6 +647,9 @@
       DOUBLE PRECISION        :: timenc
       REAL,DIMENSION(:),  ALLOCATABLE    :: lon, lat, freq
       REAL,DIMENSION(:,:),  ALLOCATABLE  :: lon2D, lat2D
+      REAL,DIMENSION(:,:),  ALLOCATABLE  :: LON_BND, LAT_BND
+      DOUBLE PRECISION        :: DXYFAC
+      INTEGER                 :: LVLR, IXN
 
 !/S      INTEGER, SAVE           :: IENT   =   0
       REAL                    :: FSC, FSC3, CABS, UABS
@@ -682,14 +690,18 @@
       MAPSTAOUT = 1
       NCVARTYPE  = NCVARTYPEI
       NDSDAT=30
+      IXN = IXNM
 
 ! 1.1 Set-up transfer files
       MFILL  = NF90_FILL_SHORT
       MFILLR  = NF90_FILL_FLOAT
-      IF (GTYPE.NE.UNGTYPE) THEN
-        COORDTYPE=1
-      ELSE
+      IF (GTYPE.EQ.UNGTYPE) THEN
         COORDTYPE=2
+      ELSE IF (GTYPE.EQ.QAGTYPE) THEN
+        COORDTYPE=3
+        IXN = MIN(IXNM, NSEA)
+      ELSE
+        COORDTYPE=1
       ENDIF
 
 ! 1.2 Sets the date as ISO8601 convention 
@@ -2311,14 +2323,18 @@
               extradim=0
             END IF 
 
-            ! If regular grid, initializes the lat/lon or x/y dimension lengths
-            IF (GTYPE.NE.UNGTYPE) THEN 
-              dimln(2)=IXN-IX1+1
-              dimln(3)=IYN-IY1+1
+            IF (GTYPE.EQ.UNGTYPE) THEN 
             ! If unstructured mesh, initializes the nelem,tri dimension lengths
-            ELSE
               dimln(2)=IXN-IX1+1
               dimln(3)=NTRI
+            ELSEIF (GTYPE.EQ.QAGTYPE) THEN 
+            ! If quadtree mesh, initializes the node and nbound dimension lengths
+              dimln(2)=IXN-IX1+1
+              dimln(3)=2
+            ELSE
+            ! If regular grid, initializes the lat/lon or x/y dimension lengths
+              dimln(2)=IXN-IX1+1
+              dimln(3)=IYN-IY1+1
             ENDIF
 
             ! Defines index of first field variable
@@ -2367,8 +2383,8 @@
               ! Initializes the time dimension length
               dimln(1)=1
 
-              ! If NOT unstructure mesh (i.e. regular grid)
-              IF (GTYPE.NE.UNGTYPE) THEN      
+              ! If NOT unstructure or quadtree mesh (i.e. regular grid)
+              IF (GTYPE.NE.UNGTYPE .AND. GTYPE.NE.QAGTYPE) THEN      
                 ! If spherical coordinate
                 IF (FLAGLL) THEN 
                   varnm(NFIELD+1)='Longitude'
@@ -2413,13 +2429,15 @@
                 call check_err(iret)
               ! If NOT curvilinear grid,
               ELSE 
-                ! instanciates lon with X/lon for regular grid or nodes for unstructured mesh
+                ! instanciates lon with X/lon for regular grid or 
+                ! nodes for unstructured or quadtree mesh
                 IF (.NOT.ALLOCATED(lon)) ALLOCATE(lon(NX))
                 IF (.NOT.ALLOCATED(lat)) THEN 
                   ! If regular grid, instanciates lat with Y/lat
                   IF (GTYPE.EQ.RLGTYPE) THEN 
                     ALLOCATE(lat(NY))
-                  ! If unstructured mesh, instanciates lat with nodes
+                  ! If unstructured or quadtree mesh, instanciates lat
+                  ! with nodes
                   ELSE 
                     ALLOCATE(lat(NX))
                   END IF 
@@ -2466,6 +2484,39 @@
                 call check_err(iret)
                 iret=nf90_put_att(ncid,NF90_GLOBAL, &
                                      'longitude_resolution','n/a')
+                call check_err(iret)
+              ELSE IF (GTYPE.EQ.QAGTYPE) THEN 
+              ! ... or quadtree
+                IF (.NOT.ALLOCATED(LON_BND)) ALLOCATE(LON_BND(NX,2))
+                IF (.NOT.ALLOCATED(LAT_BND)) ALLOCATE(LAT_BND(NX,2))
+                SXD=DBLE(0.000001d0*DNINT(1d6*(DBLE(SX)) ))
+                SYD=DBLE(0.000001d0*DNINT(1d6*(DBLE(SY)) ))
+                X0D=DBLE(0.000001d0*DNINT(1d6*(DBLE(X0)) ))
+                Y0D=DBLE(0.000001d0*DNINT(1d6*(DBLE(Y0)) ))
+                LVLR = QTREE(IQGW)%LVLREF
+                DO ISEA=1,NSEA
+                   lon(ISEA)=REAL(X0D+SXD*                             &
+                              (DBLE(QTREE(IQGW)%XYVAL(ISEA,1))-1.DO))
+                   lat(ISEA)=REAL(Y0D+SYD*                             &
+                              (DBLE(QTREE(IQGW)%XYVAL(ISEA,2))-1.D0))
+                   DXYFAC = 2.D0**(LVLR - QTREE(IQGW)%INDLVL(ISEA) - 1)
+                   LON_BND(ISEA,1) = LON(ISEA) - DXYFAC*SXD*CLATS(ISEA)
+                   LON_BND(ISEA,2) = LON(ISEA) + DXYFAC*SXD*CLATS(ISEA)
+                   LAT_BND(ISEA,1) = LAT(ISEA) - DXYFAC*SYD
+                   LAT_BND(ISEA,2) = LAT(ISEA) + DXYFAC*SYD
+                END DO
+                dimln(2)=NSEA
+                dimln(3)=2
+                WRITE(str2,*) SY
+                str2=ADJUSTL(str2)
+                IF FLAGLL
+                iret=nf90_put_att(ncid,NF90_GLOBAL,   &
+                         'reference_grid_latitude_resolution', TRIM(str2))
+                call check_err(iret)
+                WRITE(str2,*) SX 
+                str2=ADJUSTL(str2)
+                iret=nf90_put_att(ncid,NF90_GLOBAL,   &
+                         'reference_grid_longitude_resolution',TRIM(str2))
                 call check_err(iret)
               END IF
 
@@ -2539,6 +2590,18 @@
                 call check_err(iret)
               END IF
 
+              ! If quadtree mesh
+              IF (GTYPE.EQ.QAGTYPE) THEN 
+                iret=nf90_put_var(ncid,varid(1),lon(IX1:IXN))
+                call check_err(iret)
+                iret=nf90_put_var(ncid,varid(2),lat(IX1:IXN))
+                call check_err(iret)
+                iret=nf90_put_var(ncid,varid(4+extradim),LON_BND(IX1:IXN,:))
+                call check_err(iret)
+                iret=nf90_put_var(ncid,varid(5+extradim),LAT_BND(IX1:IXN,:))
+                call check_err(iret)
+              END IF
+
               ! Writes frequencies to netcdf file
               IF (extradim.EQ.1) THEN
                 ALLOCATE(freq(I2F-I1F+1))
@@ -2570,7 +2633,7 @@
                 start(2)=1
                 count(1)=IXN-IX1+1
                 count(2)=IYN-IY1+1
-                IF (GTYPE.NE.UNGTYPE) THEN
+                IF (GTYPE.NE.UNGTYPE .AND. GTYPE.NE.QAGTYPE) THEN
                   iret=nf90_put_var(ncid,idvarout,MAPOUT(IX1:IXN,IY1:IYN), &
                                      (/start(1:2)/),(/count(1:2)/))
                 ELSE
@@ -2658,12 +2721,26 @@
 
 ! 2.6.1 Get the dimensions from the netcdf header
 
-              ! If it is an unstructured mesh
               IF (GTYPE.EQ.UNGTYPE) THEN
+              ! If it is an unstructured mesh
                 iret=NF90_INQ_VARID (ncid, 'tri', varid(4+extradim))
                 call check_err(iret)
-              ! If it is a regular grid
+              IF (GTYPE.EQ.QAGTYPE) THEN
+              ! If it is a quadtree mesh
+                iret=NF90_INQ_DIMID (ncid, 'node', dimid(2))
+                iret=NF90_INQ_DIMID (ncid, 'nbound', dimid(3))
+                ! If it is spherical coordinate
+                IF (FLAGLL) THEN
+                  iret=NF90_INQ_VARID (ncid, 'longitude', varid(1))
+                  iret=NF90_INQ_VARID (ncid, 'latitude', varid(2))
+                ! If it is cartesian coordinate
+                ELSE
+                  iret=NF90_INQ_VARID (ncid, 'x', varid(1))
+                  iret=NF90_INQ_VARID (ncid, 'y', varid(1))
+                END IF 
+                call check_err(iret)
               ELSE
+              ! If it is a regular grid
                 ! If it is spherical coordinate
                 IF (FLAGLL) THEN
                   iret=NF90_INQ_DIMID (ncid, 'longitude', dimid(2))
@@ -2706,10 +2783,12 @@
                   ivar=ivar1+I
                   IF (COORDTYPE.EQ.1) THEN
                     IF (NCVARTYPE.EQ.2) THEN 
-                      iret = nf90_def_var(ncid,varnm(I), nf90_short, dimid(2:4+extradim), varid(ivar))
+                      iret = nf90_def_var(ncid,varnm(I), nf90_short,  &
+                                     dimid(2:4+extradim), varid(ivar))
 !/NC4                      IF (NCTYPE.EQ.4) iret = nf90_def_var_deflate(ncid, varid(ivar), 1, 1, deflate)
                     ELSE
-                      iret = nf90_def_var(ncid,varnm(I), nf90_float, dimid(2:4+extradim), varid(ivar))
+                      iret = nf90_def_var(ncid,varnm(I), nf90_float,  &
+                                     dimid(2:4+extradim), varid(ivar))
 !/NC4                      IF (NCTYPE.EQ.4) iret = nf90_def_var_deflate(ncid, varid(ivar), 1, 1, deflate)
                     END IF
                   ELSE
@@ -3136,10 +3215,24 @@
 !
       iret = nf90_def_dim(ncid, 'level', dimln(1), dimid(1))
 
+      IF (GTYPE.EQ.UNGTYPE) THEN 
+!
+! Unstructured case
+!
+        iret = nf90_def_dim(ncid, 'node', dimln(2), dimid(2))
+        iret = nf90_def_dim(ncid, 'element', dimln(3), dimid(3))
+        call check_err(iret)
+      ELSE IF (GTYPE.EQ.QAGTYPE) THEN 
+!
+! Quadtree case
+!
+        iret = nf90_def_dim(ncid, 'node', dimln(2), dimid(2))
+        iret = nf90_def_dim(ncid, 'nbound', dimln(3), dimid(3))
+        call check_err(iret)
+      ELSE
 !
 ! Regular structured case
 !
-      IF (GTYPE.NE.UNGTYPE) THEN 
         IF (FLAGLL) THEN
           iret = nf90_def_dim(ncid, 'longitude', dimln(2), dimid(2))
           iret = nf90_def_dim(ncid, 'latitude', dimln(3), dimid(3))
@@ -3147,13 +3240,6 @@
           iret = nf90_def_dim(ncid, 'x', dimln(2), dimid(2))
           iret = nf90_def_dim(ncid, 'y', dimln(3), dimid(3))
           END IF
-        call check_err(iret)
-!
-! Unstructured case
-!
-      ELSE
-        iret = nf90_def_dim(ncid, 'node', dimln(2), dimid(2))
-        iret = nf90_def_dim(ncid, 'element', dimln(3), dimid(3))
         call check_err(iret)
       ENDIF
 !
@@ -3273,17 +3359,57 @@
         iret = nf90_def_var(ncid, 'tri', nf90_int, dimtri, varid(ivar))
 !/NC4        IF (NCTYPE.EQ.4) iret = nf90_def_var_deflate(ncid, varid(ivar), 1, 1, deflate)
       END IF
+ 
+!
+! lon/x and lat/y bounds for quadtree grids
+!
+      IF (GTYPE.EQ.QAGTYPE) THEN
+        IF (FLAGLL) THEN 
+          ivar=4+extradim
+          iret = nf90_def_var(ncid, 'longitude_bounds', nf90_float,   &
+                         (/ dimid(2), dimid(3)/), varid(ivar))
+          iret=nf90_put_att(ncid,varid(ivar),'units','degree_east')
+          iret=nf90_put_att(ncid,varid(ivar),'long_name',             &
+                            'longitude of cell walls')
+!
+          ivar=5+extradim
+          iret = nf90_def_var(ncid, 'latitude_bounds', nf90_float,    &
+                         (/ dimid(2), dimid(3)/), varid(ivar))
+          iret=nf90_put_att(ncid,varid(ivar),'units','degree_north')
+          iret=nf90_put_att(ncid,varid(ivar),'long_name',             &
+                           'latitude of cell walls')
+        ELSE
+          ivar=4+extradim
+          iret = nf90_def_var(ncid, 'x_bounds', nf90_float,           &
+                         (/ dimid(2), dimid(3)/), varid(ivar))
+          iret=nf90_put_att(ncid,varid(ivar),'units','m')
+          iret=nf90_put_att(ncid,varid(ivar),'long_name',             &
+                            'x coordinate of cell walls')
+!
+          ivar=5+extradim
+          iret = nf90_def_var(ncid, 'y_bounds', nf90_float,           &
+                         (/ dimid(2), dimid(3)/), varid(ivar))
+          iret=nf90_put_att(ncid,varid(ivar),'units','m')
+          iret=nf90_put_att(ncid,varid(ivar),'long_name',             &
+                            'y coordinate of cell walls')
+        END IF
+      END IF
 !
 !  Status map: useful for grid combination
 !
       IF (MAPSTAOUT.EQ.1) THEN 
         IF (GTYPE.EQ.UNGTYPE) THEN 
           ivar=5+extradim
-          iret = nf90_def_var(ncid,'MAPSTA', nf90_short,(/ dimid(2) /), varid(ivar)) 
+          iret = nf90_def_var(ncid,'MAPSTA', nf90_short,               &
+                              (/ dimid(2) /), varid(ivar)) 
+        ELSEIF (GTYPE.EQ.QAGTYPE) THEN 
+          ivar=6+extradim
+          iret = nf90_def_var(ncid,'MAPSTA', nf90_short,               &
+                              (/ dimid(2) /), varid(ivar)) 
         ELSE 
           ivar=4+extradim
-          iret = nf90_def_var(ncid,'MAPSTA', nf90_short,(/ dimid(2) , dimid(3) /), &
-                                                                       varid(ivar)) 
+          iret = nf90_def_var(ncid,'MAPSTA', nf90_short,               &
+                        (/ dimid(2) , dimid(3) /),  varid(ivar)) 
           ENDIF
 !/NC4          IF (NCTYPE.EQ.4) iret = nf90_def_var_deflate(ncid, varid(ivar), 1, 1, deflate)
 !
