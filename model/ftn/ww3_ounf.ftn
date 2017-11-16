@@ -123,6 +123,7 @@
                           FLOGRD, FNMPRE, NOSWLL, NOGE
 !
 
+      USE QA_UTILS
       USE NETCDF
 
       IMPLICIT NONE
@@ -598,6 +599,7 @@
       USE W3ARRYMD, ONLY : OUTA2I, PRTBLK
       USE W3GDATMD, ONLY : SIG, GTYPE, FLAGLL, MAPSTA, MAPST2, GNAME
       USE W3GDATMD, ONLY : IQGW, QTREE
+      USE QA_UTILS
       USE NETCDF
       IMPLICIT NONE
 
@@ -2495,10 +2497,10 @@
                 Y0D=DBLE(0.000001d0*DNINT(1d6*(DBLE(Y0)) ))
                 LVLR = QTREE(IQGW)%LVLREF
                 DO ISEA=1,NSEA
-                   lon(ISEA)=REAL(X0D+SXD*                             &
-                              (DBLE(QTREE(IQGW)%XYVAL(ISEA,1))-1.DO))
-                   lat(ISEA)=REAL(Y0D+SYD*                             &
-                              (DBLE(QTREE(IQGW)%XYVAL(ISEA,2))-1.D0))
+                   lon(ISEA) = REAL( X0D +                             &
+                       SXD*( DBLE(QTREE(IQGW)%XYVAL(ISEA,1)) - 1.D0 ) )
+                   lat(ISEA) = REAL( Y0D +                             &
+                       SYD*( DBLE(QTREE(IQGW)%XYVAL(ISEA,2)) - 1.D0 ) )
                    DXYFAC = 2.D0**(LVLR - QTREE(IQGW)%INDLVL(ISEA) - 1)
                    LON_BND(ISEA,1) = LON(ISEA) - DXYFAC*SXD*CLATS(ISEA)
                    LON_BND(ISEA,2) = LON(ISEA) + DXYFAC*SXD*CLATS(ISEA)
@@ -2509,14 +2511,22 @@
                 dimln(3)=2
                 WRITE(str2,*) SY
                 str2=ADJUSTL(str2)
-                IF FLAGLL
-                iret=nf90_put_att(ncid,NF90_GLOBAL,   &
-                         'reference_grid_latitude_resolution', TRIM(str2))
+                IF (FLAGLL) THEN
+                   iret=nf90_put_att(ncid,NF90_GLOBAL,                 &
+                      'reference_grid_latitude_resolution', TRIM(str2))
+                ELSE
+                   iret=nf90_put_att(ncid,NF90_GLOBAL,                 &
+                      'reference_grid_y_resolution', TRIM(str2))
+                END IF
                 call check_err(iret)
                 WRITE(str2,*) SX 
                 str2=ADJUSTL(str2)
-                iret=nf90_put_att(ncid,NF90_GLOBAL,   &
-                         'reference_grid_longitude_resolution',TRIM(str2))
+                   iret=nf90_put_att(ncid,NF90_GLOBAL,                 &
+                      'reference_grid_longitude_resolution',TRIM(str2))
+                ELSE
+                   iret=nf90_put_att(ncid,NF90_GLOBAL,                 &
+                      'reference_grid_x_resolution', TRIM(str2))
+                END IF
                 call check_err(iret)
               END IF
 
@@ -3092,7 +3102,7 @@
                     END DO
                   END DO
                   iret=nf90_put_var(ncid,varid(ivar1+1),               &
-                          MX1R(IX1:IXN,IY1:IYN),(/start(1:3)/),(/count(1:3)/))
+                      MX1R(IX1:IXN,IY1:IYN),(/start(1:3)/),(/count(1:3)/))
                   call check_err(iret)
 ! extradim=1
                 ELSE

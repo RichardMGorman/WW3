@@ -940,7 +940,7 @@
              source="w3triamd $stx $nlx $btx  $is"
                  IO='w3iogrmd w3iogomd w3iorsmd w3iopomd'
                 aux='constants w3servmd w3timemd w3arrymd w3dispmd w3gsrumd'
-                aux="$aux w3namlmd" ;;
+                aux="$aux w3namlmd qa_utils svd_lapack w3adgrmd" ;;
      ww3_outp) IDstring='Point output'
                core=
                data='w3triamd w3gdatmd w3wdatmd w3adatmd w3idatmd w3odatmd'
@@ -954,7 +954,8 @@
                prop=
              source="$flx $ln $st $nl $bt $ic $is $db $tr $bs $xx $igcode"
                  IO='w3bullmd w3iogrmd w3iopomd w3partmd'
-                aux='constants w3servmd w3timemd w3arrymd w3dispmd w3gsrumd' ;;
+                aux='constants w3servmd w3timemd w3arrymd w3dispmd w3gsrumd' 
+                aux="$aux qa_utils svd_lapack" ;;
      ww3_trck) IDstring='Track output post'
                core=
                data='w3gdatmd w3odatmd'
