@@ -1186,7 +1186,7 @@
               ! If a valid cell is located within the reference grid
               ! assign the corresponding interpolation indices and weights
               IF ( ISTAT(1).EQ.0 .AND. ISEA.GT.0 .AND. ISEA.LE.MX ) THEN
-                IF ( IX21(ISEA,1).EQ.O ) THEN
+                IF ( IX21(ISEA,1).EQ.0 ) THEN
                   IX21(ISEA,1) = I
                   NX = NX + 1
                 END IF
@@ -2015,9 +2015,9 @@
           FLQA = GTYPE.EQ.QAGTYPE
           NEW_QT = ITIME.EQ.1
           IF ( IAPROC .EQ. NAPOUT ) CALL W3FLDG ('WRITE', IDFLD,      &
-                       NDSDAT, NDST, NDSE, MX, MY, NX, NY, TIME,      &
-                       TIME, TIME, FX, FY, FA, TIME, FX, FY, FA,      &
-                       IERR, FLQA, new_qt=NEW_QT, qtree=QTREE(IQGI) )
+                     NDSDAT, NDST, NDSE, MX, MY, NX, NY, TIME, TIME,  &
+                       TIME, FX, FY, FA, TIME, FX, FY, FA, IERR,      &
+                       FLQA, new_qt=NEW_QT, qtree=QTREE(IQGI:IQGI) )
 
         ELSE IF ( ITYPE .EQ. 5 ) THEN
           IF ( NDAT .EQ. 0 ) THEN
