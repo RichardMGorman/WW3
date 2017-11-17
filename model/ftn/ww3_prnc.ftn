@@ -283,15 +283,21 @@
                                          RMSR0(:), RMSRP(:), RESMAX(:)
       REAL ,        ALLOCATABLE ::       TIDE_DATA_ALL(:,:,:)
       REAL ,        ALLOCATABLE ::       SSQ(:), RES(:)
-      INTEGER ,        ALLOCATABLE ::       IMAX(:)
+      INTEGER ,     ALLOCATABLE ::       IMAX(:)
       REAL                      :: TIDE_LAT, TIDE_LON
       CHARACTER*256             :: TIDE_file
       INTEGER                   :: TIDEFLAG
       CHARACTER                 :: TIDECONSTNAMES*1024
       CHARACTER(LEN=100)        :: LIST(70)
       LOGICAL                   :: TIDESWITCH, DISTSWITCH 
+      LOGICAL                   :: DEFAULT_TVAR, DEFAULT_SPVARS
       LOGICAL                   :: NEW_QT, FLQA
-      INTEGER                   :: NYOUT
+      INTEGER                   :: MX, MY, MYOUT, NFILE
+      INTEGER                   :: IQGI, LVCELL, ISTAT(2)
+      INTEGER                   :: IQUAD, ISUB, ISEA
+      REAL                      :: XTARG, YTARG, XCELL, YCELL
+      INTEGER ,     ALLOCATABLE :: NEWCELL(:)
+
 
 !/TIDET      INTEGER, PARAMETER      :: LRB = 4
 !/TIDET      INTEGER(KIND=8)         :: RPOS
@@ -386,15 +392,18 @@
 ! 2.  Read model definition file.
 !
       IQGB = 1
+      IQGI = 2
       CALL W3IOGR ( 'READ', NDSM )
       IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,902) GNAME
-      ALLOCATE ( IX21(NX,NY), IX22(NX,NY), IY21(NX,NY), IY22(NX,NY),  &
-                 JX21(NX,NY), JX22(NX,NY), JY21(NX,NY), JY22(NX,NY),  &
-                 MAPOVR(NX,NY) )
-      ALLOCATE ( RD11(NX,NY), RD21(NX,NY), RD12(NX,NY), RD22(NX,NY),  &
-                 XD11(NX,NY), XD21(NX,NY), XD12(NX,NY), XD22(NX,NY),  &
-                 FX(NX,NY), FY(NX,NY), FA(NX,NY),                     &
-                 A1(NX,NY), A2(NX,NY), A3(NX,NY) )
+      MX = NX
+      MY = NY
+      ALLOCATE ( IX21(MX,MY), IX22(MX,MY), IY21(MX,MY), IY22(MX,MY),  &
+                 JX21(MX,MY), JX22(MX,MY), JY21(MX,MY), JY22(MX,MY),  &
+                 MAPOVR(MX,MY) )
+      ALLOCATE ( RD11(MX,MY), RD21(MX,MY), RD12(MX,MY), RD22(MX,MY),  &
+                 XD11(MX,MY), XD21(MX,MY), XD12(MX,MY), XD22(MX,MY),  &
+                 FX(MX,MY), FY(MX,MY), FA(MX,MY),                     &
+                 A1(MX,MY), A2(MX,MY), A3(MX,MY) )
 !
 !--- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ! 3.a Read types and variables from input file.
@@ -439,6 +448,8 @@
 !
       NFCOMP = 1
       TIDEFLAG = 0
+      DEFAULT_SPVARS = .TRUE.
+      DEFAULT_TVAR = .TRUE.
       IF (IDFLD.EQ.'DAT') THEN
           ITYPE   = 5
         ELSE IF (IDTYPE.EQ.'AI') THEN
@@ -457,6 +468,14 @@
         ELSE IF (IDTYPE.EQ.'F2') THEN
           ITYPE   = 4
           NFCOMP = 2
+        ELSE IF (IDTYPE.EQ.'LX') THEN
+          ITYPE   = 2
+          DEFAULT_SPVARS = .FALSE.
+          DEFAULT_TVAR = .FALSE.
+        ELSE IF (IDTYPE.EQ.'AX') THEN
+          ITYPE   = 7
+          DEFAULT_SPVARS = .FALSE.
+          DEFAULT_TVAR = .FALSE.
         ELSE
           WRITE (NDSE,1031) IDTYPE
           CALL EXTCDE ( 2 )
@@ -465,7 +484,7 @@
 !/T      IF (ITYPE.NE.1 .AND. ITYPE.NE.5) WRITE (NDST,9000) ACC
 !
       IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,930) IDSTR1(IFLD), IDSTR2(ITYPE)
-      IF ( ITYPE.NE.1 .AND. ITYPE.NE.6 ) THEN
+      IF ( ITYPE.NE.1 .AND. ITYPE.NE.6 .AND. ITYPE.NE.7 ) THEN
 !/WNT0          IF ( IAPROC .EQ. NAPOUT .AND.IFLD.EQ.3) WRITE (NDSO,1930)
 !/WNT1          IF ( IAPROC .EQ. NAPOUT .AND.IFLD.EQ.3) WRITE (NDSO,1930)
 !/WNT2          IF ( IAPROC .EQ. NAPOUT .AND.IFLD.EQ.3) WRITE (NDSO,2930)
@@ -487,25 +506,36 @@
         IF (LEN_TRIM(DIMSNAME(I)).NE.0) NIDIMS=NIDIMS+1
       ENDDO
 !
-!     Read the spatial variable names
-      CALL NEXTLN ( COMSTR , NDSI , NDSE )
-      READ (NDSI,'(A)',END=801,ERR=802,IOSTAT=IERR) STRVARSNAME
+      IF ( DEFAULT_SPVARS ) THEN
+        SPVARSNAME(1) = 'longitude'
+        SPVARSNAME(2) = 'latitude'
+      ELSE
 !
-      SPVARSNAME(:)=''
-      CALL STRSPLIT(STRVARSNAME,SPVARSNAME)
-      ! Counts the number of spatial variables
-      NISPVARS=0
-      DO I=1,2
-        IF (LEN_TRIM(SPVARSNAME(I)).NE.0) NISPVARS=NISPVARS+1
-      ENDDO
+!       Read the spatial variable names
+        CALL NEXTLN ( COMSTR , NDSI , NDSE )
+        READ (NDSI,'(A)',END=801,ERR=802,IOSTAT=IERR) STRVARSNAME
 !
-!     Read the time dimension name
-      CALL NEXTLN ( COMSTR , NDSI , NDSE )
-      READ (NDSI,'(A)',END=801,ERR=802,IOSTAT=IERR) TDIMNAME
+        SPVARSNAME(:)=''
+        CALL STRSPLIT(STRVARSNAME,SPVARSNAME)
+        ! Counts the number of spatial variables
+        NISPVARS=0
+        DO I=1,2
+          IF (LEN_TRIM(SPVARSNAME(I)).NE.0) NISPVARS=NISPVARS+1
+        ENDDO
+      END IF
 !
-!     Read the time variable name
-      CALL NEXTLN ( COMSTR , NDSI , NDSE )
-      READ (NDSI,'(A)',END=801,ERR=802,IOSTAT=IERR) TVARNAME
+      IF ( DEFAULT_TVAR ) THEN
+        TDIMNAME = 'time'
+        TVARNAME = 'time'
+      ELSE
+!        Read the time dimension name
+        CALL NEXTLN ( COMSTR , NDSI , NDSE )
+        READ (NDSI,'(A)',END=801,ERR=802,IOSTAT=IERR) TDIMNAME
+!
+!       Read the time variable name
+        CALL NEXTLN ( COMSTR , NDSI , NDSE )
+        READ (NDSI,'(A)',END=801,ERR=802,IOSTAT=IERR) TVARNAME
+      END IF
 !
 !     Read the names of netcdf variables to use
 !
@@ -520,12 +550,17 @@
         NFIELDS=NFIELDS+1
       ENDDO
 !
+! Start loop over multiple input files
+!
+      NFILE = 0
+      DO
+!
 ! 3.c Additional input for format types and time
 ! ... time
 !
       IF (.NOT. FLTIME) THEN
         CALL NEXTLN ( COMSTR , NDSI , NDSE )
-        READ (NDSI,*,END=801,ERR=802,IOSTAT=IERR) TIMESTART
+        READ (NDSI,*,END=888,ERR=802,IOSTAT=IERR) TIMESTART
         IF (TIMESTART(1).LT.10000000) THEN
           WRITE (NDSE,1035) TIME
           CALL EXTCDE ( 4 )
@@ -545,9 +580,9 @@
 ! 3.d Read Input netcdf file
 !
       CALL NEXTLN ( COMSTR , NDSI , NDSE )
-      READ (NDSI,*,END=801,ERR=802,IOSTAT=IERR) NAMEF
+      READ (NDSI,*,END=888,ERR=802,IOSTAT=IERR) NAMEF
       IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,967) NAMEF
-
+      NFILE = NFILE + 1
       J = LEN_TRIM(FNMPRE)
       iret=nf90_open(path=FNMPRE(:J)//NAMEF,mode=nf90_noWRITE,ncid=ncid)
       CALL check_err(iret)
@@ -702,8 +737,8 @@
           CALL check_err(iret)
           YNI=ALA(1,NYI)
           END IF
-        END IF
-        IF ((ITYPE.EQ.2) .AND. (GTYPE .EQ. RLGTYPE) .AND. (Y0I.GT.YNI)) THEN
+        END IF ! IF (ITYPE.NE.1.AND.ITYPE.NE.6) 
+      IF ((ITYPE.EQ.2) .AND. (GTYPE .EQ. RLGTYPE) .AND. (Y0I.GT.YNI)) THEN
           WRITE (NDSE,1032)
           CALL EXTCDE ( 2 )
         END IF
@@ -721,6 +756,7 @@
 !
         NXI    = NX
         NYI    = NY
+        IF ( ALLOCATED ( MASK) ) DEALLOCATE ( MASK )
         ALLOCATE ( MASK(NXI,NYI) )
         MASK   = 1
         IF(GTYPE .EQ. UNGTYPE) THEN
@@ -753,6 +789,7 @@
           WRITE (NDSE,1036) NXI, NYI
           CALL EXTCDE ( 5 )
         END IF
+        IF ( ALLOCATED ( MASK) ) DEALLOCATE ( MASK )
         ALLOCATE ( MASK(NXI,NYI) )
         MASK   = 1
         IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,932) NXI, NYI
@@ -795,7 +832,8 @@
 !
       IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,940)
 !
-      IF (ITYPE.NE.1 .AND. ITYPE.NE.5 .AND. ITYPE.NE.6 ) THEN
+!      IF (ITYPE.NE.1 .AND. ITYPE.NE.5 .AND. ITYPE.NE.6 .AND.           &
+!          ITYPE.NE.7) THEN
 !
 ! 4.a Longitude - latitude grid
 !
@@ -927,9 +965,11 @@
           CALL W3GSUD( GSI )
 
 !
-! 4.b Grid(s) from file
+! 4.b Grid(s) from file (ITYPE = 3 or 4)
 !
-        ELSE ! ITYPE.EQ.2
+!        ELSE ! ITYPE.EQ.2
+        ELSE IF ( ITYPE.EQ.3 .OR. ITYPE.EQ.4 ) THEN
+!
           IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,942)
 !
 ! ... prepare overlay map
@@ -1121,8 +1161,71 @@
             END DO
           END IF ! NFCOMP .EQ. 2
 !
-        END IF ! ITYPE.EQ.2
-      END IF ! ITYPE.NE.1 .AND. ITYPE.NE.5
+        ELSE IF ( ITYPE.EQ.7 ) THEN
+          ! 'AX' TYPE: point data to be mapped to nearest model
+          !            grid point
+          !
+          ! Initialise interpolation arrays
+          IX21 = 0
+          IX22 = 0
+          IY21 = 1
+          IY22 = 1
+          RD11 = 1.
+          RD12 = 0.
+          RD21 = 0.
+          RD22 = 0.
+          IF ( GTYPE.EQ.QAGTYPE ) THEN
+            NX = 0
+            DO I=1,NXI
+              ! Input point in reference grid coordinates
+              XTARG = (ALO(I,1) - X0)/SX + 1.
+              YTARG = (ALA(I,1) - Y0)/SY + 1.
+              ! Locate the nearest cell in the bathymetry quadtree
+              CALL QA_XY2CELL ( QTREE(IQGB), XTARG, YTARG, ISEA,       &
+                       XCELL, YCELL, LVCELL, IQUAD, ISUB, ISTAT )
+              ! If a valid cell is located within the reference grid
+              ! assign the corresponding interpolation indices and weights
+              IF ( ISTAT(1).EQ.0 .AND. ISEA.GT.0 .AND. ISEA.LE.MX ) THEN
+                IF ( IX21(ISEA,1).EQ.O ) THEN
+                  IX21(ISEA,1) = I
+                  NX = NX + 1
+                END IF
+              END IF
+            END DO
+            ! Copy the bathymetry quadtree structure to a new quadtree 
+            ! for the input fields, which first needs to be (re)allocated
+            CALL W3QALL( IQGI, NX, QTREE(IQGB)%NQUAD, 0, 0 )
+            CALL QA_CPQT(QTREE(IQGB), QTREE(IQGI) )
+            ! Mark any cells not matched as undefined
+            DO ISEA=1,NX
+              IF ( IX21(ISEA,1).EQ.0 ) THEN
+                QTREE(IQGI)%CELL_TYPE(ISEA) = QTREE(IQGI)%UNDEF_TYPE
+              END IF
+            END DO
+            ! Remove undefined cells from the input quadtree structure
+            CALL QA_REMUNDEF( QTREE(IQGI), NEWCELL, IERR, NDSE )
+            ! Remove undefined cells from the index map
+            IF ( .NOT.ALLOCATED(NEWCELL) ) ALLOCATE ( NEWCELL(MX) )
+            DO ISEA=1,NX
+               IF ( NEWCELL(ISEA).EQ.0 ) CYCLE
+               IX22(NEWCELL(ISEA),1) = IX21(ISEA,1)
+            END DO
+            IX21 = IX22
+            ! Copy to the second set of interpolation arrays
+            JX21 = IX21
+            JX22 = IX22
+            JY21 = 1
+            JY22 = 1
+            XD11 = RD11
+            XD12 = RD12
+            XD21 = RD21
+            XD22 = RD22
+          ELSE
+            WRITE (NDSE,1066) 
+            CALL EXTCDE ( 9 )
+          END IF
+        END IF ! ITYPE.EQ.2 / ITYPE.EQ.3 .OR. ITYPE.EQ.4 / ITYPE.EQ.7
+!      END IF ! ITYPE.NE.1 .AND. ITYPE.NE.5 .AND. ITYPE.NE.6 .AND. ITYPE.NE.7
 !
 ! 4.c Input location and format
 !
@@ -1155,27 +1258,27 @@
 
 ! 5.b Open and prepare output file
 !
-      IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,971)
-      J      = LEN_TRIM(FNMPRE)
-      IF ( ITYPE .LE. 4 .OR. ITYPE.EQ.6 ) THEN
+      IF ( NFILE.EQ.1 ) THEN
+        IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,971)
+        J      = LEN_TRIM(FNMPRE)
+        IF ( ITYPE .LE. 4 .OR. ITYPE.EQ.6 .OR. ITYPE.EQ.7 ) THEN
 !/TIDE          IF (ITYPE.EQ.6) THEN 
 !/TIDE            CALL VUF_SET_PARAMETERS
 !/TIDE            TIDE_NDEF = NFIELDS
 !/TIDE            CALL TIDE_FIND_INDICES_ANALYSIS(LIST)
 !/TIDE            END IF
-            NYOUT = NY
-            IF ( GTYPE.EQ.QAGTYPE ) NYOUT = QTREE(IQGB)%NQUAD
+            MYOUT = MY
+            IF ( GTYPE.EQ.QAGTYPE ) MYOUT = QTREE(IQGB)%NQUAD
             IF ( IAPROC .EQ. NAPOUT )  &
                CALL W3FLDO ( 'WRITE', IDFLD, NDSDAT, NDST, NDSE,      &
-               NX, NYOUT, GTYPE, IERR, FPRE=FNMPRE(:J),               &
+               MX, MYOUT, GTYPE, IERR, FPRE=FNMPRE(:J),               &
                FHDR=FLHDR, TIDEFLAGIN=TIDEFLAG)
-            IF ( GTYPE.EQ.QAGTYPE) CALL QA_IOQT(NDSDAT, QTREE(IQGB),  &
-                                                1, IERR, ndse=0 )
-        ELSE
-          NYOUT = 0
-          IF ( IAPROC .EQ. NAPOUT )  &
-          CALL W3FLDO ( 'WRITE', IDFLD, NDSDAT, NDST, NDSE,           &
-               RECLDT, NYOUT, GTYPEDUM, IERR, FPRE=FNMPRE(:J) )
+          ELSE
+            MYOUT = 0
+            IF ( IAPROC .EQ. NAPOUT )  &
+            CALL W3FLDO ( 'WRITE', IDFLD, NDSDAT, NDST, NDSE,         &
+               RECLDT, MYOUT, GTYPEDUM, IERR, FPRE=FNMPRE(:J) )
+          END IF
         END IF
 !/TIDET   IF (TIDEFLAG.GT.0) THEN  
 !/TIDET   LRECL  = TIDE_MF*LRB*NFIELDS*2
@@ -1213,7 +1316,7 @@
 !
       TIDESWITCH=.FALSE.
 !/TIDE      TIDESWITCH=.TRUE.
-      IF (ITYPE.GE.6.AND.TIDESWITCH) THEN
+      IF (ITYPE.EQ.6.AND.TIDESWITCH) THEN
 ! 
 ! Reads in the full time vector
 !
@@ -1261,7 +1364,7 @@
 !/TIDE        ALLOCATE(V_ARG(170,TIDE_NTI),F_ARG(170,TIDE_NTI),U_ARG(170,TIDE_NTI))
 !/TIDE        TIDE_NX=NX
 !/TIDE        TIDE_NY=NY
-!/TIDE        ALLOCATE(TIDAL_CONST(NX,NY,TIDE_MF,2,2))
+!/TIDE        ALLOCATE(TIDAL_CONST(MX,MY,TIDE_MF,2,2))
 !/TIDE        TIDAL_CONST(:,:,:,:,:)=0.
 !/TIDE        DO I=1,NFIELDS
 !/TIDE          iret=nf90_inq_varid(ncid,FIELDSNAME(I),varidf(I))
@@ -1489,7 +1592,7 @@
 !/TIDE          CALL W3FLDTIDE2 ( 'WRITE',  NDSDAT, NDST, NDSE, NX, NY, IDFLD, 0, IERR )
 !/TIDE!
 !/TIDE        GOTO 880
-           END IF ! end of test   IF (ITYPE.GE.6.AND.TIDESWITCH)
+           END IF ! end of test   IF (ITYPE.EQ.6.AND.TIDESWITCH)
 
 !
 !--- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
@@ -1501,7 +1604,7 @@
         XCOFF = 0.0
         YCOFF = 0.0
 !
-        IF ( ITYPE .LE. 4 .OR. ITYPE.EQ.6 ) THEN
+        IF ( ITYPE .LE. 4 .OR. ITYPE.EQ.6 .OR. ITYPE.EQ.7 ) THEN
           IRET = NF90_INQUIRE_ATTRIBUTE(NCID,VARIDF(1),'scale_factor')
           IF ( IRET .EQ. NF90_NOERR ) THEN
              IRET = NF90_GET_ATT(NCID,VARIDF(1),'scale_factor',XCFAC)
@@ -1532,7 +1635,8 @@
 !
 ! 6.a Read new time and fields
 !
-          iret=nf90_inq_varid(ncid,"time",varidtmp)
+          iret=nf90_inq_varid(ncid,TRIM(TVARNAME),varidtmp)
+          IF ( iret/=nf90_noerr ) iret=nf90_inq_varid(ncid,"time",varidtmp)
           IF ( iret/=nf90_noerr ) iret=nf90_inq_varid(ncid,"MT",varidtmp)
           CALL check_err(iret)
           iret=nf90_get_var(ncid,varidtmp,datecur,start=(/ITIME/))
@@ -1565,7 +1669,7 @@
 !
 ! ... Input
 !
-        IF ( ITYPE .LE. 4 .OR. ITYPE.EQ.6) THEN
+        IF ( ITYPE .LE. 4 .OR. ITYPE.GE.6) THEN
             IF (NDIMSGRID.EQ.1) THEN 
               iret=nf90_get_var(ncid,varidf(1),XC(:,1),start=(/1,ITIME/),count=(/MXM,1/))
             ELSE
@@ -1864,32 +1968,36 @@
 !
 ! ... Test output
 !
-!/T3        IF ( .NOT. ALLOCATED(MAPOUT) ) ALLOCATE ( MAPOUT(NX,NY) )
+!/T3        IF ( .NOT. ALLOCATED(MAPOUT) ) ALLOCATE ( MAPOUT(MX,MY) )
 !/T3        WRITE (NDST,9065)
 !/T3        DO IX=1, NX
 !/T3          DO IY=1, NY
-!/T3            MAPOUT(IX,IY) = MAPSTA(IY,IX)
+!/T3            IF ( GTYPE.EQ.QAGTYPE ) THEN
+!/T3              MAPOUT(IX,IY) = QTREE(IQGI)%CELL_TYPE(IX)
+!/T3            ELSE
+!/T3              MAPOUT(IX,IY) = MAPSTA(IY,IX)
+!/T3              END IF
 !/T3            END DO
 !/T3          END DO
 !/T3        IX0    = 1
 !/T3        IXN    = MIN ( IX0+IXWDT-1 , NX )
 !/T3        DO
 !/T3          IF (IFLD.EQ.1) THEN
-!/T3              CALL PRTBLK (NDSO, NX, NY, NX, FA, MAPOUT, 0, 0.,   &
+!/T3              CALL PRTBLK (NDSO, NX, NY, MX, FA, MAPOUT, 0, 0.,   &
 !/T3                      IX0, IXN, 1, 1, NY, 1, 'Fraction ice', '(-)')
 !/T3              IF ( FLBERG )                                       &
-!/T3              CALL PRTBLK (NDSO, NX, NY, NX, FA, MAPOUT, 0, 0.,   &
+!/T3              CALL PRTBLK (NDSO, NX, NY, MX, FA, MAPOUT, 0, 0.,   &
 !/T3                      IX0, IXN, 1, 1, NY, 1, 'Iceberg a', '0.1/km')
 !/T3            ELSE IF (IFLD.EQ.2) THEN
-!/T3              CALL PRTBLK (NDSO, NX, NY, NX, FA, MAPOUT, 0, 0.,   &
+!/T3              CALL PRTBLK (NDSO, NX, NY, MX, FA, MAPOUT, 0, 0.,   &
 !/T3                      IX0, IXN, 1, 1, NY, 1, 'Water level', 'm')
 !/T3            ELSE
-!/T3              CALL PRTBLK (NDSO, NX, NY, NX, FX, MAPOUT, 0, 0.,   &
+!/T3              CALL PRTBLK (NDSO, NX, NY, MX, FX, MAPOUT, 0, 0.,   &
 !/T3                      IX0, IXN, 1, 1, NY, 1, 'Cart. X-comp', 'm/s')
-!/T3              CALL PRTBLK (NDSO, NX, NY, NX, FY, MAPOUT, 0, 0.,   &
+!/T3              CALL PRTBLK (NDSO, NX, NY, MX, FY, MAPOUT, 0, 0.,   &
 !/T3                      IX0, IXN, 1, 1, NY, 1, 'Cart. Y-comp', 'm/s')
 !/T3              IF ( FLSTAB )                                       &
-!/T3              CALL PRTBLK (NDSO, NX, NY, NX, FA, MAPOUT, 0, 0.,   &
+!/T3              CALL PRTBLK (NDSO, NX, NY, MX, FA, MAPOUT, 0, 0.,   &
 !/T3                      IX0, IXN, 1, 1, NY, 1, 'Tair-Tsea', 'degr')
 !/T3            END IF
 !/T3          IF (IXN.NE.NX) THEN
@@ -1902,14 +2010,14 @@
 !
 ! 6.c Write fields
 !
-        IF ( ITYPE .LE. 4 .OR. ITYPE.EQ.6 ) THEN
+        IF ( ITYPE .LE. 4 .OR. ITYPE.GE.6 ) THEN
 !/O3      IF ( IAPROC .EQ. NAPOUT )  WRITE (NDSO,977)
           FLQA = GTYPE.EQ.QAGTYPE
-          NEW_QT = .FALSE.
+          NEW_QT = ITIME.EQ.1
           IF ( IAPROC .EQ. NAPOUT ) CALL W3FLDG ('WRITE', IDFLD,      &
-                       NDSDAT, NDST, NDSE, NX, NY, NX, NY, TIME,      &
+                       NDSDAT, NDST, NDSE, MX, MY, NX, NY, TIME,      &
                        TIME, TIME, FX, FY, FA, TIME, FX, FY, FA,      &
-                       IERR, FLQA, new_qt=NEW_QT )
+                       IERR, FLQA, new_qt=NEW_QT, qtree=QTREE(IQGI) )
 
         ELSE IF ( ITYPE .EQ. 5 ) THEN
           IF ( NDAT .EQ. 0 ) THEN
@@ -1924,12 +2032,19 @@
         END IF
         IF (IERR.NE.0) CALL EXTCDE ( 30 )
 !
+!     End of time loop
       END DO
 !
       DEALLOCATE(XC,YC,AC)  
       IF (ASSOCIATED(ALA)) DEALLOCATE(ALA,ALO)
 !
-!     End loop over input fields
+!     Close the netcdf file
+!
+      iret=nf90_close(ncid)
+      CALL check_err(iret)
+!
+!     End loop over input fields/files
+      END DO
 !--- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 !
   880 CONTINUE
@@ -2200,6 +2315,8 @@
                '     IOSTAT =',I5/)
  1064 FORMAT (/' *** WAVEWATCH III ERROR IN W3PRNC : '/               &
                '     GRID DIMENSIONS ', A,' NOT FOUND... CHECK DIMENSION NAMES')
+ 1066 FORMAT (/' *** WAVEWATCH III ERROR IN W3PRNC : '/               &
+               '     ONLY ABLE TO PROCESS AX FILE TYPE FOR QUADTREE'/)
 !
 !/O15 1070 FORMAT (/' *** WAVEWATCH III ERROR IN W3PRNC : '/          &
 !/O15               '     ERROR IN CREATING A TIMES FILE FOR ',A/     &
