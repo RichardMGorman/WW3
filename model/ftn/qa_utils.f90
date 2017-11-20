@@ -8637,6 +8637,14 @@
                ! cells of level LVLHOME
                LI = LVLMAX - LVLHOME + 1
                NLISTU1(LI) = NLISTU1(LI) +1
+               IF ( MUFACE2.LT.NLISTU1(LI) ) THEN
+                  IF ( PRESENT(IERR) ) IERR = 1
+                  IF ( IUN.GT.0 ) WRITE(IUN,*)                         &
+                     'QA_QT2SMC: ERROR IN LISTU1 ALLOCATION(1)',       &
+                        'LI, NLISTU1, MUFACE2: ',                      &
+                         LI, NLISTU1(LI), MUFACE2
+                  RETURN
+               END IF
                LISTU1(NLISTU1(LI),LI) = NUFACE
             ELSE IF ( INBR1.GT.0 .AND. INBR2.GT.0 ) THEN
                ! Two neighbouring wet cells in this direction
@@ -8646,7 +8654,9 @@
                   IF ( MUFACE2.LT.NUFACE ) THEN
                      IF ( PRESENT(IERR) ) IERR = 1
                      IF ( IUN.GT.0 ) WRITE(IUN,*)                      &
-                        'QA_QT2SMC: ERROR IN IJKUFc ALLOCATION(2)'
+                        'QA_QT2SMC: ERROR IN IJKUFc ALLOCATION(2)',    &
+                        'NUFACE, MUFACE2: ',                           &
+                         NUFACE, MUFACE2
                      RETURN
                   END IF
                   IFACE(ICELL,IDIR) = NUFACE
@@ -8666,6 +8676,14 @@
                   ! both cells of level LVLHOME+1 and LVLHOME
                   LI = LVLMAX - LVLHOME
                   NLISTU2(LI) = NLISTU2(LI) +1
+                  IF ( MUFACE2.LT.NLISTU2(LI) ) THEN
+                     IF ( PRESENT(IERR) ) IERR = 1
+                     IF ( IUN.GT.0 ) WRITE(IUN,*)                      &
+                        'QA_QT2SMC: ERROR IN LISTU2 ALLOCATION(1)',    &
+                        'LI, NLISTU2, MUFACE2: ',                      &
+                         LI, NLISTU2(LI), MUFACE2
+                     RETURN
+                  END IF
                   LISTU2(NLISTU2(LI),LI) = NUFACE
                ELSE
                   ! This face was previously created from the neighbour's side:
@@ -8681,7 +8699,9 @@
                   IF ( MUFACE2.LT.NUFACE ) THEN
                      IF ( PRESENT(IERR) ) IERR = 1
                      IF ( IUN.GT.0 ) WRITE(IUN,*)                      &
-                        'QA_QT2SMC: ERROR IN IJKUFc ALLOCATION(2)'
+                        'QA_QT2SMC: ERROR IN IJKUFc ALLOCATION(2)',    &
+                        'NUFACE, MUFACE2: ',                           &
+                         NUFACE, MUFACE2
                      RETURN
                   END IF
                   IFACE(ICELL,IDIR+4) = NUFACE
@@ -8701,6 +8721,14 @@
                   ! both cells of level LVLHOME+1 and LVLHOME
                   LI = LVLMAX - LVLHOME
                   NLISTU2(LI) = NLISTU2(LI) +1
+                  IF ( MUFACE2.LT.NLISTU2(LI) ) THEN
+                     IF ( PRESENT(IERR) ) IERR = 1
+                     IF ( IUN.GT.0 ) WRITE(IUN,*)                      &
+                        'QA_QT2SMC: ERROR IN LISTU2 ALLOCATION(2)',    &
+                        'LI, NLISTU2, MUFACE2: ',                      &
+                         LI, NLISTU2(LI), MUFACE2
+                     RETURN
+                  END IF
                   LISTU2(NLISTU2(LI),LI) = NUFACE
                ELSE
                   ! This face was previously created from the neighbour's side:
@@ -8725,7 +8753,9 @@
                   IF ( MUFACE2.LT.NUFACE ) THEN
                      IF ( PRESENT(IERR) ) IERR = 1
                      IF ( IUN.GT.0 ) WRITE(IUN,*)                      &
-                        'QA_QT2SMC: ERROR IN IJKUFc ALLOCATION(2)'
+                        'QA_QT2SMC: ERROR IN IJKUFc ALLOCATION(2)',    &
+                           'NUFACE, MVFACE2: ',                        &
+                            NUFACE, MUFACE2
                      RETURN
                   END IF
                   IFACE(ICELL,IDIRSAV) = NUFACE
@@ -8746,6 +8776,14 @@
                      ! both cells of level LVLHOME+1 and LVLHOME
                      LI = LVLMAX - LVLHOME
                      NLISTU2(LI) = NLISTU2(LI) + 1
+                     IF ( MUFACE2.LT.NLISTU2(LI) ) THEN
+                        IF ( PRESENT(IERR) ) IERR = 1
+                        IF ( IUN.GT.0 ) WRITE(IUN,*)                   &
+                           'QA_QT2SMC: ERROR IN LISTU2 ALLOCATION(3)', &
+                           'LI, NLISTU2, MUFACE2: ',                   &
+                            LI, NLISTU2(LI), MUFACE2
+                        RETURN
+                     END IF
                      LISTU2(NLISTU2(LI),LI) = NUFACE
                   ELSE IF ( LVLNBR.EQ.LVLHOME ) THEN
                      ! neighbour is the same size as the home cell
@@ -8757,6 +8795,14 @@
                      ! cells of level LVLHOME
                      LI = LVLMAX - LVLHOME + 1
                      NLISTU1(LI) = NLISTU1(LI) + 1
+                     IF ( MUFACE2.LT.NLISTU1(LI) ) THEN
+                        IF ( PRESENT(IERR) ) IERR = 1
+                        IF ( IUN.GT.0 ) WRITE(IUN,*)                   &
+                           'QA_QT2SMC: ERROR IN LISTU1 ALLOCATION(2)', &
+                           'LI, NLISTU1, MVFACE2: ',                   &
+                            LI, NLISTU1(LI), MUFACE2
+                        RETURN
+                     END IF
                      LISTU1(NLISTU1(LI),LI) = NUFACE
                   ELSE
                      ! neighbour is twice the size of the home cell
@@ -8768,6 +8814,14 @@
                      ! both cells of level LVLHOME and LVLHOME-1
                      LI = LVLMAX - LVLHOME + 1
                      NLISTU2(LI) = NLISTU2(LI) + 1
+                     IF ( MUFACE2.LT.NLISTU2(LI) ) THEN
+                        IF ( PRESENT(IERR) ) IERR = 1
+                        IF ( IUN.GT.0 ) WRITE(IUN,*)                   &
+                           'QA_QT2SMC: ERROR IN LISTU2 ALLOCATION(4)', &
+                           'LI, NLISTU2, MVFACE2: ',                   &
+                            LI, NLISTU2(LI), MUFACE2
+                        RETURN
+                     END IF
                      LISTU2(NLISTU2(LI),LI) = NUFACE
                   ENDIF
                   IJKUFc(1,NUFACE) = IC_FACE
@@ -8821,7 +8875,8 @@
                IF ( MVFACE2.LT.NVFACE ) THEN
                  IF ( PRESENT(IERR) ) IERR = 1
                   IF ( IUN.GT.0 ) WRITE(IUN,*)                         &
-                     'QA_QT2SMC: ERROR IN IJKVFc ALLOCATION(2)'
+                     'QA_QT2SMC: ERROR IN IJKVFc ALLOCATION(2)',       &
+                           'NVFACE, MVFACE2: ', NVFACE, MVFACE2
                   RETURN
                END IF
                IFACE(ICELL,IDIR) = NVFACE
@@ -8839,6 +8894,14 @@
                ! cells of level LVLHOME
                LI = LVLMAX - LVLHOME + 1
                NLISTV1(LI) = NLISTV1(LI) + 1
+               IF ( MVFACE2.LT.NLISTV1(LI) ) THEN
+                  IF ( PRESENT(IERR) ) IERR = 1
+                  IF ( IUN.GT.0 ) WRITE(IUN,*)                         &
+                     'QA_QT2SMC: ERROR IN LISTV1 ALLOCATION(1)',       &
+                           'LI, NLISTV1, MVFACE2: ',                   &
+                            LI, NLISTV1(LI), MVFACE2
+                  RETURN
+               END IF
                LISTV1(NLISTV1(LI),LI) = NVFACE
             ELSE IF ( INBR1.GT.0 .AND. INBR2.GT.0 ) THEN
                ! Two neighbouring wet cells in this direction
@@ -8848,7 +8911,8 @@
                   IF ( MVFACE2.LT.NVFACE ) THEN
                      IF ( PRESENT(IERR) ) IERR = 1
                      IF ( IUN.GT.0 ) WRITE(IUN,*)                      &
-                        'QA_QT2SMC: ERROR IN IJKVFc ALLOCATION(2)'
+                        'QA_QT2SMC: ERROR IN IJKVFc ALLOCATION(2)',    &
+                           'NVFACE, MVFACE2: ', NVFACE, MVFACE2
                      RETURN
                   END IF
                   IFACE(ICELL,IDIR) = NVFACE
@@ -8868,6 +8932,14 @@
                   ! both cells of level LVLHOME+1 and LVLHOME
                   LI = LVLMAX - LVLHOME
                   NLISTV2(LI) = NLISTV2(LI) + 1
+                  IF ( MVFACE2.LT.NLISTV2(LI) ) THEN
+                     IF ( PRESENT(IERR) ) IERR = 1
+                     IF ( IUN.GT.0 ) WRITE(IUN,*)                      &
+                        'QA_QT2SMC: ERROR IN LISTV2 ALLOCATION(1)',    &
+                           'LI, NLISTV2, MVFACE2: ',                   &
+                            LI, NLISTV2(LI), MVFACE2
+                     RETURN
+                  END IF
                   LISTV2(NLISTV2(LI),LI) = NVFACE
                ELSE
                   ! This face was previously created from the neighbour's side:
@@ -8903,6 +8975,14 @@
                   ! both cells of level LVLHOME+1 and LVLHOME
                   LI = LVLMAX - LVLHOME
                   NLISTV2(LI) = NLISTV2(LI) + 1
+                  IF ( MVFACE2.LT.NLISTV2(LI) ) THEN
+                     IF ( PRESENT(IERR) ) IERR = 1
+                     IF ( IUN.GT.0 ) WRITE(IUN,*)                      &
+                        'QA_QT2SMC: ERROR IN LISTV2 ALLOCATION(2)',    &
+                           'LI, NLISTV2, MVFACE2: ',                   &
+                            LI, NLISTV2(LI), MVFACE2
+                     RETURN
+                  END IF
                   LISTV2(NLISTV2(LI),LI) = NVFACE
                ELSE
                   ! This face was previously created from the neighbour's side:
@@ -8948,6 +9028,14 @@
                      ! both cells of level LVLHOME+1 and LVLHOME
                      LI = LVLMAX - LVLHOME
                      NLISTV2(LI) = NLISTV2(LI) + 1
+                     IF ( MVFACE2.LT.NLISTV1(LI) ) THEN
+                        IF ( PRESENT(IERR) ) IERR = 1
+                        IF ( IUN.GT.0 ) WRITE(IUN,*)                   &
+                           'QA_QT2SMC: ERROR IN LISTV2 ALLOCATION(3)', &
+                           'LI, NLISTV2, MVFACE2: ',                   &
+                            LI, NLISTV2(LI), MVFACE2
+                        RETURN
+                     END IF
                      LISTV2(NLISTV2(LI),LI) = NVFACE
                   ELSE IF ( LVLNBR.EQ.LVLHOME ) THEN
                      ! neighbour is the same size as the home cell
@@ -8959,6 +9047,14 @@
                      ! cells of level LVLHOME
                      LI = LVLMAX - LVLHOME + 1
                      NLISTV1(LI) = NLISTV1(LI) + 1
+                     IF ( MVFACE2.LT.NLISTV1(LI) ) THEN
+                        IF ( PRESENT(IERR) ) IERR = 1
+                        IF ( IUN.GT.0 ) WRITE(IUN,*)                   &
+                           'QA_QT2SMC: ERROR IN LISTV1 ALLOCATION(2)', &
+                           'LI, NLISTV1, MVFACE2: ',                   &
+                            LI, NLISTV1(LI), MVFACE2
+                        RETURN
+                     END IF
                      LISTV1(NLISTV1(LI),LI) = NVFACE
                   ELSE
                      ! neighbour is twice the size of the home cell
@@ -8970,6 +9066,14 @@
                      ! both cells of level LVLHOME and LVLHOME-1
                      LI = LVLMAX - LVLHOME + 1
                      NLISTV2(LI) = NLISTV2(LI) + 1
+                     IF ( MVFACE2.LT.NLISTV2(LI) ) THEN
+                        IF ( PRESENT(IERR) ) IERR = 1
+                        IF ( IUN.GT.0 ) WRITE(IUN,*)                   &
+                           'QA_QT2SMC: ERROR IN LISTV2 ALLOCATION(4)', &
+                           'LI, NLISTV2, MVFACE2: ',                   &
+                            LI, NLISTV2(LI), MVFACE2
+                        RETURN
+                     END IF
                      LISTV2(NLISTV2(LI),LI) = NVFACE
                   ENDIF
                   IJKVFc(1,NVFACE) = IC_FACE
@@ -9230,7 +9334,7 @@
 !/
       INTEGER         :: NCELL
       INTEGER         :: ICELL, IDIR, IR, INBREV, INBREV1, INBREV2
-      INTEGER         :: LVLHOME, LVLNBR
+      INTEGER         :: LVLHOME, LVLNBR, LVLMAX
       INTEGER         :: IUN
       INTEGER         :: INBR1, INBR2, INBR
       INTEGER         :: LVL2, IQ, IS, ICELL2
@@ -9248,6 +9352,7 @@
       IREV(4) = 3
 !
       NCELL = QTREE%NCELL
+      LVLMAX = QTREE%LVLMAX
 !
       DO ICELL=1,NCELL
 !
@@ -9258,6 +9363,10 @@
 !  Properties of this cell:
          ! refinement level:
          LVLHOME = QTREE%INDLVL(ICELL)
+         IF ( LVLHOME .GT. LVLMAX ) THEN
+            IERR = 1
+            IF (IUN.GT.0) WRITE (IUN,1000) ICELL, LVLHOME, LVLMAX
+         END IF
 !
 !  Neighbour checks:
 !  Loop over W, E, S, N directions: 
@@ -9394,6 +9503,9 @@
 !
 ! Formats
 !
+ 1000 FORMAT ( ' QA_QTCHECK: ERROR: '/                                 &
+               ' CELL ',I6,' HAS LEVEL = ',I2/                         &
+               '        BUT LVLMAX = ',I6 )
  1001 FORMAT ( ' QA_QTCHECK: ERROR: '/                                 &
                ' CELL ',I6,' HAS LEVEL = ',I2,' NGBR(',I1,') = ',I6/   &
                '                        AND NGBR(',I1,') = ',I6/       &
