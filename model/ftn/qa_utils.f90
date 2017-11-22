@@ -6694,6 +6694,7 @@
 !       Richard Gorman, NIWA
 !         
 !         April 2014:   Origination, derived from QA_MLGRID, QA_BMLSTRUC.
+!         Nov   2017:   Add ATYPE = 5.
 !
 !  1. Purpose :
 !
@@ -6730,6 +6731,7 @@
 !                             ATYPE = 2: direction averaging over wet cells
 !                             ATYPE = 3: x-transmission averaging
 !                             ATYPE = 4: y-transmission averaging
+!                             ATYPE = 5: retain value from the first wet cell
 !       ARANGE  R.A.   I*  [NARR x 2] array of min. & max valid values for
 !                          the NARR variables in ARRIN. [default = -Inf to Inf].
 !       MAP_TYPES I.A. I*  Values of MAPML for cells that: 
@@ -6977,6 +6979,10 @@
                            ARRMEAN(IARR) = ARRMEAN(IARR) + ZDIFF/NWET
                            ! Store individual value
                            ARRVAL(IS,IARR) = ZVAL
+                           ! Type 5 (e.g. for interpolation weights and 
+                           ! indices) move on now thay we have the first
+                           ! wet value
+                           IF ( ARRTYPE(IARR).EQ.5 ) CYCLE
                         ELSE
                            ARRVAL(IS,IARR) = 0.
                         END IF  ! subcell wet/dry
@@ -7005,6 +7011,8 @@
                                     ARRVAL(2,IARR)*ARRVAL(4,IARR) )
                         ELSE
                         !  Standard or direction scalar: take mean over valid cells
+                        !  This will also work for ATYPE=5, where only the first
+                        !  valid cell was used
                            ARRML(INDBG,IARR) = ARRMEAN(IARR)
                         END IF
                      END DO
