@@ -25,9 +25,10 @@
 # --------------------------------------------------------------------------- #
 # 1.a Internal variables
 # set -x
+ ww3_env="${HOME}/.wwatch3.env"
 # The following line must not be removed: it is a switch for local install
 # so that all bin scripts point to the local wwatch3.env
-  export ww3_env=/export/emc-lw-ynagai/rgorman/build/ww3_gen/wwatch3.env
+# WW3ENV
 # For manual install (without install_ww3_tar or install_ww3_svn) make sure to
 # either use the generic ww3_env or to add your own ww3_env="${my_directory}"
 
