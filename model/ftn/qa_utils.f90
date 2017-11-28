@@ -1030,7 +1030,7 @@
 !
 !     Parameter list
 !     ----------------------------------------------------------------
-!       QTREE   QA_TREE  O Quadtree structure, with the following components
+!       QTREE   QA_TREE  I/O Quadtree structure, with the following components
 !                           affected:
 !          NCELL   Int.  Number of cells
 !          NCELL_DEF Int.  Number of active cells
@@ -1118,7 +1118,7 @@
 !/
 !/ Parameter list
 !/
-      TYPE(QA_TREE), INTENT(OUT)            :: QTREE
+      TYPE(QA_TREE), INTENT(INOUT)          :: QTREE
       INTEGER, INTENT(IN)                   :: MCELL
       INTEGER, INTENT(IN)                   :: MQUAD
       INTEGER, INTENT(IN), OPTIONAL         :: UNDEF_TYPE
@@ -6867,7 +6867,8 @@
       ALLOCATE ( ARRMEAN(NARR), ARRMAX(NARR) )
       ALLOCATE ( ARRVAL(4,NARR) )
 !
-!    Number of grid cells covered by this subgrid at the coarsest level to be computed:
+!    Number of grid cells covered by this subgrid at the coarsest
+!    level to be computed:
       XNP = FLOAT(NX)*2.**(-LVLREL)
       NXP = NINT(XNP)
       YNP = FLOAT(NY)*2.**(-LVLREL)
@@ -6876,6 +6877,9 @@
          IF ( IUN.GT.0 ) THEN
             WRITE(IUN,*) 'ERROR IN QA_MLG2QT: '
             WRITE(IUN,*) 'MISMATCH IN NXP, NYP'
+            WRITE(IUN,*) 'NX, NY = ', NX, NY
+            WRITE(IUN,*) 'LVLREL = ', LVLREL
+            WRITE(IUN,*) 'NXP, NYP = ', NXP, NYP
          END IF
          IF ( PRESENT(IERR) ) IERR = 1
          RETURN
@@ -9837,8 +9841,8 @@
 !       GLOBAL       Log.     I  Flag for global grid (i.e. cyclic in X)
 !       DEFAULT_TYPE Int.     I  Value of flag for created cells
 !       UNDEF_TYPE   Int.     I  Value of flag for invalid cells
-!       QTREE      QA_TREE    O  Quadtree structure, with the following components
-!                                affected:
+!       QTREE      QA_TREE   I/O Quadtree structure, with the following 
+!                                components affected:
 !          NCELL   Int.  Number of cells
 !          NQUAD   Int.  Number of quads
 !          LVLREF  Int.  Level of reference grid
