@@ -6812,6 +6812,7 @@
       REAL, ALLOCATABLE    :: XML(:), YML(:), ARRML(:,:)
       INTEGER, ALLOCATABLE :: ISEAOLD(:), ISEANEW(:,:)
       INTEGER, ALLOCATABLE :: IQREF(:), ISREF(:)
+          integer ::       NWETALL
       !    integer ::      NINSUB, NSET, NFINE, NRPT, NCRSNB, NWETALL
 !
 ! Array sizes
@@ -6874,6 +6875,7 @@
       YNP = FLOAT(NY)*2.**(-LVLREL)
       NYP = NINT(YNP)
       IF ( ABS(XNP-NXP).GT.1.E-9 .OR. ABS(YNP-NYP).GT.1.E-9 ) THEN
+
          IF ( IUN.GT.0 ) THEN
             WRITE(IUN,*) 'ERROR IN QA_MLG2QT: '
             WRITE(IUN,*) 'MISMATCH IN NXP, NYP'
@@ -6906,7 +6908,7 @@
 !
       NXSUB = NX
       NYSUB = NY
-      !NWETALL = 0
+      NWETALL = 0
       DO LVL=0,-LVLREL,-1
 !
 ! Absolute refinement level:
@@ -7038,10 +7040,10 @@
                !write(*,*) 'LVL,LEVEL,II,JJ,INDBG,IMLG,X,Y,ISWET,IJS,ARRML(1),MAPML: ',  &
                !         LVL,LEVEL,II,JJ,INDBG,IMLG,X,Y,ISWET(INDBG), &
                !            IJS, ARRML(INDBG,1), MAPML(IMLG)
-               !IF ( ISWET(INDBG) ) NWETALL = NWETALL + 1
+               IF ( ISWET(INDBG) ) NWETALL = NWETALL + 1
             END DO  ! X grid index
          END DO  ! Y grid index
-         !write(*,*) 'QA_MLG2QT: LVL, LEVEL, NWETALL: ',LVL, LEVEL, NWETALL
+         write(*,*) 'QA_MLG2QT: LVL, LEVEL, NWETALL: ',LVL, LEVEL, NWETALL
          IF ( MOD(NXSUB,2).NE.0 ) EXIT
          IF ( MOD(NYSUB,2).NE.0 ) EXIT
          NXSUB = NXSUB/2
@@ -7164,8 +7166,8 @@
                END IF
             END DO  ! Loop over cells at this level
             !
-            !write(*,*) 'QA_MLG2QT: INDBG1, INDBGMAX, ITER, NREF = ',  &
-            !                       INDBG1, INDBGMAX,ITER,NREF
+            write(*,*) 'QA_MLG2QT: INDBG1, INDBGMAX, ITER, NREF = ',  &
+                                   INDBG1, INDBGMAX,ITER,NREF
             !write(*,*) 'QA_MLG2QT: NWETALL, NINSUB, NSET, NFINE, NRPT, NCRSNB = ',  &
             !            NWETALL, NINSUB, NSET, NFINE, NRPT, NCRSNB
             !
