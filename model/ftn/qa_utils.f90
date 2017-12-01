@@ -6812,8 +6812,8 @@
       REAL, ALLOCATABLE    :: XML(:), YML(:), ARRML(:,:)
       INTEGER, ALLOCATABLE :: ISEAOLD(:), ISEANEW(:,:)
       INTEGER, ALLOCATABLE :: IQREF(:), ISREF(:)
-          integer ::       NWETALL
-      !    integer ::      NINSUB, NSET, NFINE, NRPT, NCRSNB, NWETALL
+      !    integer ::       NWETALL
+          integer ::      NINSUB, NSET, NFINE, NRPT, NCRSNB, NWETALL
 !
 ! Array sizes
 !      
@@ -6930,9 +6930,11 @@
                ! Index into global multilevel grid:
                IMLG = MULTILEVEL_INDEX ( NX0, NY0, X, Y, LEVEL,       &
                                          LVLREF )
+               INDML(INDBG) = IMLG
+               ! Skip points outside the reference grid
+               IF ( IMLG.EQ.0 ) CYCLE
                XML(INDBG) = X
                YML(INDBG) = Y
-               INDML(INDBG) = IMLG
                IJS = 0
                IF (LVL.EQ.0) THEN
                   ! For cells on the input regular grid, use MAPML as 
@@ -7075,16 +7077,18 @@
             ISEAOLD = 0
             IQREF = 0
             ISREF = 0
-            !NINSUB = 0
-            !NSET = 0
-            !NFINE = 0
-            !NRPT = 0
-            !NCRSNB = 0
-            !NWETALL = 0
+            NINSUB = 0
+            NSET = 0
+            NFINE = 0
+            NRPT = 0
+            NCRSNB = 0
+            NWETALL = 0
             DO INDBG = INDBG1, INDBGMAX
+               IMLG = INDML(INDBG)
+               ! Skip points outside the reference grid
+               IF ( IMLG.EQ.0 ) CYCLE
                X = XML(INDBG)
                Y = YML(INDBG)
-               IMLG = INDML(INDBG)
                CALL QA_XY2CELL ( QTREE, X, Y, ICELL, XCELL, YCELL,    &
                                  LVCELL, IQ, ISUB, ISTAT )
                !write(*,*) 'INDBG,X,Y,ISWET,ICELL,XCELL,YCELL,LVCELL,IQ,ISUB,ISTAT:',  &
@@ -7093,7 +7097,7 @@
                IF ( .NOT.ALL(ISTAT.LE.0) ) CYCLE
                ! Otherwise, we have found a quad (IQUAD) containing (X,Y):
                ! and perhaps a cell (ICELL) containing (X,Y):
-               !NINSUB = NINSUB + 1
+               NINSUB = NINSUB + 1
                IF ( ICELL.GT.0 .AND. LVCELL.EQ.LEVEL ) THEN
                    ! There is an exact matching cell in the quadtree:
                    ! apply the data to that
@@ -7101,7 +7105,7 @@
                      ARRQ(ICELL,IARR) = ARRML(INDBG,IARR)
                   END DO
                   QTREE%CELL_TYPE(ICELL) = MAPML(IMLG)
-                  !NSET = NSET + 1
+                  NSET = NSET + 1
                   !write(*,*) 'SET, ARRQ(1) = ',ARRQ(ICELL,1) 
                   IF ( .NOT.ISWET(INDBG) ) CYCLE
                ELSEIF ( IQ.GT.0 .AND. LVCELL.LT.LEVEL ) THEN
@@ -7110,7 +7114,7 @@
                    ! have any coarser neighbours, and hasn't already 
                    ! been selected
                   IF ( .NOT.ISWET(INDBG) ) CYCLE
-                  !NFINE = NFINE+1
+                  NFINE = NFINE+1
                   NOREF = .FALSE.
                   ! Check that this isn't the central cell of a quad that
                   ! has already been refined
@@ -7136,7 +7140,7 @@
                               QTREE%CELL_TYPE(NB).NE.UNDEF_TYPE ) THEN
                               !write(*,*) 'cell has coarser neighbours'
                               NOREF = .TRUE.
-                              !NCRSNB = NCRSNB + 1
+                              NCRSNB = NCRSNB + 1
                               EXIT
                            END IF
                         END IF
@@ -7153,9 +7157,9 @@
                      IF ( IQREF(IREF).EQ.IQ .AND.                     &
                           ISREF(IREF).EQ.ISUB ) THEN
                         !write(*,*) 'already on refinement list'
-                        NOREF = .TRUE.
-                        !NRPT = NRPT + 1
-                        EXIT
+                        !NOREF = .TRUE.
+                        NRPT = NRPT + 1
+                        !EXIT
                      END IF
                   END DO
                   IF ( NOREF ) CYCLE
@@ -7168,15 +7172,15 @@
             !
             write(*,*) 'QA_MLG2QT: INDBG1, INDBGMAX, ITER, NREF = ',  &
                                    INDBG1, INDBGMAX,ITER,NREF
-            !write(*,*) 'QA_MLG2QT: NWETALL, NINSUB, NSET, NFINE, NRPT, NCRSNB = ',  &
-            !            NWETALL, NINSUB, NSET, NFINE, NRPT, NCRSNB
+            write(*,*) 'QA_MLG2QT: NWETALL, NINSUB, NSET, NFINE, NRPT, NCRSNB = ',  &
+                        NWETALL, NINSUB, NSET, NFINE, NRPT, NCRSNB
             !
             ! If there is nothing to refine, no further iterations are required
             IF ( NREF.EQ.0 ) EXIT
             ! Refine the selected cells
             IMODE = 1
-            CALL QA_REFINE ( IMODE, QTREE, NREF, IQREF, ISREF,     &
-                             ISEAOLD, ISEANEW, ierr=IERS, ndse=IUN,&
+            CALL QA_REFINE ( IMODE, QTREE, NREF, IQREF, ISREF,         &
+                             ISEAOLD, ISEANEW, ierr=IERS, ndse=IUN,    &
                              mapml=MAPML )
             IF ( IERS.NE.0 ) THEN
                IF ( IUN.GT.0 ) THEN
@@ -10282,6 +10286,7 @@
          !
          !IF ( QTREE%QLEVEL(IQ).GE.QTREE%LVLMAX ) CYCLE
          !
+         IF ( IQ.EQ.0 ) CYCLE
          QISEA0 = QTREE%QICELL(IQ,0)
          IQPAR = QTREE%QPARENT(IQ)
          !IF (IQPAR.EQ.0 .AND. QISEA0.NE.0) THEN
@@ -11672,7 +11677,7 @@
 !/ ------------------------------------------------------------------- /
 !/ Local parameters
 !/
-      INTEGER         :: IX, JY, IXY
+      INTEGER         :: IX, JY, IXY, NX, NY
       REAL            :: STEPINV
 !
 !  Inverse grid step at the same level as this cell:
@@ -11682,11 +11687,19 @@
       IX = NINT( (XI - 0.5)*STEPINV + 0.5 )
       JY = NINT( (YJ - 0.5)*STEPINV + 0.5 )
 !
+!  Grid size at this level
+      NX = NX0*2**LEVEL
+      NY = NY0*2**LEVEL
+      IF ( IX.LT.1 .OR. IX.GT.NX .OR. JY.LT.1 .OR. JY.GT.NY ) THEN
+         MULTILEVEL_INDEX = 0
+      ELSE
+!
 !  Corresponding 1D cell index:
-      IXY = (JY - 1)*NX0*2**LEVEL + IX
+         IXY = (JY - 1)*NX0*2**LEVEL + IX
 !
 !  Corresponding multilevel index:
-      MULTILEVEL_INDEX = NX0*NY0*NINT( (4.**LEVEL - 1)/3. ) + IXY
+         MULTILEVEL_INDEX = NX0*NY0*NINT( (4.**LEVEL - 1)/3. ) + IXY
+      END IF
 !
       RETURN
 !/
