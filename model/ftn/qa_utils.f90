@@ -6812,8 +6812,7 @@
       REAL, ALLOCATABLE    :: XML(:), YML(:), ARRML(:,:)
       INTEGER, ALLOCATABLE :: ISEAOLD(:), ISEANEW(:,:)
       INTEGER, ALLOCATABLE :: IQREF(:), ISREF(:)
-      !    integer ::       NWETALL
-          integer ::      NINSUB, NSET, NFINE, NRPT, NCRSNB, NWETALL
+      !    integer ::      NINSUB, NSET, NFINE, NRPT, NCRSNB, NWETALL
 !
 ! Array sizes
 !      
@@ -6908,7 +6907,7 @@
 !
       NXSUB = NX
       NYSUB = NY
-      NWETALL = 0
+      !NWETALL = 0
       DO LVL=0,-LVLREL,-1
 !
 ! Absolute refinement level:
@@ -6921,6 +6920,8 @@
          INDBG = NXP*NYP*NINT( (4.**(LVL + LVLREL) - 1)/3. ) 
 !
          DELXY = 2.**(-LVL-LVLSG)
+         !write(*,*) 'QA_MLG2QT: LVL, LEVEL, II, JJ, INDBG, IMLG, ',    &
+         !           'X, Y, ISWET, IJS(1:4), MAPML, ARRML(1):'
          DO JJ=1,NYSUB
             Y = Y0 + (FLOAT(JJ) - 0.5)*DELXY
             DO II=1,NXSUB
@@ -7018,7 +7019,8 @@
                               0.5*( ARRVAL(1,IARR)*ARRVAL(3,IARR) +   &
                                     ARRVAL(2,IARR)*ARRVAL(4,IARR) )
                         ELSE
-                        !  Standard or direction scalar: take mean over valid cells
+                        !  Standard or direction scalar: take mean over 
+                        !  valid cells
                         !  This will also work for ATYPE=5, where only the first
                         !  valid cell was used
                            ARRML(INDBG,IARR) = ARRMEAN(IARR)
@@ -7039,13 +7041,14 @@
                      END DO  ! number of data arrays
                   END IF  ! coarse cell wet/dry
                END IF   ! LVL.EQ.0
-               !write(*,*) 'LVL,LEVEL,II,JJ,INDBG,IMLG,X,Y,ISWET,IJS,ARRML(1),MAPML: ',  &
-               !         LVL,LEVEL,II,JJ,INDBG,IMLG,X,Y,ISWET(INDBG), &
-               !            IJS, ARRML(INDBG,1), MAPML(IMLG)
-               IF ( ISWET(INDBG) ) NWETALL = NWETALL + 1
+               !write(*,'(1X,2I3,2I6,2I8,2F12.4,1X,1L,1X,4I8,I6,F12.4)') &
+               !          LVL, LEVEL, II, JJ, INDBG, IMLG, X, Y,        &
+               !          ISWET(INDBG), IJS(1:4), MAPML(IMLG),          &
+               !          ARRML(INDBG,1)
+               !IF ( ISWET(INDBG) ) NWETALL = NWETALL + 1
             END DO  ! X grid index
          END DO  ! Y grid index
-         write(*,*) 'QA_MLG2QT: LVL, LEVEL, NWETALL: ',LVL, LEVEL, NWETALL
+         !write(*,*) 'QA_MLG2QT: LVL, LEVEL, NWETALL: ',LVL, LEVEL, NWETALL
          IF ( MOD(NXSUB,2).NE.0 ) EXIT
          IF ( MOD(NYSUB,2).NE.0 ) EXIT
          NXSUB = NXSUB/2
@@ -7077,12 +7080,15 @@
             ISEAOLD = 0
             IQREF = 0
             ISREF = 0
-            NINSUB = 0
-            NSET = 0
-            NFINE = 0
-            NRPT = 0
-            NCRSNB = 0
-            NWETALL = 0
+            ! counters only for test output
+            !NINSUB = 0
+            !NSET = 0
+            !NFINE = 0
+            !NRPT = 0
+            !NCRSNB = 0
+            !NWETALL = 0
+            !write(*,*) 'QA_MLG2QT: INDBG, IMLG, X, Y, ISWET, ICELL,',  &
+            !           'XCELL, YCELL, LVCELL, IQ, ISUB, ISTAT(1:2):'
             DO INDBG = INDBG1, INDBGMAX
                IMLG = INDML(INDBG)
                ! Skip points outside the reference grid
@@ -7091,13 +7097,14 @@
                Y = YML(INDBG)
                CALL QA_XY2CELL ( QTREE, X, Y, ICELL, XCELL, YCELL,    &
                                  LVCELL, IQ, ISUB, ISTAT )
-               !write(*,*) 'INDBG,X,Y,ISWET,ICELL,XCELL,YCELL,LVCELL,IQ,ISUB,ISTAT:',  &
-               !            INDBG,X,Y,ISWET(INDBG),ICELL,XCELL,YCELL,LVCELL,IQ,ISUB,ISTAT
+               !write(*,'(1X,2I8,2F12.4,1X,1L,1X,I8,2F12.4,I2,I6,I2,2I4)') &
+               !            INDBG, IMLG, X, Y, ISWET(INDBG), ICELL,    &
+               !            XCELL, YCELL, LVCELL, IQ, ISUB, ISTAT
                ! If (X,Y) is outside the subgrid, go to the next point
                IF ( .NOT.ALL(ISTAT.LE.0) ) CYCLE
                ! Otherwise, we have found a quad (IQUAD) containing (X,Y):
                ! and perhaps a cell (ICELL) containing (X,Y):
-               NINSUB = NINSUB + 1
+               !NINSUB = NINSUB + 1
                IF ( ICELL.GT.0 .AND. LVCELL.EQ.LEVEL ) THEN
                    ! There is an exact matching cell in the quadtree:
                    ! apply the data to that
@@ -7105,7 +7112,7 @@
                      ARRQ(ICELL,IARR) = ARRML(INDBG,IARR)
                   END DO
                   QTREE%CELL_TYPE(ICELL) = MAPML(IMLG)
-                  NSET = NSET + 1
+                  !NSET = NSET + 1
                   !write(*,*) 'SET, ARRQ(1) = ',ARRQ(ICELL,1) 
                   IF ( .NOT.ISWET(INDBG) ) CYCLE
                ELSEIF ( IQ.GT.0 .AND. LVCELL.LT.LEVEL ) THEN
@@ -7114,7 +7121,7 @@
                    ! have any coarser neighbours, and hasn't already 
                    ! been selected
                   IF ( .NOT.ISWET(INDBG) ) CYCLE
-                  NFINE = NFINE+1
+                  !NFINE = NFINE+1
                   NOREF = .FALSE.
                   ! Check that this isn't the central cell of a quad that
                   ! has already been refined
@@ -7140,7 +7147,7 @@
                               QTREE%CELL_TYPE(NB).NE.UNDEF_TYPE ) THEN
                               !write(*,*) 'cell has coarser neighbours'
                               NOREF = .TRUE.
-                              NCRSNB = NCRSNB + 1
+                              !NCRSNB = NCRSNB + 1
                               EXIT
                            END IF
                         END IF
@@ -7158,7 +7165,7 @@
                           ISREF(IREF).EQ.ISUB ) THEN
                         !write(*,*) 'already on refinement list'
                         NOREF = .TRUE.
-                        NRPT = NRPT + 1
+                        !NRPT = NRPT + 1
                         EXIT
                      END IF
                   END DO
@@ -7170,10 +7177,11 @@
                END IF
             END DO  ! Loop over cells at this level
             !
-            write(*,*) 'QA_MLG2QT: INDBG1, INDBGMAX, ITER, NREF = ',  &
-                                   INDBG1, INDBGMAX,ITER,NREF
-            write(*,*) 'QA_MLG2QT: NWETALL, NINSUB, NSET, NFINE, NRPT, NCRSNB = ',  &
-                        NWETALL, NINSUB, NSET, NFINE, NRPT, NCRSNB
+            !write(*,*) 'QA_MLG2QT: INDBG1, INDBGMAX, ITER, NREF = ',  &
+            !                       INDBG1, INDBGMAX,ITER,NREF
+            !write(*,*) 'QA_MLG2QT: NWETALL, NINSUB, NSET, NFINE, ',    &
+            !                       'NRPT, NCRSNB = ',                  &
+            !            NWETALL, NINSUB, NSET, NFINE, NRPT, NCRSNB
             !
             ! If there is nothing to refine, no further iterations are required
             IF ( NREF.EQ.0 ) EXIT
@@ -7190,7 +7198,8 @@
                RETURN
             END IF
             !do iref=1,NREF
-            !   write(*,*) 'IREF, ISEAOLD, ISEANEW: ',IREF, ISEAOLD(IREF), ISEANEW(IREF,:)
+            !   write(*,*) 'IREF, ISEAOLD, ISEANEW: ',                  &
+            !               IREF, ISEAOLD(IREF), ISEANEW(IREF,:)
             !end do
             !
             ! Recompute neighbours
