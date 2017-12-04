@@ -7157,9 +7157,9 @@
                      IF ( IQREF(IREF).EQ.IQ .AND.                     &
                           ISREF(IREF).EQ.ISUB ) THEN
                         !write(*,*) 'already on refinement list'
-                        !NOREF = .TRUE.
+                        NOREF = .TRUE.
                         NRPT = NRPT + 1
-                        !EXIT
+                        EXIT
                      END IF
                   END DO
                   IF ( NOREF ) CYCLE
@@ -10275,8 +10275,8 @@
             EXIT
           END IF
         END DO
+        NSTEPS = NSTEPS2
       END IF
-      NSTEPS = NSTEPS2
       DO IREF=1, NSTEPS
          IQ = IQREF(IREF)
          ISUB = ISREF(IREF)
