@@ -846,7 +846,8 @@
 
   progs="ww3_grid ww3_strt ww3_prep ww3_prnc ww3_shel ww3_multi ww3_sbs1
          ww3_outf ww3_outp ww3_trck ww3_trnc ww3_grib gx_outf gx_outp ww3_ounf 
-         ww3_ounp ww3_gspl ww3_gint ww3_bound ww3_bounc ww3_systrk $tideprog"
+         ww3_ounp ww3_gspl ww3_gint ww3_bound ww3_bounc ww3_systrk $tideprog
+         ww3_prnq"
   progs="$progs ww3_multi_esmf  ww3_uprstr"
   progs="$progs libww3 ww3_prnq"
 
