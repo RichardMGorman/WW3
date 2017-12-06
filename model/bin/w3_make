@@ -178,6 +178,7 @@
   cdf_programs="$cdf_programs ww3_ounp"
   cdf_programs="$cdf_programs ww3_bounc"
   cdf_programs="$cdf_programs ww3_trnc"
+  cdf_programs="$cdf_programs ww3_prnq"
 
   if [ -n "`grep TIDE $switch_file`" ]
   then
