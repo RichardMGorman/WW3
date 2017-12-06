@@ -1,0 +1,231 @@
+# -------------------------------------------------------------------- #
+#  Quadtree preprocessor
+# -------------------------------------------------------------------- #
+#
+#    Spatial interpolation from inputs on multiple regular grids
+#    to outputs on a quadtree structure
+#  
+#  5 lines to define the reference grid for the output quadtree structure
+#  1 Coordinate system and type of closure: 
+#      FLAGLL : Flag to indicate coordinate system :
+#               T  : Spherical (lon/lat in degrees)
+#               F  : Cartesian (meters)
+#      CSTRG  : String indicating the type of grid index space closure :
+#               'NONE'  : No closure is applied
+#               'SMPL'  : Simple grid closure : Grid is periodic in the
+#                       : i-index and wraps at i=NX+1. In other words,
+#                       : (NX+1,J) => (1,J). 
+#  2 Grid dimensions NX, NY. 
+#  3 Grid increments SX, SY (degr.or m) and scaling (division) factor.
+#    If CSTRG='SMPL', then SX is set to 360/NX.
+#  4 Coordinates of (1,1) (degr.) and scaling (division) factor.
+#  5 Max number of levels to coarsen (LVLREFT) & refine (LVLMAX) 
+#    the reference grid
+#
+# -------------------------------------------------------------------- #
+# 
+# [FLAGLL, CSTRNG]
+ T  'NONE'
+# 
+# [NX, NY]
+ 180  210
+# 
+# [SX, SY, VSC]
+ 15.  10.  32.
+# 
+# [X0, Y0, VSC]
+ 120.  -70.0  1.
+#
+# [LVLREFT, LVLMAX]
+ 3 10
+#
+# -------------------------------------------------------------------- #
+#
+# 3 lines with output file details
+#        OUTFILE   Output file name
+#        OUTTYPE   file type = 1 for ASCII bathymetry & obstructions
+#                            = 2 for netcdf time-dependent data
+#        NVAR      Number of variables to output 
+#                       for OUTTYPE=1, variables are bed elevation and, 
+#                                      optionally, x- and y- obstruction
+#                                      hence NVAR <= 3 
+#                       for OUTTYPE=1, an arbitrary number of variables
+#                                      may be processed, as specified below
+#
+# -------------------------------------------------------------------- #
+#
+# [OUTFILE]
+ NIWA_bathy_data_7.txt
+#
+# [OUTTYPE]
+ 1
+# 
+# [NVAR]
+ 3
+#
+# -------------------------------------------------------------------- #
+#  either: OUTTYPE=1 section -------------------------------------
+#
+# if OUTTYPE=1, two further ASCII output files are specified:
+#        OUTFILEC   Output quadtree cell file
+#        OUTFILEQ   Output quadtree quad file
+#
+#    [OUTFILEC]
+ NIWA_bathy_cell_7.txt
+#
+#    [OUTFILEQ]
+ NIWA_bathy_quad_7.txt
+#
+# or:       OUTTYPE=2 section -------------------------------------
+#
+# if OUTTYPE=2:
+#    For each of the NVAR output variables, specify:
+#       OUTVARNAME(IVAR) Output variable name
+#
+#  [OUTVARNAME(1)]
+# wind_x
+#
+#  [OUTVARNAME(2)]
+# wind_y
+#
+# end of    OUTTYPE   section -------------------------------------
+# -------------------------------------------------------------------- #
+#
+#  Input files/grids
+#
+#    NSUBGRID   Number of input (sub-)grids
+#
+# [NSUBGRID]
+ 3
+#
+#  for each of the NSUBGRID subgrids:
+# ------------------------------------------------------------------
+#  5+NVAR (OUTTYPE=1), or 8+NVAR lines (OUTTYPE=2), as follows:
+#
+#  1. a line with:
+#      ISG     grid index (this sub-grid) (ignored, but ther to keep track)
+#      IPSG    index of the parent of this grid: i.e. which of the grids
+#              specified above that this grid is contained within, at 
+#              finer resolution
+#      FNAMES  netcdf file name
+#  2.  XYTDIMNAME(ISG,1)  X/lon dimension name in this file
+#  3.  XYTVARNAME(ISG,1)  X/lon variable name in this file
+#  4.  XYTDIMNAME(ISG,2)  Y/lat dimension name in this file
+#  5.  XYTVARNAME(ISG,2)  Y/lat variable name in this file
+# if OUTTYPE=2:
+#  6.  XYTDIMNAME(ISG,3)  time dimension name in this file
+#  7.  XYTVARNAME(ISG,3)  time variable name in this file
+#  8.       ITFIRST(ISG)  first time index to read from this file
+#           ITLAST(ISG)   last time index to read from this file
+#           ITSTEP(ISG)   time index increment to read from this file
+#
+#  Then, for each of the IVAR=1:NVAR field variables, a line with the name 
+#  it has in this input file:  [VARNAME(ISG,IVAR)] 
+#
+# ------------------------------------------------------------------
+#
+#   [ISG=1, IPSG(ISG), FNAMES(ISG)]
+ 1  0  global_17a.nc
+#   
+#   [XYTDIMNAME(ISG,1)]
+ longitude
+#   
+#   [XYTVARNAME(ISG,2)]
+ longitude
+#   
+#   [XYTDIMNAME(ISG,2)]
+ latitude
+#   
+#   [XYTVARNAME(ISG,2)]
+ latitude
+#   
+#   [XYTDIMNAME(ISG,3)]
+# time
+#   
+#   [XYTVARNAME(ISG,3)]
+# time
+#
+#   [ITFIRST(ISG),ITLAST(ISG),ITSTEP(ISG)]
+# 0 0 0
+#
+#      [VARNAME(ISG,1)]
+ bed_elev
+#  
+#      [VARNAME(ISG,2)]
+ obs_x
+# 
+#      [VARNAME(ISG,3)]
+ obs_y
+#
+# ------------------------------------------------------------------
+#
+#   [ISG=2, IPSG(ISG), FNAMES(ISG)]
+ 2  1  nzwave_8a.nc
+#   
+#   [XYTDIMNAME(ISG,1)]
+ longitude
+#   
+#   [XYTVARNAME(ISG,1)]
+ longitude
+#   
+#   [XYTDIMNAME(ISG,2)]
+ latitude
+#   
+#   [XYTVARNAME(ISG,2)]
+ latitude
+#   
+#   [XYTDIMNAME(ISG,3)]
+# time
+#   
+#   [XYTVARNAME(ISG,3)]
+# time
+#   
+#   [ITFIRST(ISG),ITLAST(ISG),ITSTEP(ISG)]
+# 0 0 0
+#
+#      [VARNAME(ISG,1)]
+ bed_elev
+# 
+#      [VARNAME(ISG,2)]
+ obs_x
+# 
+#      [VARNAME(ISG,3)]
+ obs_y
+#   
+# ------------------------------------------------------------------
+#
+#   [ISG=3, IPSG(ISG), FNAMES(ISG)]
+ 3  2  nzwave_2a.nc
+#
+#   [XYTDIMNAME(ISG,1)]
+ longitude
+#
+#   [XYTVARNAME(ISG,1)]
+ longitude
+#
+#   [XYTDIMNAME(ISG,2)]
+ latitude
+#
+#   [XYTVARNAME(ISG,2)]
+ latitude
+#
+#   [XYTDIMNAME(ISG,3)]
+# time
+#   
+#   [XYTVARNAME(ISG,3)]
+# time
+#   
+#   [ITFIRST(ISG),ITLAST(ISG),ITSTEP(ISG)]
+# 0 0 0
+#
+#      [VARNAME(ISG,1)]
+ bed_elev
+#
+#      [VARNAME(ISG,2)]
+ obs_x
+#
+#      [VARNAME(ISG,3)]
+ obs_y
+#   
+# ------------------------------------------------------------------
+#
