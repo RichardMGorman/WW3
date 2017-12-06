@@ -1257,8 +1257,8 @@
             SVARNAME_OUT(5) = 'y_bounds'
           END IF
           !
-          CALL OPNNCFILW( OUTFILE, DIMNAME_OUT, DIMLEN_OUT,             &
-                          SVARNAME_OUT, OUTVARNAME, NCIDO, NSVIDO,      &
+          CALL OPNNCFILW( OUTFILE, DIMNAME_OUT, DIMLEN_OUT,            &
+                          SVARNAME_OUT, OUTVARNAME, NCIDO, NSVIDO,     &
                           NVIDO, NDSE )
           !
           WRITE (NDSO,4010) 'netcdf'
@@ -1267,13 +1267,17 @@
           !  Copy attributes from the first input file
           !
           !  global
-          CALL CPATTS( NCID(1), NF90_GLOBAL, NCIDO, NF90_GLOBAL, NDSE )
+          CALL CPATTS( NCID(1), (/NF90_GLOBAL/), NCIDO,                &
+                       (/NF90_GLOBAL/), NDSE )
           !  X/lon
-          CALL CPATTS( NCID(1), NXYTVARID(1,1), NCIDO, NSVIDO(1), NDSE )
+          CALL CPATTS( NCID(1), NXYTVARID(1,1:1), NCIDO, NSVIDO(1:1),  &
+                       NDSE )
           !  Y/lat
-          CALL CPATTS( NCID(1), NXYTVARID(1,2), NCIDO, NSVIDO(2), NDSE )
+          CALL CPATTS( NCID(1), NXYTVARID(1,2:2), NCIDO, NSVIDO(2:2),  &
+                       NDSE )
           !  time
-          CALL CPATTS( NCID(1), NXYTVARID(1,3), NCIDO, NSVIDO(3), NDSE )
+          CALL CPATTS( NCID(1), NXYTVARID(1,3:3), NCIDO, NSVIDO(3:3),  &
+                       NDSE )
           !  output variables
           !
           DO IVAR=1,NVAR
@@ -1289,8 +1293,8 @@
                 END DO
              END IF
              UNDEF(IVAR) = FILLVAL(ISG2,IVAR)
-             CALL CPATTS( NCID(ISG2), NVID(ISG2,IVAR), NCIDO,          &
-                          NVIDO(IVAR), NDSE )
+             CALL CPATTS( NCID(ISG2), NVID(ISG2,IVAR:IVAR), NCIDO,     &
+                          NVIDO(IVAR:IVAR), NDSE )
           END DO
           !
           !  exit define mode
