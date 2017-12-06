@@ -209,7 +209,7 @@
 !
 ! 1. User input
 !
-      OPEN (NDSI,FILE='qa_preproc.inp',STATUS='OLD',                   &
+      OPEN (NDSI,FILE='ww3_prnq.inp',STATUS='OLD',                     &
             ERR=2000,IOSTAT=IERR)
       WRITE (NDSO,900)
       WRITE (NDSO,3000)
@@ -1590,9 +1590,11 @@
  1002 FORMAT (/' *** ERROR IN W3PRNQ : '/                             &
                '     ERROR IN READING FROM INPUT FILE'/               &
                '     IOSTAT =',I5/)
-
-
-       END PROGRAM W3PRNQ
+!
+!/
+!/ ------------------------------------------------------------------- /
+!/
+       CONTAINS
 !/
 !/ ------------------------------------------------------------------- /
 !/
@@ -2233,6 +2235,11 @@
          STOP
       END IF
       END SUBROUTINE CHECK_ERR
+!/
+!/ ------------------------------------------------------------------- /
+!/
+
+       END PROGRAM W3PRNQ
 !/
 !/ ------------------------------------------------------------------- /
 !/
