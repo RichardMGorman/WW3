@@ -810,7 +810,8 @@
 
   progs="ww3_grid ww3_strt ww3_prep ww3_prnc ww3_shel ww3_multi ww3_sbs1
          ww3_outf ww3_outp ww3_trck ww3_trnc ww3_grib gx_outf gx_outp ww3_ounf 
-         ww3_ounp ww3_gspl ww3_gint ww3_bound ww3_bounc ww3_systrk $tideprog"
+         ww3_ounp ww3_gspl ww3_gint ww3_bound ww3_bounc ww3_systrk $tideprog
+         ww3_prnq"
   progs="$progs ww3_multi_esmf  ww3_uprstr"
   progs="$progs libww3"
 
@@ -1031,6 +1032,13 @@
                  IO='w3iogrmd w3iogomd w3iorsmd' 
                  aux='constants w3servmd w3timemd w3arrymd w3dispmd w3gsrumd' 
                  aux="$aux w3namlmd" ;; 
+     ww3_prnq) IDstring='Quadtree Preprocessor' 
+                 core= 
+	         data=
+                 prop= 
+                 source=
+                 IO=
+                 aux='w3servmd qa_utils svd_lapack' ;; 
     esac
 
     # if esmf is included in program name, then
