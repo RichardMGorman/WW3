@@ -1,0 +1,112 @@
+\vssub
+\subsubsection{~Quadtree adaptive grids} \label{sub:num_space_qa}
+\conthead{\ws\ (NIWA)}{R. Gorman}
+
+\noindent 
+Wave simulations are often required to incorporate a wide range of spatial 
+scales, in order to capture both long-range swell propagation and finer scale 
+interactions either near the coast or within rapidly-varying small-scale 
+weather systems.
+Computational efficiency can be greatly aided by allowing a model's spatial 
+resolution to vary over the domain, with finer resolution where it makes most 
+impact on the accuracy of the solution.
+In the case where the need for locally higher resolution is static,
+for example due to highly variable nearshore topography, this can be addressed 
+by nested regular grids, or by various forms of unstructured meshes.
+Alternatively, high resolution may be needed to capture the influence of
+rapidly varying wind fields in the vicinity of a tropical cyclone.
+In this case, we can use adaptive mesh refinement to maintain an efficient 
+distribution of spatial resolution.
+This has previously been applied to spectral wave modelling 
+\citep{art:PGRT10xx} 
+by using the Gerris flow solver \citep{art:PopinetXX} to compute the spatial 
+advection terms of the action balance action on a quadtree adaptive mesh, coupled to \ws\ V2.22 subroutines to handle a limited set of source terms.
+
+Quadtree adaptive mesh refinement has now been implemented within the \ws\ code. This will allow to be applied within the fully-featured \ws\ model 
+in its present version and as it develops further in the future.
+
+This option is activated by setting the grid string to `{\code QUAD}' in 
+{\file ww3\_grid.inp}. A quadtree mesh can be considered as starting from
+a standard rectangular grid (at refinement level 0). Any cell of this grid may then be refined by subdividing it into four 'child' cells (each at refinement 
+level 1) occupying its four corners. This process may be repeated as many 
+times as required to reach a desired local level of refinement. Conversely, 
+this process can be reversed, merging a 'quad' of cells back into their 
+common 'parent'. The (locally) fully-refined cells constitute the sea points 
+for which the wave action density is computed.
+
+Adaptive mesh refinement means that ths process of locally refining and 
+coarsening the spatial mesh may be carried out in the course of a simulation. 
+Mesh adaptivity is implemented by defining a control variable ($V(ISEA)$, say) that is computed for each sea point (with index $ISEA$), chosen in such a 
+way that finer resolution is required where $V$ is large, and lower resolution 
+will suffice where $V$ is small. Then upper and lower bounds $V_+$ and $V_-$ 
+are chosen, and the mesh is refined wherever $V>V_+$, and coarsened where
+$V<V_-$>.
+
+As an example commonly used in designing static meshes, we might choose 
+$V\sqrt(gh) \delta x$, i.e. proportional to a local CFL parameter for 
+waves propagating in depth $h$ where the local cell size is $\delta x$.
+In that way a uniform level of computational stability is maintained across 
+the mesh. 
+In that case, of course, the mesh refinement can be completed iteratively 
+before we start the simulation. Alternatively, we can choose a variable 
+$$V \propto |F''(\delta x)^2| $$
+which represents the truncation error in representing a quantity $F$ on a
+discrete mesh (the double primes represent the second spatial derivative). 
+This would be a suitable choice if $F$ is a quantity we wish to simulate 
+as accurately and efficiently as possible. Hence \citep{art:PGRT10xx} 
+used significant wave height for $F$ in an adaptivity criterion of this form.
+Several choices of adaptivity variable are available in \ws\. Also, either fixed upper and lower bounds may be set by the user, or a target total number of sea points may be set, in which case the model will adjust the bounds 
+accordingly. Note that we should ensure that $V_+/V_- > 4$ to avoid cells
+immediately flipping between coarsening and refining.  
+
+As noted above, an adaptive simulation is selected (by setting the grid string 
+to `{\code QUAD}' when setting up the model definition by running 
+{\code ww3_grid}. Following that selection, it is necessary to define the 
+base (refinement level 0) grid, but for convenience the user instead defines a 
+"reference" rectangular grid of size {\code NX} $\times$ {\code NY}, that is 
+at some uniform refinement level $p$ (which requires that $2^p$ is a common  factor of {\code NX} and {\code NY}). Then the bathymetry and, optionally, 
+sub-grid obstruction factors on the reference grid may be specified in the 
+same way as for a regular grid simulation.
+
+For adaptive simulations, "gridded" binary output files (grid.ww3) include
+representations of the quadtree spatial structure at each time step for
+which it has changed. The netcdf postprocessor {\code ww3_ounf} will 
+convert these into a sequence (one per time step) of netcdf files containing each field as a one-dimensional array of points, each with specified cell centre and bounds.
+
+As the adaptive grid evolves, it is necessary to provide all relevant input 
+fields at the sea points as defined at that point in the computation. That 
+includes both static fields (bathymetry, subgrid obstructions), as well
+as dynamic inputs (winds, currents, water level, ice). Indeed it is  anticipated that the adaptive refinement of the wave mesh is likely to 
+be strongly controlled by evolving variability the input fields.
+
+With this in mind, the binary input formats for input fields uses a similar 
+structure to that of the wave output binaries, in which the input fields are 
+represented on a quadtree structure derived (by refinement and coarsening) from the common reference grid. This anticipates an application where the inputs 
+come from models that are also adaptive, or is at least in a similar
+structure. Correspondingly, the netcdf 
+preprocessor {\code ww3_prnc} will convert a sequence of netcdf files, 
+in which the spatial mesh is either a one-dimensional structure as 
+described above for wave outputs, or a 2D grid. The spatial mesh should 
+remain the same within each file, but may change from one file to the next.
+
+Another anticipated application is where the inputs come from a set of nested 
+2D grids (in netcdf format). With this in mind, a "quadtree preprocessor" 
+{\code ww3_prnq} can be used to spatially interpolate from such a set of 
+grids to a quadtree structure. For bathymetry (and, optionally, sub-grid
+obstruction factors), output is in an ASCII format, that can be provided as 
+an alternative input for {\code ww3_grid}. In this case, the fields are
+"pre-averaged" to all lower refinement levels. For other, time-dependent, 
+sets of input files, the output is in a form suitable as input to 
+{\code ww3_prnc}. 
+
+Two options are available for spatial propagation. A first order scheme 
+may be selected by the {\code PR1} switch. If the {\code PR2} switch is used,  the upstream non-oscillatory 2nd order (UNO) advection scheme \citep{art:Li08} 
+is applied, with the same diffusion approach to alleviate the garden 
+sprinkler effect as used in the SMC grid, based on the method of \cite{art:BH87}simplified to use a homogeneous diffusion parameter $D_{nn}$. Treatment 
+of sub-grid obstructions is included for both the first and second order 
+schemes. This allows the effect of smaller islands, which may be fully 
+resolved at higher refinement levels, to still be represented when and 
+where the mesh has been coarsened.
+
+restart files
+
