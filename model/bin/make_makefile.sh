@@ -860,7 +860,7 @@
                prop=
              source="w3triamd $stx $nlx $btx $is"
                  IO="w3iogrmd $couplmd $agcmmd $ogcmmd $igcmmd"
-                aux="constants w3servmd w3timemd w3arrymd w3dispmd w3gsrumd $tidecode"
+                aux="constants w3servmd w3timemd w3arrymd w3dispmd w3gsrumd $tidecode w3nmlprncmd" ;;
                 aux="$aux qa_utils svd_lapack" ;;
      ww3_prtide) IDstring='Tide prediction'
                core='w3fldsmd'
@@ -895,7 +895,7 @@
                  IO='w3iogrmd w3iogomd w3iopomd wmiopomd'
                  IO="$IO w3iotrmd w3iorsmd w3iobcmd w3iosfmd w3partmd $couplmd $agcmmd $ogcmmd $igcmmd"
                 aux="constants $tidecode w3servmd w3timemd w3arrymd w3dispmd w3cspcmd w3gsrumd $mprfaux"
-                aux="$aux  wmunitmd w3namlmd" 
+                aux="$aux  wmunitmd w3nmlmultimd" 
                 if [ "$scrip" = 'SCRIP' ]
                 then
                   aux="$aux scrip_constants scrip_grids scrip_iounitsmod"
@@ -915,7 +915,7 @@
                  IO='w3iogrmd w3iogomd w3iopomd wmiopomd' 
                  IO="$IO w3iotrmd w3iorsmd w3iobcmd w3iosfmd w3partmd $couplmd $agcmmd $ogcmmd $igcmmd" 
                 aux="constants w3servmd w3timemd w3arrymd w3dispmd w3cspcmd w3gsrumd $mprfaux $tidecode" 
-                aux="$aux  wmunitmd w3namlmd"  
+                aux="$aux  wmunitmd w3nmlmultimd"  
                 if [ "$scrip" = 'SCRIP' ]
                 then
                   aux="$aux scrip_constants scrip_grids scrip_iounitsmod"
@@ -933,7 +933,7 @@
              source="$stx $nlx $btx $is"
                  IO='w3iogrmd w3iogomd'
                 aux='constants w3servmd w3timemd w3arrymd w3dispmd w3gsrumd'
-                aux="$aux w3namlmd" ;;
+                aux="$aux" ;;
      ww3_ounf) IDstring='Gridded NetCDF output'
                core='w3initmd'
                data='wmmdatmd w3gdatmd w3wdatmd w3adatmd w3idatmd w3odatmd'
@@ -978,7 +978,7 @@
              source="$stx $nlx $btx $is"
                  IO='w3iogrmd w3iogomd'
                 aux='constants w3servmd w3timemd w3arrymd w3dispmd w3gsrumd'
-                aux="$aux w3namlmd" ;;
+                aux="$aux" ;;
      ww3_gspl) IDstring='Grid splitting'
                core='w3fldsmd'
                data='w3gdatmd w3wdatmd w3adatmd w3idatmd w3odatmd'
@@ -993,7 +993,7 @@
                prop=
              source="$st $nl $is"
                 aux='constants w3triamd w3servmd  w3arrymd w3dispmd w3timemd w3gsrumd'
-                aux="$aux w3namlmd" ;;
+                aux="$aux" ;;
       gx_outf) IDstring='GrADS input file generation (gridded fields)'
                core=
                data='wmmdatmd w3gdatmd w3wdatmd w3adatmd w3idatmd w3odatmd'
@@ -1001,7 +1001,7 @@
              source="w3triamd $stx $nlx $btx $db $tr $bs $xx $is"
                  IO='w3iogrmd w3iogomd'
                 aux='constants w3servmd w3timemd w3arrymd w3dispmd w3gsrumd'
-                aux="$aux w3namlmd" ;;
+                aux="$aux" ;;
       gx_outp) IDstring='GrADS input file generation for point output'
                core=
                data='w3triamd w3gdatmd w3wdatmd w3adatmd w3idatmd w3odatmd'
@@ -1190,11 +1190,12 @@
                W3SIC1MD W3SIC2MD W3SIC3MD W3SIC4MD W3SIS1MD W3SIS2MD \
                W3REF1MD \
                W3SXXXMD \
-              CONSTANTS W3SERVMD W3TIMEMD W3ARRYMD W3DISPMD W3GSRUMD W3TRIAMD \
+               CONSTANTS W3SERVMD W3TIMEMD W3ARRYMD W3DISPMD W3GSRUMD W3TRIAMD \
                QA_UTILS SVD_LAPACK W3ADGRMD W3PROQMD \
                WMINITMD WMWAVEMD WMFINLMD WMMDATMD WMGRIDMD WMUPDTMD \
                WMUNITMD WMINIOMD WMIOPOMD WMSCRPMD WMESMFMD \
-               w3getmem WW_cc CMP_COMM W3OACPMD W3AGCMMD W3OGCMMD W3IGCMMD  W3NAMLMD
+               w3getmem WW_cc CMP_COMM W3OACPMD W3AGCMMD W3OGCMMD W3IGCMMD \
+               W3NMLMULTIMD W3NMLPRNCMD
       do
       case $mod in
          'W3INITMD'     ) modtest=w3initmd.o ;;
@@ -1305,7 +1306,8 @@
          'W3AGCMMD'     ) modtest=w3agcmmd.o ;;
          'W3OGCMMD'     ) modtest=w3ogcmmd.o ;;
          'W3IGCMMD'     ) modtest=w3igcmmd.o ;;
-         'W3NAMLMD'     ) modtest=w3namlmd.o ;;
+         'W3NMLMULTIMD' ) modtest=w3nmlmultimd.o ;;
+         'W3NMLPRNCMD' ) modtest=w3nmlprncmd.o ;;
       esac
       nr=`grep $mod check_file | wc -c | awk '{ print $1 }'`
       if [ "$nr" -gt '8' ]
