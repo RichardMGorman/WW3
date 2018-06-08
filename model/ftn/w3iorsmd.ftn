@@ -67,7 +67,7 @@
 !/                  | WAVEWATCH III           NOAA/NCEP |
 !/                  |           H. L. Tolman            |
 !/                  |                        FORTRAN 90 |
-!/                  | Last update :         09-Aug-2017 |
+!/                  | Last update :         05-Jun-2018 |
 !/                  +-----------------------------------+
 !/
 !/    12-Jan-1999 : Final FORTRAN 77                    ( version 1.18 )
@@ -95,8 +95,10 @@
 !/                  (S. Zieger, BOM)
 !/    09-Aug-2017 : Bug fix for MPI restart read issue  ( version 6.02 )
 !/                  (T. Campbell, NRL)
-!/    11-Nov-2017 : Quadtree data, 'GRID' option        ( version )
+!/    11-Nov-2017 : Quadtree data, 'GRID' option        ( version 6.02 )
 !/                  (R. Gorman, NIWA)
+!/    05-Jun-2018 : Add PDLIB/TIMINGS/DEBUGIO           ( version 6.04 )
+!/                  DEBUGINIT/MPI
 !/
 !/    Copyright 2009-2013 National Weather Service (NWS),
 !/       National Oceanic and Atmospheric Administration.  All rights
@@ -254,6 +256,11 @@
 !/MPI      USE W3ADATMD, ONLY: MPI_COMM_WCMP
 !/
       USE W3SERVMD, ONLY: EXTCDE
+      USE CONSTANTS, only: LPDLIB
+      USE W3PARALL, ONLY: INIT_GET_ISEA, INIT_GET_JSEA_ISPROC
+      USE W3GDATMD, ONLY: NK, NTH
+!/TIMINGS      USE W3PARALL, ONLY: PRINT_MY_TIME
+!/PDLIB    USE PDLIB_FIELD_VEC!, only : UNST_PDLIB_READ_FROM_FILE, UNST_PDLIB_WRITE_TO_FILE
 !/S      USE W3SERVMD, ONLY: STRACE
 !
       IMPLICIT NONE
@@ -306,6 +313,9 @@
 !  UNFORMATTED files in OPEN
 !
 !     NDSR = 525
+!/DEBUGIO        WRITE(740+IAPROC,*)  'Beginning of W3IORS subroutine'
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, step 1'
+!/DEBUGIO        FLUSH(740+IAPROC)
 
       IOSFLG = IOSTYP .GT. 0
 !
@@ -343,6 +353,8 @@
 ! initializations ---------------------------------------------------- *
 !
       IF ( INXOUT .NE. 'GRID' ) THEN
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, step 2'
+!/DEBUGIO        FLUSH(740+IAPROC)
           IF ( .NOT.DINIT ) THEN
               IF ( IAPROC .LE. NAPROC ) THEN
                   CALL W3DIMW ( IMOD, NDSE, NDST )
@@ -350,6 +362,8 @@
                   CALL W3DIMW ( IMOD, NDSE, NDST, .FALSE. )
                 END IF
             END IF
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, step 3'
+!/DEBUGIO        FLUSH(740+IAPROC)
 !
           IF ( IAPROC .LE. NAPROC ) VA(:,0) = 0.
         END IF
@@ -364,6 +378,8 @@
       LRECL  = MAX ( LRB*NSPEC , LRB*NXT,                             &
                      LRB*(12+(25/LRB)+(9/LRB)+(29/LRB)+(3/LRB)) )
       NSIZE  = LRECL / LRB
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, LRECL=', LRECL, ' NSIZE=', NSIZE
+!/DEBUGIO        FLUSH(740+IAPROC)
 !     --- Allocate buffer array with zeros (used to
 !         fill bytes up to size LRECL). ---
       ALLOCATE(WRITEBUFF(NSIZE))
@@ -392,6 +408,8 @@
             //'TEST OUTPUT ARE THE SAME : ',NDST
          CALL EXTCDE ( 15 )
       ENDIF
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, step 4'
+!/DEBUGIO        FLUSH(740+IAPROC)
 
       IF ( WRITE ) THEN
           IF ( .NOT.IOSFLG .OR. IAPROC.EQ.NAPRST )                    &
@@ -553,6 +571,8 @@
 !
       NREC = NREC + 1
       NREC0 = NREC
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, step 5'
+!/DEBUGIO        FLUSH(740+IAPROC)
       IF (TYPE.EQ.'FULL') THEN
           RPOS  = 1_8 + LRECL*(NREC-1_8)
           IF ( WRITE ) THEN
@@ -579,19 +599,31 @@
 ! Spectra ------------------------------------------------------------ *
 !          ( Bail out if write for TYPE.EQ.'WIND' )
 !
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, step 6'
+!/DEBUGIO        FLUSH(740+IAPROC)
       IF ( WRITE ) THEN
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, Matching WRITE statement'
+!/DEBUGIO        FLUSH(740+IAPROC)
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, TYPE=', TYPE, ' IOSFLG=', IOSFLG
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, NAPROC=', NAPROC, ' NAPRST=', NAPRST
+!/DEBUGIO        FLUSH(740+IAPROC)
           IF ( TYPE.EQ.'WIND' .OR. TYPE.EQ.'CALM' ) THEN
-              IF ( .NOT.IOSFLG .OR. IAPROC.EQ.NAPRST ) CLOSE ( NDSR )
+              IF ( .NOT.IOSFLG .OR. IAPROC.EQ.NAPRST ) THEN
+                CLOSE ( NDSR )
+              END IF
 !/T              WRITE (NDST,9005) TYPE
               RETURN
             ELSE IF ( IAPROC.LE.NAPROC .OR. IAPROC.EQ. NAPRST ) THEN
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, Need to match 1'
+!/DEBUGIO        FLUSH(740+IAPROC)
 !
 ! Original non-server version writing of spectra
 !
               IF ( .NOT.IOSFLG .OR. (NAPROC.EQ.1.AND.NAPRST.EQ.1) ) THEN
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, Need to match 2'
+!/DEBUGIO        FLUSH(740+IAPROC)
                   DO JSEA=1, NSEAL
-!/DIST                    ISEA   = IAPROC + (JSEA-1)*NAPROC
-!/SHRD                    ISEA   = JSEA
+                    CALL INIT_GET_ISEA(ISEA, JSEA)
                     NREC   = ISEA + NREC0
                     RPOS  = 1_8 + LRECL*(NREC-1_8)
                     WRITEBUFF(:) = 0.
@@ -603,6 +635,18 @@
 !
 !/MPI                ELSE
 !
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, Before test for UNST_PDLIB_WRITE_TO_FILE'
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, GTPYPE=', GTYPE, ' UNGTYPE=', UNGTYPE
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, PDLIB=', LPDLIB
+!/DEBUGIO        FLUSH(740+IAPROC)
+!/MPI                IF (LPDLIB .and. (GTYPE.eq.UNGTYPE)) THEN
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, Directly before call for UNST_PDLIB_WRITE_TO_FILE, NDSR=', NDSR
+!/DEBUGIO        FLUSH(740+IAPROC)
+!/TIMINGS               CALL PRINT_MY_TIME("Before UNST_PDLIB_WRITE_TO_FILE")
+!/MPI!/PDLIB            CALL UNST_PDLIB_WRITE_TO_FILE(NDSR)
+!/TIMINGS               CALL PRINT_MY_TIME("After UNST_PDLIB_WRITE_TO_FILE")
+!/MPI                ELSE
+
 !/MPI                  IF ( IAPROC .NE. NAPRST ) THEN
 !/MPI                      NRQ    = 1
 !/MPI                    ELSE IF ( NAPRST .LE. NAPROC ) THEN
@@ -632,8 +676,7 @@
 !
 !/MPI                        DO ISEA=ISEA0, ISEAN
 !/MPI                          NREC   = ISEA + NREC0
-!/MPI                          JSEA   = 1 + (ISEA-1)/NAPROC
-!/MPI                          IP     = 1 + MOD(ISEA-1,NAPROC)
+!/MPI                          CALL INIT_GET_JSEA_ISPROC(ISEA, JSEA, IP)
 !/MPI                          RPOS   = 1_8 + LRECL*(NREC-1_8)
 !/MPI                          WRITEBUFF(:) = 0.
 !/MPI                          IF ( IP .EQ. NAPRST ) THEN
@@ -657,17 +700,33 @@
 !/MPI                    END DO
 !
 !/MPI                  DEALLOCATE ( STAT1 )
+!/MPI                END IF
 !
                 END IF
 !
             END IF
         ELSE
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, step 7'
+!/DEBUGIO        FLUSH(740+IAPROC)
 !
 ! Reading spectra
 !
           IF ( TYPE.EQ.'WIND' .OR. TYPE.EQ.'CALM' ) THEN
 !/T              WRITE (NDST,9020) TYPE
           ELSE
+            IF (LPDLIB .and. (GTYPE.eq.UNGTYPE)) THEN
+!/PDLIB!/DEBUGINIT        WRITE(740+IAPROC,*)  'Before call to UNST_PDLIB_READ_FROM_FILE'
+!/PDLIB!/DEBUGINIT        FLUSH(740+IAPROC)
+!/TIMINGS               CALL PRINT_MY_TIME("Before UNST_PDLIB_READ_FROM_FILE")
+!/PDLIB              CALL UNST_PDLIB_READ_FROM_FILE(NDSR)
+!/TIMINGS               CALL PRINT_MY_TIME("After UNST_PDLIB_READ_FROM_FILE")
+!/PDLIB!/DEBUGINIT        WRITE(740+IAPROC,*)  ' After call to UNST_PDLIB_READ_FROM_FILE'
+!/PDLIB!/DEBUGINIT        WRITE(740+IAPROC,*)  ' min/max(VA)=', minval(VA), maxval(VA)
+!/PDLIB!/DEBUGINIT        DO JSEA=1,NSEAL
+!/PDLIB!/DEBUGINIT          WRITE(740+IAPROC,*) ' JSEA=', JSEA, ' sum(VA)=', sum(VA(:,JSEA))
+!/PDLIB!/DEBUGINIT        END DO
+!/PDLIB!/DEBUGINIT        FLUSH(740+IAPROC)
+            ELSE
 !/MPI            NSEAL_MIN = 1 + (NSEA-NAPROC)/NAPROC
 !/MPI            IF ( NAPROC.GT.1 ) THEN
 !/MPI!/ ----------- Large number of small-sized record reads will tend ---- *
@@ -715,17 +774,21 @@
 !/MPI               END IF
 !/MPI!
 !/MPI            ELSE
+              VA = 0.
               DO JSEA=1, NSEAL
-!/DIST                ISEA   = IAPROC + (JSEA-1)*NAPROC
-!/SHRD                ISEA   = JSEA
+                CALL INIT_GET_ISEA(ISEA, JSEA)
                 NREC   = ISEA + NREC0
                 RPOS   = 1_8 + LRECL*(NREC-1_8)
                 READ (NDSR,POS=RPOS,ERR=802,IOSTAT=IERR)              &
                          (VA(I,JSEA),I=1,NSPEC)
-                END DO
+                ENDDO
 !/MPI            END IF
             END IF
+          END IF
         END IF
+
+!AR: Must be checked better ... will do that when cleaning debugging switches!
+        VA = MAX(0.,VA)
 !
 !/T      WRITE (NDST,9006)
 !
@@ -738,6 +801,8 @@
       NPART  = 1 + (NSEA-1)/NSIZE
       NPRTX2 = 1 + (NX-1)/NSIZE
 !
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, step 8'
+!/DEBUGIO        FLUSH(740+IAPROC)
       IF ( WRITE ) THEN
 !
           IF (TYPE.EQ.'FULL') THEN
@@ -829,6 +894,7 @@
           IF (TYPE.EQ.'FULL') THEN
               RPOS = 1_8 + LRECL*(NREC-1_8)
               READ (NDSR,POS=RPOS,ERR=802,IOSTAT=IERR) TLEV, TICE
+!/DEBUGINIT         WRITE(740+IAPROC,*) 'Before reading WLV'
               DO IPART=1,NPART
                 NREC  = NREC + 1
                 RPOS = 1_8 + LRECL*(NREC-1_8)
@@ -836,6 +902,7 @@
                       (WLV(ISEA),ISEA=1+(IPART-1)*NSIZE,              &
                                       MIN(NSEA,IPART*NSIZE))
                 END DO
+!/DEBUGINIT         WRITE(740+IAPROC,*) 'Before reading ICE'
               DO IPART=1,NPART
                 NREC  = NREC + 1
                 RPOS = 1_8 + LRECL*(NREC-1_8)
@@ -844,6 +911,7 @@
                                       MIN(NSEA,IPART*NSIZE))
                 END DO
               ALLOCATE ( MAPTMP(NY,NX) )
+!/DEBUGINIT         WRITE(740+IAPROC,*) 'Before reading MAPTMP'
               DO IY=1, NY
                 DO IPART=1,NPRTX2
                   NREC  = NREC + 1
@@ -865,6 +933,7 @@
 !/REF1                CALL W3SETREF
                 ENDIF 
 !
+!/DEBUGINIT         WRITE(740+IAPROC,*) 'Before reading UST'
               DO IPART=1,NPART
                 NREC  = NREC + 1
                 RPOS  = 1_8 + LRECL*(NREC-1_8)
@@ -872,6 +941,7 @@
                       (UST(ISEA),ISEA=1+(IPART-1)*NSIZE,              &
                                       MIN(NSEA,IPART*NSIZE))
                 END DO
+!/DEBUGINIT         WRITE(740+IAPROC,*) 'Before reading USTDIR'
               DO IPART=1,NPART
                 NREC  = NREC + 1
                 RPOS  = 1_8 + LRECL*(NREC-1_8)
@@ -879,6 +949,7 @@
                       (USTDIR(ISEA),ISEA=1+(IPART-1)*NSIZE,           &
                                       MIN(NSEA,IPART*NSIZE))
                 END DO
+!/DEBUGINIT         WRITE(740+IAPROC,*) 'Before reading ASF'
               DO IPART=1,NPART
                 NREC  = NREC + 1
                 RPOS  = 1_8 + LRECL*(NREC-1_8)
@@ -886,6 +957,7 @@
                       (ASF(ISEA),ISEA=1+(IPART-1)*NSIZE,              &
                                       MIN(NSEA,IPART*NSIZE))
                 END DO
+!/DEBUGINIT         WRITE(740+IAPROC,*) 'Before reading FPIS'
               DO IPART=1,NPART
                 NREC  = NREC + 1
                 RPOS  = 1_8 + LRECL*(NREC-1_8)
@@ -913,7 +985,12 @@
 !
 ! Close file --------------------------------------------------------- *
 !
-      IF ( .NOT.IOSFLG .OR. IAPROC.EQ.NAPRST ) CLOSE ( NDSR )
+      IF ( .NOT.IOSFLG .OR. IAPROC.EQ.NAPRST ) THEN
+        CLOSE ( NDSR )
+      END IF
+!
+!/DEBUGIO        WRITE(740+IAPROC,*)  'W3IORS, step 9'
+!/DEBUGIO        FLUSH(740+IAPROC)
 !
       IF (ALLOCATED(WRITEBUFF)) DEALLOCATE(WRITEBUFF)
 !
