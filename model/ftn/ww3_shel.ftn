@@ -49,7 +49,7 @@
 !/                  (M. Accensi & F. Ardhuin, IFREMER)
 !/    11-May-2015 : Checks dates for output types       ( version 5.08 )
 !/    12-Nov-2017 : Include quadtrees (R. Gorman)       ( version 6.02 )
-!/    15-May-2018 : Update namelist                     ( version 6.XX )
+!/    15-May-2018 : Update namelist                     ( version 6.05 )
 !/    06-Jun-2018 : Add PDLIB/MEMCHECK/NETCDF_QAD/DEBUGINIT ( version 6.04 )
 !/
 !/    Copyright 2009-2012 National Weather Service (NWS),
