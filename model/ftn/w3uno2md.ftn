@@ -16,6 +16,7 @@
 !/    ..-...-...  : .....                               ( version 3.14 )
 !/    19-Mar-2008 : last modified by Jian-Guo           ( version 3.14 )
 !/    01-Jul-2013 : Put in NCEP branch (Tolman).        ( version 4.12 )
+!/    08-Jan-2018 : Added OMPH switches in W3UNO2.      ( version 6.02 )
 !/
 !  1. Purpose :
 !
@@ -50,6 +51,9 @@
 !  6. Switches :
 !
 !       !/C90   Cray FORTRAN 90 compiler directives.
+!       !/NEC   NEC SXF90 compiler directives.
+!
+!       !/OMPH  Ading OMP directves for hybrid paralellization.
 !
 !       !/S     Enable subroutine tracing.
 !       !/Tn    Enable test output.
@@ -192,8 +196,8 @@
           IADN0  = IAD00 + MY*NX
           IADN1  =         MY*NX
           IADN2  = IAD02 + MY*NX
-!!/C90/!DIR$ IVDEP
-!/C90/!CDIR NODEP
+!/C90/!DIR$ IVDEP
+!/NEC/!CDIR NODEP
           DO IY=1, NY
             Q   (IY+IAD00) = Q   (IY+IADN0)
             Q   (IY+IADN1) = Q   (   IY   )
@@ -300,8 +304,8 @@
 !
       IF ( BCLOSE ) THEN
 !/T          WRITE (NDST,9015)
-!!/C90/!DIR$ IVDEP
-!/C90/!CDIR NODEP
+!/C90/!DIR$ IVDEP
+!/NEC/!CDIR NODEP
           DO IY=1, NY
             FLA (IY+IAD00) = FLA (IY+IADN0)
           END DO
@@ -310,8 +314,8 @@
 ! 6.  Propagation -------------------------------------------------- *
 !
 !/T2      WRITE (NDST,9020)
-!!/C90/!DIR$ IVDEP
-!/C90/!CDIR NODEP
+!/C90/!DIR$ IVDEP
+!/NEC/!CDIR NODEP
       DO IP=1, NACT
         IXY    = MAPACT(IP)
 !/T2        QOLD   = Q(IXY)
@@ -367,7 +371,7 @@
 !/
 !/    Adapted from W3QCK1 for UNO2 regular grid scheme.
 !/            First created:    19 Mar 2008   Jian-Guo Li
-!/            Last modified:    20 Mar 2008   Jian-Guo Li
+!/            Last modified:     8 Jan 2018   Jian-Guo Li
 !/
 !  1. Purpose :
 !
@@ -499,8 +503,8 @@
           IADN0  = IAD00 + MY*NX
           IADN1  =         MY*NX
           IADN2  = IAD02 + MY*NX
-!!/C90/!DIR$ IVDEP
-!/C90/!CDIR NODEP
+!/C90/!DIR$ IVDEP
+!/NEC/!CDIR NODEP
           DO IY=1, NY
             Q   (IY+IAD00) = Q   (IY+IADN0)
             Q   (IY+IADN1) = Q   (   IY   )
@@ -592,8 +596,8 @@
 !
       IF ( BCLOSE ) THEN
 !/T          WRITE (NDST,9015)
-!!/C90/!DIR$ IVDEP
-!/C90/!CDIR NODEP
+!/C90/!DIR$ IVDEP
+!/NEC/!CDIR NODEP
           DO IY=1, NY
             FLA (IY+IAD00) = FLA (IY+IADN0)
             END DO
@@ -602,8 +606,8 @@
 ! 6.  Propagation -------------------------------------------------- *
 !
 !/T2      WRITE (NDST,9020)
-!!/C90/!DIR$ IVDEP
-!/C90/!CDIR NODEP
+!/C90/!DIR$ IVDEP
+!/NEC/!CDIR NODEP
       DO IP=1, NACT
         IXY    = MAPACT(IP)
 !/T2        QOLD   = Q(IXY)
@@ -657,7 +661,7 @@
 !/    Adapted from W3QCK3 for UNO2 regular grid scheme with
 !/            subgrid obstruction.
 !/            First created:    19 Mar 2008   Jian-Guo Li
-!/            Last modified:    10 Apr 2008   Jian-Guo Li
+!/            Last modified:     8 Jan 2018   Jian-Guo Li
 !/
 !  1. Purpose :
 !
@@ -716,6 +720,8 @@
 !     ------------------------------------------------------
 !
 !  9. Switches :
+!
+!     !/OMPH  Ading OMP directves for hybrid paralellization.
 !
 !     !/S   Enable subroutine tracing.
 !     !/T   Enable test output.
@@ -788,14 +794,20 @@
           IADN0  = IAD00 + MY*NX
           IADN1  =         MY*NX
           IADN2  = IAD02 + MY*NX
-!!/C90/!DIR$ IVDEP
-!/C90/!CDIR NODEP
+!/C90/!DIR$ IVDEP
+!/NEC/!CDIR NODEP
+!
+!/OMPH/!$OMP PARALLEL DO PRIVATE (IY)
+!
           DO IY=1, NY
             Q   (IY+IAD00) = Q   (IY+IADN0)
             Q   (IY+IADN1) = Q   (   IY   )
             Q   (IY+IADN2) = Q   (IY+IAD02)
             CFLL(IY+IADN1) = CFLL(   IY   )
             END DO
+!
+!/OMPH/!$OMP END PARALLEL DO
+!
         END IF
 !
 ! 2.  Fluxes for central points ------------------------------------- *
@@ -803,6 +815,8 @@
 !
 !/T1      WRITE (NDST,9010)
 !/T1      WRITE (NDST,9011) NB0, 'CENTRAL'
+!
+!/OMPH/!$OMP PARALLEL DO PRIVATE (IP, IXY, CFL, IXYC, IXYD, QB)  
 !
       DO IP=1, NB0
 !
@@ -833,6 +847,8 @@
 !/T1          END IF
 !
         END DO
+!
+!/OMPH/!$OMP END PARALLEL DO
 !
 ! 3.  Fluxes for points with boundary above ------------------------- *
 !     ( 1st order without limiter )
@@ -882,8 +898,8 @@
 !
       IF ( BCLOSE ) THEN
 !/T          WRITE (NDST,9015)
-!!/C90/!DIR$ IVDEP
-!/C90/!CDIR NODEP
+!/C90/!DIR$ IVDEP
+!/NEC/!CDIR NODEP
           DO IY=1, NY
             FLA (IY+IAD00) = FLA (IY+IADN0)
             END DO
@@ -892,8 +908,11 @@
 ! 6.  Propagation -------------------------------------------------- *
 !
 !/T2      WRITE (NDST,9020)
-!!/C90/!DIR$ IVDEP
-!/C90/!CDIR NODEP
+!/C90/!DIR$ IVDEP
+!/NEC/!CDIR NODEP
+!
+!/OMPH/!$OMP PARALLEL DO PRIVATE (IP, IXY, JN, JP )
+!
       DO IP=1, NACT
 !
         IXY    = MAPACT(IP)
@@ -916,6 +935,8 @@
 !/T2             WRITE (NDST,9021) IP, IXY, QOLD, Q(IXY),             &
 !/T2                               FLA(IXY-INC), FLA(IXY)
         END DO
+!
+!/OMPH/!$OMP END PARALLEL DO
 !
 !/T0      WRITE (NDST,9001) 'Q'
 !/T0      DO IY=NY,1,-1

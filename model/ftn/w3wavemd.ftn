@@ -1924,7 +1924,11 @@
               IF ( FLOMP ) DEALLOCATE ( FIELD )
 
 !/OMPX/!$OMP END PARALLEL
-!
+
+!Li   Initialise IK IX IY in case ARC option is not used to avoid warnings.
+              IK=1
+              IX=1
+              IY=1
 !/ARC  !Li    Find source boundary spectra and assign to SPCBAC
 !/ARC  !Li    Have to use mpi options so will be empty if ARC not selected.
 !/ARC        DO IK = 1, NBAC
@@ -2144,7 +2148,7 @@
                   eIOBP=1
                 END IF
 
-!/DEBUGRUN                IF (JSEA == DEBUG_NODE) WRITE(*,*) 'W3WAVE TEST', ISEA, JSEA, SUM(VA(:,JSEA))
+!/DEBUGRUN          IF (JSEA == DEBUG_NODE) WRITE(*,*) 'W3WAVE TEST', ISEA, JSEA, SUM(VA(:,JSEA))
 
                 IF ( MAPSTA(IY,IX) .EQ. 1 .AND. FLAGST(ISEA) .AND. eIOBP.EQ.1 ) THEN
                      TMP1   = WHITECAP(JSEA,1:4)
