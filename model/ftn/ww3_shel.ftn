@@ -337,6 +337,8 @@
                              FLGR2(NOGRP,NGRPP), FLG2(NOGRP),          &
                              FLAGSTIDE(4), FLH(-7:8), FLGDAS(3),       &
                              FLLST_ALL(-7:8)
+      LOGICAL             :: FLQA, NEW_QT
+      INTEGER             :: NXWND, NXICE, NXCUR, NXLEV, NXINP, NYINP
       LOGICAL             :: DEBUG_NCC = .FALSE.
 !/NCC      LOGICAL             :: CFLAG(10) 
 !/OASIS      LOGICAL             :: L_MASTER    
@@ -587,12 +589,29 @@
 !/MEMCHECK       call printMallInfo(IAPROC,mallInfos)
 
 !
+! 1.d Default quadtree grid IDs: 
+!      Wave and bathy
+      IQGW = 1
+      IQGB = 1
+!      Levels, currents, winds and ice:
+!        for homogeneous fields, these will be on the wave quadtree.
+!        Also, for non-quadtree simulations, these will refer to a 
+!        dummy "wave quadtree" QTREE(1) passed to, but not used by, W3FLDG
+      IQGL0 = IQGW
+      IQGLN = IQGW
+      IQGC0 = IQGW
+      IQGCN = IQGW
+      IQGA0 = IQGW
+      IQGAN = IQGW
+      IQGI0 = IQGW
+      IQGIN = IQGW
+!
 !--- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 ! 2.  Define input fields
 !
 
 !
-! process ww3_prnc namelist
+! process ww3_shel namelist
 !
       INQUIRE(FILE=TRIM(FNMPRE)//"ww3_shel.nml", EXIST=FLGNML) 
       IF (FLGNML) THEN
@@ -764,6 +783,8 @@
         ELSE
           FACTOR = 1.E-3
         END IF
+!
+        FLQA = GTYPE.EQ.QAGTYPE
 
 ! 2.4 Output dates
 
@@ -1198,6 +1219,7 @@
         END IF
 !
         FLQA = GTYPE.EQ.QAGTYPE
+
 !/DEBUGINIT      write(740+IAPROC,*), 'ww3_shel, step 8'
 
 ! 2.4 Output dates
@@ -1507,7 +1529,7 @@
 !
         END IF ! FLHOM
 
-      END IF
+      END IF ! .NOT. FLGNML
 
 
 
@@ -1536,8 +1558,8 @@
               FLAGTIDE = 0
               NXINP = NX
               NYINP = NY
-              CALL W3FLDO ('READ', IDSTR(J), NDSF(J), NDST, NDSEN,    &
-                            NXINP, NYINP, GTYPE, IERR,                &
+              CALL W3FLDO ('READ', IDSTR(J), NDSF(J), NDST,           &
+                            NDSEN, NXINP, NYINP, GTYPE, IERR,         &
                             FPRE=TRIM(FNMPRE), TIDEFLAGIN=FLAGTIDE )
               IF ( IERR .NE. 0 ) GOTO 2222
 !/TIDE              IF (FLAGTIDE.GT.0.AND.J.EQ.1) FLAGSTIDE(1)=.TRUE.
@@ -1693,6 +1715,18 @@
 
       IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,951) 'Wave model ...'
 !
+! 5.a-1
+      IF ( FLQA ) THEN
+!        Quadtree simulations:
+        ! default size of all quadtree grids:
+          NCMXQ = NSEA
+          NQMXQ = NQUAD
+        ! Save parameters of the bathymetry quadtree
+          IQGB = 2
+        ! Auxiliary quadtrees (wave and bathy at least):          
+          NAUX_QA = 2
+      END IF
+!
 !/TIDE      IF (FLAGSTIDE(1).OR.FLAGSTIDE(2)) THEN 
 !/TIDE        CALL VUF_SET_PARAMETERS
 !/TIDE        NXLEV = NX
@@ -1705,7 +1739,7 @@
 !/TIDE                                    NDSEN, NXLEV, NY, IDSTR(1), IERR )
 !/TIDE        IF (FLAGSTIDE(2)) CALL W3FLDTIDE1 ( 'READ',  NDSF(2), NDST,   &
 !/TIDE                                    NDSEN, NXCUR, NY, IDSTR(2), IERR )
-!/TIDE        END IF
+!/TIDE      END IF
 ! 
      CALL W3INIT ( 1, .FALSE., 'ww3', NDS, NTRACE, ODAT, FLGRD, FLGR2, FLGD,    &
                    FLG2, NPTS, X, Y, PNAMES, IPRT, PRTFRM, MPI_COMM,   &
@@ -1743,6 +1777,12 @@
           ALLOCATE ( XXL(NX,NY), XXC(NX,NY), XXI(NX,NY) )
         END IF
 !
+      IF ( FLQA ) THEN
+          ALLOCATE ( XXL(NCMXQ(IQGLN),NY), XXC(NCMXQ(IQGCN),NY),      &
+                     XXI(NCMXQ(IQGIN),NY)  )
+        ELSE
+          ALLOCATE ( XXL(NX,NY), XXC(NX,NY), XXI(NX,NY) )
+        END IF
 
 !
 !/MPI      CALL MPI_BARRIER ( MPI_COMM, IERR_MPI )
@@ -2380,7 +2420,7 @@
 !
  2010 CONTINUE
       IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,1010) IERR, J
-      GOTO 2222
+      CALL EXTCDE ( 1010 )
 !
  2054 CONTINUE
       IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,1054)
