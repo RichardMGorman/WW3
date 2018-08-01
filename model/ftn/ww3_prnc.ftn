@@ -683,6 +683,37 @@
           READ (NDSI,'(A)',END=801,ERR=802,IOSTAT=IERR) TVARNAME
         END IF
 !
+        IF ( DEFAULT_SPVARS ) THEN
+          SPVARSNAME(1) = 'longitude'
+          SPVARSNAME(2) = 'latitude'
+        ELSE
+!
+!         Read the spatial variable names
+          CALL NEXTLN ( COMSTR , NDSI , NDSE )
+          READ (NDSI,'(A)',END=801,ERR=802,IOSTAT=IERR) STRVARSNAME
+!
+          SPVARSNAME(:)=''
+          CALL STRSPLIT(STRVARSNAME,SPVARSNAME)
+          ! Counts the number of spatial variables
+          NISPVARS=0
+          DO I=1,2
+            IF (LEN_TRIM(SPVARSNAME(I)).NE.0) NISPVARS=NISPVARS+1
+          ENDDO
+        END IF
+!
+        IF ( DEFAULT_TVAR ) THEN
+          TDIMNAME = 'time'
+          TVARNAME = 'time'
+        ELSE
+!         Read the time dimension name
+          CALL NEXTLN ( COMSTR , NDSI , NDSE )
+          READ (NDSI,'(A)',END=801,ERR=802,IOSTAT=IERR) TDIMNAME
+!
+!         Read the time variable name
+          CALL NEXTLN ( COMSTR , NDSI , NDSE )
+          READ (NDSI,'(A)',END=801,ERR=802,IOSTAT=IERR) TVARNAME
+        END IF
+!
         CALL NEXTLN ( COMSTR , NDSI , NDSE )
         READ (NDSI,'(A)',END=801,ERR=802,IOSTAT=IERR) STRFIELDSNAME
 !
@@ -723,16 +754,18 @@
           IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,2931) IDTIME
         END IF
       END IF
-      IF (.NOT. FLTIME) THEN
-        CALL STME21 ( TIMESHIFT , IDTIME )
-        IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,3931) IDTIME
-      END IF
+!      IF (.NOT. FLTIME) THEN
+!        CALL STME21 ( TIMESHIFT , IDTIME )
+!        IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,3931) IDTIME
+!      END IF
       IF ( IAPROC .EQ. NAPOUT .AND.FLBERG ) WRITE (NDSO,938)
       IF ( IAPROC .EQ. NAPOUT .AND.FLSTAB ) WRITE (NDSO,939)
+
       IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,968) TRIM(DIMSNAME(1)), TRIM(DIMSNAME(2))
       DO I=1,NFIELDS
         IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,969) I, TRIM(FIELDSNAME(I))
       END DO
+
 !
 ! Start loop over multiple input files
 !
@@ -740,13 +773,13 @@
       DO
       IF (.NOT. FLGNML) THEN
 !
-! 3.c Additional input for format types and time
+! 4.c Additional input for format types and time
 ! ... time
 !
         IF (.NOT. FLTIME) THEN
           CALL NEXTLN ( COMSTR , NDSI , NDSE )
           READ (NDSI,*,END=888,ERR=802,IOSTAT=IERR) TIMESHIFT
-          IF (TIMESTART(1).LT.10000000) THEN
+          IF (TIMESHIFT(1).LT.10000000) THEN
             WRITE (NDSE,1035) TIMESHIFT
             CALL EXTCDE ( 4 )
           END IF
@@ -812,7 +845,7 @@
       NDIMSGRID=2
       DO i=1,NDIMSVAR
 !/T        WRITE(NDST,*) 'TEST WW3_PRNC: DIMENSION ',DIMNAME(I)
-        IF (dimname(i) .EQ. TDIMNAME) NTI = dimln(i)
+        IF (DIMNAME(i) .EQ. TDIMNAME) NTI = DIMLN(i)
         IF (DIMNAME(i) .EQ. DIMSNAME(1)) NXI = DIMLN(i)
         IF (DIMNAME(i) .EQ. DIMSNAME(1).AND.NIDIMS.EQ.1) THEN
           NDIMSGRID=1
@@ -837,7 +870,7 @@
         ALLOCATE (ALO(NXI,NYI))
         ! get longitude
 !/T        WRITE(NDST,*) 'TEST WW3_PRNC: INQ. ',SPVARSNAME(1)
-        IRET=NF90_INQ_VARID(NCID,TRIM(SPVARSNAME(1)),varidtmp)
+        IRET=NF90_INQ_VARID(NCID,TRIM(SPVARSNAME(1)),VARIDTMP)
         IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"longitude",VARIDTMP)
         IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"lon",VARIDTMP)
         IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"Longitude",VARIDTMP)
@@ -865,7 +898,7 @@
         END IF
         ! get latitude
 !/T        WRITE(NDST,*) 'TEST WW3_PRNC: INQ. ',SPVARSNAME(2)
-        IRET=NF90_INQ_VARID(NCID,TRIM(SPVARSNAME(2)),varidtmp)
+        IRET=NF90_INQ_VARID(NCID,TRIM(SPVARSNAME(2)),VARIDTMP)
         IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"latitude",VARIDTMP)
         IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"lat",VARIDTMP)
         IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"Latitude",VARIDTMP)
@@ -888,7 +921,6 @@
           YNI=ALA(1,NYI)
         END IF
       END IF
-
 
 !
 ! ... type 1: "As Is" (AI)
@@ -1370,8 +1402,7 @@
             WRITE (NDSE,1066) 
             CALL EXTCDE ( 9 )
           END IF
-        END IF ! ITYPE.EQ.2 / ITYPE.EQ.3 .OR. ITYPE.EQ.4 / ITYPE.EQ.7
-!      END IF ! ITYPE.NE.1 .AND. ITYPE.NE.5 .AND. ITYPE.NE.6 .AND. ITYPE.NE.7
+      END IF ! ITYPE.NE.1 .AND. ITYPE.NE.5 .AND. ITYPE.NE.6 .AND. ITYPE.NE.7
 !
 ! 6.c Input location and format
 !
@@ -1413,18 +1444,17 @@
 !/TIDE            TIDE_NDEF = NFIELDS
 !/TIDE            CALL TIDE_FIND_INDICES_ANALYSIS(LIST)
 !/TIDE            END IF
-            MYOUT = MY
-            IF ( GTYPE.EQ.QAGTYPE ) MYOUT = QTREE(IQGB)%NQUAD
-            IF ( IAPROC .EQ. NAPOUT )  &
-               CALL W3FLDO ( 'WRITE', IDFLD, NDSDAT, NDST, NDSE,      &
-               MX, MYOUT, GTYPE, IERR, FPRE=FNMPRE(:J),               &
-               FHDR=FLHDR, TIDEFLAGIN=TIDEFLAG)
-          ELSE
-            MYOUT = 0
-            IF ( IAPROC .EQ. NAPOUT )  &
-            CALL W3FLDO ( 'WRITE', IDFLD, NDSDAT, NDST, NDSE,         &
+          MYOUT = MY
+          IF ( GTYPE.EQ.QAGTYPE ) MYOUT = QTREE(IQGB)%NQUAD
+          IF ( IAPROC .EQ. NAPOUT )  &
+             CALL W3FLDO ( 'WRITE', IDFLD, NDSDAT, NDST, NDSE,        &
+             MX, MYOUT, GTYPE, IERR, FPRE=FNMPRE(:J),                 &
+             FHDR=FLHDR, TIDEFLAGIN=TIDEFLAG)
+        ELSE
+          MYOUT = 0
+          IF ( IAPROC .EQ. NAPOUT )  &
+          CALL W3FLDO ( 'WRITE', IDFLD, NDSDAT, NDST, NDSE,           &
                RECLDT, MYOUT, GTYPEDUM, IERR, FPRE=FNMPRE(:J) )
-          END IF
         END IF
 !/TIDET   IF (TIDEFLAG.GT.0) THEN  
 !/TIDET   LRECL  = TIDE_MF*LRB*NFIELDS*2
@@ -1457,7 +1487,7 @@
           AC = 0.
         END IF
 !
-! For ITYPE.LE.5 time steps are read one by one. 
+! For ITYPE.LE.5 or .EQ.7 time steps are read one by one. 
 ! Otherwise points are read one by one for tidal analysis
 !
       TIDESWITCH=.FALSE.
@@ -2145,9 +2175,9 @@
           FLQA = GTYPE.EQ.QAGTYPE
           NEW_QT = ITIME.EQ.1
           IF ( IAPROC .EQ. NAPOUT ) CALL W3FLDG ('WRITE', IDFLD,      &
-                     NDSDAT, NDST, NDSE, MX, MY, NX, NY, TIME, TIME,  &
-                       TIME, FX, FY, FA, TIME, FX, FY, FA, IERR,      &
-                       FLQA, new_qt=NEW_QT, qtree=QTREE(IQGI:IQGI) )
+                      NDSDAT, NDST, NDSE, MX, MY, NX, NY, TIME, TIME, &
+                      TIME, FX, FY, FA, TIME, FX, FY, FA, IERR,       &
+                      FLQA, new_qt=NEW_QT, qtree=QTREE(IQGI:IQGI) )
 
         ELSE IF ( ITYPE .EQ. 5 ) THEN
           IF ( NDAT .EQ. 0 ) THEN
@@ -2459,7 +2489,7 @@
                '     INCOMPATIBLE FIELD TIMES '/                      &
                '            FIELD #1 : ',I8.8,I7.6/                   &
                '            FIELD #2 : ',I8.8,I7.6/)
- 1062 FORMAT (/' *** WAVEWATCH III ERROR IN W3PREP : '/               &
+ 1062 FORMAT (/' *** WAVEWATCH III ERROR IN W3PRNC : '/               &
                '     ERROR IN READING NDAT FROM FILE'/                &
                '     IOSTAT =',I5/)
  1063 FORMAT (/' *** WAVEWATCH III ERROR IN W3PRNC : '/               &
