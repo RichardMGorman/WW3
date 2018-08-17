@@ -860,7 +860,7 @@
                prop=
              source="w3parall w3triamd $stx $nlx $btx $is"
                  IO='w3iogrmd'
-                aux="constants w3servmd w3arrymd w3dispmd w3gsrumd w3timemd $pdlibyow $memcode" ;;
+                aux="constants w3servmd w3arrymd w3dispmd w3gsrumd w3timemd $pdlibyow $memcode"
                 aux="$aux qa_utils svd_lapack" ;;
      ww3_strt) IDstring='Initial conditions program'
                core=
@@ -897,7 +897,7 @@
                prop=
              source="$pdlibcode $pdlibyow $db $bt $setupcode w3triamd $stx $nlx $btx $is w3parall"
                  IO="w3iogrmd $oasismd $agcmmd $ogcmmd $igcmmd"
-                aux="constants w3servmd w3timemd w3arrymd w3dispmd w3gsrumd $tidecode w3nmlprncmd" ;;
+                aux="constants w3servmd w3timemd w3arrymd w3dispmd w3gsrumd $tidecode w3nmlprncmd"
                 aux="$aux qa_utils svd_lapack" ;;
      ww3_prtide) IDstring='Tide prediction'
                core='w3fldsmd'
@@ -915,8 +915,8 @@
                  IO="w3iogrmd w3iogomd w3iopomd w3iotrmd w3iorsmd w3iobcmd $oasismd $agcmmd $ogcmmd $igcmmd"
                  IO="$IO w3iosfmd w3partmd"
                 aux="constants w3servmd w3timemd $tidecode w3arrymd w3dispmd w3cspcmd w3gsrumd $cplcode"
-                aux="$aux w3nmlshelmd $pdlibyow" ;;
-                aux="$aux w3namlmd w3adgrmd qa_utils svd_lapack" ;;
+                aux="$aux w3nmlshelmd $pdlibyow"
+                aux="$aux w3adgrmd qa_utils svd_lapack" ;;
     ww3_multi|ww3_multi_esmf)
                if [ "$prog" = "ww3_multi" ]
                then
@@ -995,7 +995,7 @@
              source="$pdlibcode $pdlibyow $setupcode $flx $ln $st $nl $bt $ic $is $db $tr $bs $xx $igcode"
                  IO='w3bullmd w3iogrmd w3iopomd w3partmd'
                 aux='constants w3servmd w3timemd w3arrymd w3dispmd w3gsrumd' 
-                aux="$aux w3nmlounpmd" ;;
+                aux="$aux w3nmlounpmd"
                 aux="$aux qa_utils svd_lapack" ;;
      ww3_trck) IDstring='Track output post'
                core=
