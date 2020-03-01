@@ -1,0 +1,322 @@
+#!/bin/bash
+# --------------------------------------------------------------------------- #
+# install_ww3: install WAVEWATCH III version 6                                #
+#                                                                             #
+# -remarks :                                                                  #
+#                                                                             #
+#                                                      Hendrik L. Tolman      #
+#                                                      Jose-Henrique Alves    #
+#                                                                             #
+#                                                      October 2012 (origin)  #
+#                                                      July 2013    (latest)  #
+#                                                                             #
+#    Copyright 2012-2013 National Weather Service (NWS),                      #
+#       National Oceanic and Atmospheric Administration.  All rights          #
+#       reserved.  WAVEWATCH III is a trademark of the NWS.                   #
+#       No unauthorized use without permission.                               #
+#                                                                             #
+# --------------------------------------------------------------------------- #
+
+
+# 0. Introductory flair
+# --------------------------------------------------------------------------- #
+
+  clear
+  echo -e '\n\n\n                  ==================================='
+  echo -e '              ------ Installing WAVEWATCH III  v.6 ------'
+  echo -e '                  =================================== \n'
+  echo -e '                  Script for installing package from tar files. '
+  echo -e '                  Requires files in same directory as script.\n'
+
+# 1. Preparations                                                             #
+# --------------------------------------------------------------------------- #
+
+# 1.c Test present directory and set location of environment file  - - - - - -
+
+  ww3_dir=`pwd`
+
+# homedir may be different than where cd takes...
+  if [ $HOME ]
+  then
+    cd $HOME
+  else  
+    cd
+  fi
+  home_dir=`pwd`
+  cd $ww3_dir
+
+  echo -e ' This installation requires a configuration file (wwatch3.env).'
+  ww3_dir=`pwd`
+  main_dir=$ww3_dir/model
+
+  echo -e '\n Creating new env file from scratch.'
+  ww3_env="${main_dir}/bin/wwatch3.env"
+
+  echo -e "\n\n Installing in "
+  echo -e "   $ww3_dir"
+
+  mkdir -p $main_dir/bin
+  cd $main_dir
+
+# 1.d Set up environment - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  
+  echo -e '\n\n Setting up environment variables. '
+
+  prnt=printer
+  fort=ftn
+  cc=gcc
+  temp_dir=${main_dir}/tmp
+  s_source=yes
+  s_list=yes
+
+    echo -e "      Printer (listings)       : $prnt "
+    echo -e "      FORTRAN comp. (aux only) : $fort "
+    echo -e "      C Compiler (aux only)    : $cc "
+    echo -e "      Scratch directory        : $temp_dir "
+    echo -e "      Save source code         : $s_source "
+    echo -e "      Save listings            : $s_list "
+
+
+
+# 1.e Save environment in file - - - - - - - - - - - - - - - - - - - - - - - -
+
+
+#  cd $home_dir
+  rm -f $ww3_env
+
+  echo '#'                                                    > $ww3_env
+  echo '# Environment variables for wavewatch III'           >> $ww3_env
+  echo '# ---------------------------------------'           >> $ww3_env
+  echo '#'                                                   >> $ww3_env
+  echo ' '                                                   >> $ww3_env
+  echo "WWATCH3_LPR      $prnt"                              >> $ww3_env
+  echo "WWATCH3_F90      $fort"                              >> $ww3_env
+  echo "WWATCH3_CC       $cc"                                >> $ww3_env
+  echo "WWATCH3_DIR      $main_dir"                          >> $ww3_env
+  echo "WWATCH3_TMP      $temp_dir"                          >> $ww3_env
+  echo "WWATCH3_SOURCE   $s_source"                          >> $ww3_env
+  echo "WWATCH3_LIST     $s_list"                            >> $ww3_env
+  echo ' '                                                   >> $ww3_env
+
+
+  if [ ! -d $temp_dir ]
+  then
+    mkdir $temp_dir
+  fi
+  cd $temp_dir
+  rm -f * 2> /dev/null
+  cd $main_dir
+
+
+# Unpack tar files
+
+#  src_dir=$ww3_dir/arc_tmp # Source directory (before links or copies are made)
+  src_dir=$ww3_dir
+#  mkdir -p $src_dir
+
+#  cd $src_dir
+
+#  echo -e "Copying model"
+  #tar xf $ww3_dir/$model
+#  cp -r $ww3_dir/model ./model
+#  echo -e "Copying regtests"
+#  cp -r $ww3_dir/regtests ./regtests
+
+  cd $ww3_dir  
+ 
+
+# Make the model directories (at same level as manual and guide)
+  for dir in aux bin ftn obj mod exe inp nml work esmf
+  do
+    if [ ! -d $dir ]
+    then
+      echo -e "   making directory model/$dir"
+      mkdir -p model/$dir
+    fi
+  done
+
+# Make the regtests directory  (at same level as manual and guide)
+  if [ ! -d regtests ]
+    then
+    echo -e "   making directory regtests"
+    mkdir regtests
+  fi
+# Make the smc_docs directory  (at same level as manual and guide)
+  if [ ! -d smc_docs ]
+    then
+    echo -e "   making directory smc_docs"
+    mkdir smc_docs
+  fi
+
+# 2.e Set file permissions - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  cd $src_dir/model/aux
+  chmod 644 *.gs
+  chmod 644 spec_ids*
+  chmod 644 *.f
+
+  cd $src_dir/model/bin
+  chmod 744 *
+
+  cd $src_dir/model/ftn
+  chmod 644 *.ftn
+  chmod 644 *.f90
+
+  cd $src_dir/model/inp
+  chmod 644 *.inp track_i.ww3
+
+  cd $src_dir/model/nml
+  chmod 644 *.nml
+
+  cd $src_dir/regtests/bin
+  chmod 744 *
+
+# Prelim: setting tmp directory to store screen redirects
+  mkdir -p $main_dir/tmp
+
+# --------------------------------------------------------------------------- #
+# 3. Set-up / update aux directory                                            #
+# --------------------------------------------------------------------------- #
+
+  ldir="aux"
+  rm -f ${main_dir}/tmp/${ldir}_setup.out
+
+  cd $main_dir/${ldir}
+  all_files=`ls -p $src_dir/model/${ldir} | grep -v '/$'`
+
+  echo -e '\n\n =============================== '
+  echo -e '--- Set up / update directories --- '
+  echo -e ' ============================================================== '
+  echo -e "    Directory `pwd` "
+
+# 3.a FORTRAN executables  - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  echo -e '\n FORTRAN executables: '
+  echo -e ' -------------------- '
+
+  for code in w3adc w3prnt w3list w3split
+  do
+
+    echo -e "\n   Program $code ... " | tee ${main_dir}/tmp/${ldir}_setup.out
+    #if [ -f "$src_dir/model/${ldir}/$code.f" ]
+    #then
+    #  cp -f $src_dir/model/${ldir}/$code.f .
+    #  echo -e "      New $code.f was copied to $main_dir/${ldir} " | tee ${main_dir}/tmp/${ldir}_setup.out
+    #else
+    #  echo -e "\n      No source for ${code}.f found, aborting! " | tee ${main_dir}/tmp/${ldir}_setup.out
+    #  exit 30
+    #fi
+
+    echo -e "      Generating $code in $main_dir/bin " | tee ${main_dir}/tmp/${ldir}_setup.out
+    echo -e "         Compiling ... " | tee ${main_dir}/tmp/${ldir}_setup.out
+    if `$fort $code.f > fort.out 2> fort.err`
+    then
+      rm -f $main_dir/bin/$code
+      if [ -f a.out ]
+      then
+        echo -e "         Storing ... " | tee ${main_dir}/tmp/${ldir}_setup.out
+        mv a.out $main_dir/bin/$code
+      else
+        echo -e "\n\n\n      --- ERROR: FILE a.out NOT FOUND --- " | tee ${main_dir}/tmp/${ldir}_setup.out
+        echo -e ' Compilation error messages: '
+        cat fort.out 
+        echo -e ''
+        cat fort.err 
+        echo -e ''
+        exit
+       fi
+    else
+      echo -e "\n\n\n      --- ERROR IN COMPILING $code.f --- " | tee ${main_dir}/tmp/${ldir}_setup.out
+      echo -e ' Compilation error messages: '
+      cat fort.out 
+      echo -e '' 
+      cat fort.err 
+      echo -e '\n '
+      exit
+    fi
+    #rm -f fort.*
+    tmp_files=$all_files
+    all_files=`echo -e $tmp_files | sed -e "s/$code.f//g"`
+
+  done
+  echo -e '\n All essential FORTRAN codes compiled correctly ' | tee ${main_dir}/tmp/${ldir}_setup.out
+  echo -e ' ---------------------------------------------- ' | tee ${main_dir}/tmp/${ldir}_setup.out
+  sleep 2
+
+# Move on with other files in aux
+  tnr_lnk=0
+  tnr_new=0
+  tnr_old=0
+
+
+# --------------------------------------------------------------------------- #
+# 8. Set-up / update work directory                                           #
+# --------------------------------------------------------------------------- #
+
+  cd $main_dir/work
+
+
+  echo -e ' \n\n ==============================='
+  echo -e '--- Set up / update directories ---'
+  echo -e ' =============================================================='    
+  echo -e "    Directory `pwd`"
+
+## 8.a comp link and switch
+#  Requiring user to do this, so this is no more. 
+#  echo -e ' '
+#  echo -e ' Setting up links to comp link and switch ...'
+#  ln -sf ../bin/switch
+#  ln -sf ../bin/comp
+#  ln -sf ../bin/link
+
+# 8.b selected GrADS scripts
+
+  echo -e ' Setting up links to selected GrADS scripts ...'
+  for file in cbarn.gs colorset.gs spec.gs source.gs 1source.gs spec_ids
+  do
+    if [ ! -f $file ]
+    then
+      ln -sf ../aux/$file .
+    fi
+  done
+
+# 8.c input files
+
+  echo -e ' Setting up links to input files ...'
+  cd $main_dir/inp
+  files=`ls`
+  cd $main_dir/work
+
+  for file in $files
+  do
+    if [ ! -f $file ]
+    then
+      ln -sf ../inp/$file .
+    fi
+  done
+
+  sleep 2
+
+# --------------------------------------------------------------------------- #
+# 9. The end                                                                  #
+# --------------------------------------------------------------------------- #
+
+  echo -e '\n\n =============================== '
+  echo -e ' --- Final remarks ---'
+  echo -e ' ============================================================== \n'    
+  echo -e ' To run the WAVEWATCH III executables and the scripts to generate '
+  echo -e ' and update these executables from arbitrary directories, add the'
+  echo -e ' following directories to the path of your interactive shell : \n'
+  echo -e "      $main_dir/bin"
+  echo -e "      $main_dir/exe"
+  echo -e "\n Note that 'comp' and 'link' and 'switch' are user/machine specific."
+  echo -e "\n   Several comp and link files for known compilers are found in:"
+  echo -e "   ${main_dir}/bin"
+  echo -e "\n   If you cannot find one that suits your machine/preferences, "
+  echo -e "   create custom scripts based on the existing ones and add to bin."
+
+  echo -e '\n\n                    ==============================='
+  echo -e '                  ---       End of program        --- '
+  echo -e '                    =============================== \n '
+
+# end of script ------------------------------------------------------------- #
