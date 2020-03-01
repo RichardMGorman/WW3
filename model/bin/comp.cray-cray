@@ -85,10 +85,10 @@
 #    optim="-O2"
 #  fi
 
-  if [ "$name" != 'ww3_gspl' ]
-  then
-    opt="$opt -convert big_endian"
-  fi
+  #if [ "$name" != 'ww3_gspl' ]
+  #then
+  #  opt="$opt -convert big_endian"
+  #fi
 
 #optim0   optim="-O0"
 #optim1   optim="-O1"
