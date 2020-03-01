@@ -136,21 +136,21 @@
   if [ -s $name.lst ] 
   then
      mv $name.lst $name.l
-     sed -n '/^TOTAL   UNR/,/^$/p' $name.l | head -3 > $name.err2
+     #sed -n '/^TOTAL   UNR/,/^$/p' $name.l | head -3 > $name.err2
   fi
 
 # 2.b.3 Add test output to listing for later viewing
 
-# if [ -s $name.l ] 
-# then
-#   echo '------------' >> $name.l
-#   echo "$comp $opt"   >> $name.l
-#   echo '------------' >> $name.l
-#   cat $name.out       >> $name.l 2> /dev/null
-#   echo '------------' >> $name.l
-#   cat $name.err       >> $name.l 2> /dev/null
-#   echo '------------' >> $name.l
-# fi
+ if [ -s $name.l ] 
+ then
+   echo '------------' >> $name.l
+   echo "$comp $opt"   >> $name.l
+   echo '------------' >> $name.l
+   cat $name.out       >> $name.l 2> /dev/null
+   echo '------------' >> $name.l
+   cat $name.err       >> $name.l 2> /dev/null
+   echo '------------' >> $name.l
+ fi
 
 # --------------------------------------------------------------------------- #
 # 3. Postprocessing                                                           #
