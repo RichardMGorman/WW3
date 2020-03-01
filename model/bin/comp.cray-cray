@@ -164,28 +164,8 @@
 
   if [ -s $name.err ]
   then
-    echo > /dev/null
-
-    if [ -s $name.err2 ]
-    then
-
-      nr_tot2="`tail -1 $name.err2 | awk '{ print $1}'`"
-      nr_unr2="`tail -1 $name.err2 | awk '{ print $2}'`"
-      nr_sev2="`tail -1 $name.err2 | awk '{ print $3}'`"
-      nr_err2="`tail -1 $name.err2 | awk '{ print $4}'`"
-      nr_war2="`tail -1 $name.err2 | awk '{ print $5}'`"
-      nr_inf2="`tail -1 $name.err2 | awk '{ print $6}'`"
-
-      nr_err=`expr $nr_unr2 + $nr_sev2`
-      nr_war=`expr $nr_err2 + $nr_war2`
-    else
-      OK=1
-    fi
-
-#    rm -f $name.err2
-
-# End hardware / software dep. -------------
-
+    nr_err=`grep 'error' $name.err | wc -l | awk '{ print $1 }'`
+    nr_war=`grep 'warning' $name.err | wc -l | awk '{ print $1 }'`
   else
     if [ "$OK" != '0' ]
     then
@@ -195,8 +175,8 @@
 
 # 3.b Make file comp.stat  - - - - - - - - - - - - - - - - - - - - - - - - - - 
 
-  echo "ERROR    $nr_err"   > comp.stat
-  echo "WARNING  $nr_war"  >> comp.stat
+  echo "ERROR    $nr_err"   > comp.stat.$name
+  echo "WARNING  $nr_war"  >> comp.stat.$name
 
 # 3.c Prepare listing  - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 #     if compiler does not provide listing, make listing from source code
