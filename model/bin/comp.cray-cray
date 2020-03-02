@@ -164,8 +164,11 @@
 
   if [ -s $name.err ]
   then
-    nr_err=`grep 'ERROR' $name.err | wc -l | awk '{ print $1 }'`
-    nr_war=`grep 'WARNING' $name.err | wc -l | awk '{ print $1 }'`
+    # need to be specific: crayftn can generate lines in $name.err that have a
+    # CAUTION (or other less-than-ERROR message) then a line of code that happens
+    # to include the word 'ERROR'
+    nr_err=`grep 'crayftn: ERROR' $name.err | wc -l | awk '{ print $1 }'`
+    nr_war=`grep 'crayftn: WARNING' $name.err | wc -l | awk '{ print $1 }'`
   else
     if [ "$OK" != '0' ]
     then
