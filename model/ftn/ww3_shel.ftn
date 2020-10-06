@@ -322,6 +322,8 @@
       CHARACTER(LEN=256)  :: TMPLINE, TEST
       CHARACTER(LEN=1024) :: FLDIN
 !/COU      CHARACTER(LEN=30)       :: OFILE
+! TEMP RMG
+      CHARACTER(LEN=8)    :: INXOUT_GR
 !
       LOGICAL             :: FLLSTL, FLLSTI, FLFLG, FLHOM, TFLAGI,     &
                              PRTFRM, FLAGSCI, FLGNML
@@ -359,6 +361,8 @@
       FLGR2 = .FALSE.  
       FLAGSTIDE(:) = .FALSE.
       FLH(:)       = .FALSE.
+! TEMP RMG
+      INXOUT_GR = 'GRID'  
 !
 !/T      PRTFRM = .TRUE.
 !/T      DEBUG_NCC = .TRUE. 
@@ -727,7 +731,9 @@
 ! 2.3 Domain setup
 
         IOSTYP = NML_DOMAIN%IOSTYP
-        CALL W3IOGR ( 'GRID', NDSF(5) )
+! TEMP RMG
+        !CALL W3IOGR ( 'GRID', NDSF(5) )
+        CALL W3IOGR ( INXOUT_GR, NDSF(5) )
         IF ( FLAGLL ) THEN
           FACTOR = 1.
         ELSE
@@ -1159,7 +1165,9 @@
 !/DEBUGINIT      write(740+IAPROC,*), 'Before read 2002, case 6'
         READ (NDSI,*) IOSTYP
 !/DEBUGINIT      write(740+IAPROC,*), ' After read 2002, case 6'
-        CALL W3IOGR ( 'GRID', NDSF(5) )
+! TEMP RMG
+        !CALL W3IOGR ( 'GRID', NDSF(5) )
+        CALL W3IOGR ( INXOUT_GR, NDSF(5) )
         IF ( FLAGLL ) THEN
           FACTOR = 1.
         ELSE
