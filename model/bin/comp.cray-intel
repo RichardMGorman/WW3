@@ -79,7 +79,7 @@
 #       Note that all but GrADS output is forced to big endian data
 
   #opt="-c $lisrt -free -module $path_m"
-  opt="-c $list -assume byterecl -free -module $path_m"
+  opt="-c $list -assume byterecl -align array128byte -heap-arrays 1024 -free -module $path_m"
 
   if [ "$name" != 'gx_outp' ] && [ "$name" != 'gx_outf' ] && \
      [ "$name" != 'ww3_gspl' ]
@@ -99,6 +99,12 @@
   if [ "$omp_mod" = 'yes' ]
   then
     opt="$opt -openmp -openmp-report=1"
+  fi
+
+  # oasis coupler include dir
+  if [ "$oasis_mod" = 'yes' ]
+  then
+    opt="$opt -I$OASISDIR/build/lib/psmile.MPI1"
   fi
 
 #  if [ "$netcdf_compile" = 'yes' ]
