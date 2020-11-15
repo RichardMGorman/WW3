@@ -735,6 +735,7 @@
 !/ ------------------------------------------------------------------- /
 !
       USE W3SERVMD, ONLY: STRSPLIT
+      USE WGDATMD, ONLY: NK
 !
 !/ ------------------------------------------------------------------- /
 !/ Parameter list
@@ -748,7 +749,8 @@
 !/ Local parameters
 !/
       CHARACTER(LEN=100)                                      :: OUT_NAMES(50), TESTSTR
-      INTEGER                                                 :: IOUT
+      INTEGER                                                 :: IOUT, IK
+      CHARACTER(LEN=8)                                        :: TMP_STR
 !/
 !/ ------------------------------------------------------------------- /
 !/ Executable part
@@ -1005,6 +1007,15 @@
 !/OASICM            ! TWIY : y stress to ice , v component (twiy in m2.s-2)
 !/OASICM            ID_NB_SND = ID_NB_SND +1
 !/OASICM            SND(ID_NB_SND)%CL_FIELD_NAME='WW3_TWIY'
+!
+!/OASICM         CASE('EF')
+!/OASICM            ! spectral density (m2.s)
+!/OASICM            TMP_STR = 'WW3_EFxx'
+!/OASICM            DO IK=1,ND
+!/OASICM               WRITE(TMP_STR(7:8),'(I2.2)') IK
+!/OASICM               ID_NB_SND = ID_NB_SND +1
+!/OASICM               SND(ID_NB_SND)%CL_FIELD_NAME=TMP_STR
+!/OASICM            END DO
                     !
          CASE DEFAULT
             WRITE (NDSO,1002) TRIM(TESTSTR(1:6))

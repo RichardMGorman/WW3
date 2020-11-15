@@ -98,7 +98,7 @@
       USE W3OACPMD,  ONLY: ID_OASIS_TIME, IL_NB_SND, SND_FLD, CPL_OASIS_SND
       USE W3GDATMD,  ONLY: NSEAL, NSEA 
       USE W3WDATMD,  ONLY: ICEF
-      USE W3ADATMD,  ONLY: TAUICE
+      USE W3ADATMD,  ONLY: TAUICE, EF
       USE W3ODATMD,  ONLY: UNDEF, NAPROC, IAPROC
 !
 !/ ------------------------------------------------------------------- /
@@ -109,6 +109,8 @@
       LOGICAL                          :: LL_ACTION   
       REAL(kind=8), DIMENSION(NSEAL)   :: TMP
       INTEGER                          :: JSEA, ISEA
+      INTEGER                          :: IK
+      CHARACTER(len=8)                 :: TMP_STR
 !
 !----------------------------------------------------------------------
 ! * Executable part
@@ -142,7 +144,15 @@
             CALL CPL_OASIS_SND(IB_DO, ID_OASIS_TIME, RLA_OASIS_SND, LL_ACTION)
 
          CASE DEFAULT
-            WRITE (NDSO,1002) TRIM(SND_FLD(IB_DO)%CL_FIELD_NAME)
+            TMP_STR = SND_FLD(IB_DO)%CL_FIELD_NAME
+            IF ( TMP_STR(1:6) .EQ. 'WW3_EF' ) THEN
+               READ(TMP_STR(7:8),'(I2)') IK
+               TMP(1:NSEAL) = 0.0 
+               WHERE(EF(:,IK) /= UNDEF) TMP(:)=EF(:,IK)
+               RLA_OASIS_SND(:,1) = DBLE(TMP(1:NSEAL))
+            ELSE
+               WRITE (NDSO,1002) TRIM(SND_FLD(IB_DO)%CL_FIELD_NAME)
+            END IF
          END SELECT
 
 
