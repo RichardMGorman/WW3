@@ -735,7 +735,7 @@
 !/ ------------------------------------------------------------------- /
 !
       USE W3SERVMD, ONLY: STRSPLIT
-      USE WGDATMD, ONLY: NK
+      USE W3GDATMD, ONLY: NK
 !
 !/ ------------------------------------------------------------------- /
 !/ Parameter list
@@ -1011,7 +1011,7 @@
 !/OASICM         CASE('EF')
 !/OASICM            ! spectral density (m2.s)
 !/OASICM            TMP_STR = 'WW3_EFxx'
-!/OASICM            DO IK=1,ND
+!/OASICM            DO IK=1,NK
 !/OASICM               WRITE(TMP_STR(7:8),'(I2.2)') IK
 !/OASICM               ID_NB_SND = ID_NB_SND +1
 !/OASICM               SND(ID_NB_SND)%CL_FIELD_NAME=TMP_STR
