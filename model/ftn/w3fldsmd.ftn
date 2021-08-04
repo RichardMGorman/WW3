@@ -502,12 +502,12 @@
 !
 !/T 9000 FORMAT (' TEST W3FLDO : INXOUT : ',A/                     &
 !/T              '               IDFLD  : ',A/                     &
-!/T              '               NDS    : ',I2/                    &
-!/T              '               NDST   : ',I2/                    &
-!/T              '               NDSE   : ',I2/                    &
+!/T              '               NDS    : ',I4/                    &
+!/T              '               NDST   : ',I4/                    &
+!/T              '               NDSE   : ',I4/                    &
 !/T              '               NX, NY : ',I9,3X,I9/              &
-!/T              '               GTYPE  : ',I2/                    &
-!/T              '               IERR   : ',I2)
+!/T              '               GTYPE  : ',I4/                    &
+!/T              '               IERR   : ',I4)
 !/T 9001 FORMAT ('               WRITE  : ',L2/                    &
 !/T              '               FNAME  : [',A,']')
 !/T 9002 FORMAT ('           NEW IDFLD  : ',A)
