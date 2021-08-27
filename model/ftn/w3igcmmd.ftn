@@ -150,6 +150,7 @@
                TMP(1:NSEAL) = 0.0 
                WHERE(EF(1:NSEAL,IK) /= UNDEF) TMP(1:NSEAL)=EF(1:NSEAL,IK)
                RLA_OASIS_SND(:,1) = DBLE(TMP(1:NSEAL))
+               CALL CPL_OASIS_SND(IB_DO, ID_OASIS_TIME, RLA_OASIS_SND, LL_ACTION)
             ELSE
                WRITE (NDSO,1002) TRIM(SND_FLD(IB_DO)%CL_FIELD_NAME)
             END IF
