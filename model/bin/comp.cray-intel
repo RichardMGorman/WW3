@@ -92,7 +92,7 @@
 #optim2   optim="-O2"
 #optim3   optim="-O3"
   opt="$opt $optim"
-#debug   opt="$opt -g -traceback -warn all -check all -ftrapuv -gen-interfaces -stand"
+#debug   opt="$opt -g -traceback -fp-stack-check -warn all -check all -ftrapuv -gen-interfaces -stand"
 
   comp="ftn"
 

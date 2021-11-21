@@ -91,7 +91,7 @@
 #optim2   optim="-O2"
 #optim3   optim="-O3"
   opt="$opt $optim"
-#debug   opt="$opt -g -traceback -check all -warn all -ftrapuv"
+#debug   opt="$opt -g -traceback -fp-stack-check -check all -warn all -ftrapuv"
 
   comp="ftn"
 
