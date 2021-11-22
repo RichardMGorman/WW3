@@ -78,8 +78,8 @@
 # 2.b.1 Build options and determine compiler name
 #       Note that all but GrADS output is forced to big endian data
 
-  #opt="-c $lisrt -free -module $path_m"
-  opt="-c $list -assume byterecl -align array128byte -heap-arrays 1024 -xHost -free -module $path_m"
+  copt="-c $lisrt -free -module $path_m"
+  opt="-c $list -assume byterecl -align array128byte -heap-arrays 1024 -xHost -march=skylake -free -module $path_m"
 
   if [ "$name" != 'gx_outp' ] && [ "$name" != 'gx_outf' ] && \
      [ "$name" != 'ww3_gspl' ]
