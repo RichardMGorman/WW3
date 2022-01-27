@@ -234,7 +234,7 @@
       USE W3SERVMD, ONLY: EXTCDE
       USE W3DISPMD
       USE W3GDATMD, ONLY: NK, NTH, NSPEC, SIG, MAPWN, IC2PARS, DDEN,  & 
-                          FLAGLL, YGRD, GTYPE, RLGTYPE
+                          FLAGLL, YGRD, GTYPE, RLGTYPE, IS2PARS
       USE W3IDATMD, ONLY: INFLAGS2,ICEP1,ICEP2,ICEP3,ICEP4,ICEP5,WLEV,&
                           ICEI
 !/T      USE W3ODATMD, ONLY: NDST
@@ -270,6 +270,7 @@
                                  SMOOTH, RE, UORB, AORB, EB,   &
                                  DELI1, DELI2, FW, XI, FTURB,  & 
                                  CG_EFF(NK), WLG_R(NK), SMOOTH_DMAX(NK)
+      REAL                    :: DMAX
       INTEGER                 :: IND, ITH, IS
       LOGICAL                 :: NOICE=.FALSE.
         ! Warning, ALPHA = 2 * WN_I -> Makes WN_I useless, doesnt it ?
@@ -364,8 +365,13 @@
 ! does not move. This should is changed by taking into account DMAX when IC2DMAX > 0: 
 !
 !/IS2          IF (IC2PARS(8).GT.0) THEN
-!/IS2            WLG_R(IK)=TPI/WN_R(IK)   
-!/IS2            SMOOTH_DMAX(IK)= (0.5*(1+TANH((ICEF-IC2PARS(8)*WLG_R(IK))/(ICEF*0.5))))**2
+!/IS2            WLG_R(IK)=TPI/WN_R(IK) 
+!/IS2            IF ( IS2PARS(25) .GT. 0.5 ) THEN
+!/IS2              DMAX = ICEF*(1.-IS2PARS(26)) + IS2PARS(27)*IS2PARS(26)
+!/IS2            ELSE
+!/IS2              DMAX = ICEF
+!/IS2              END IF
+!/IS2            SMOOTH_DMAX(IK)= (0.5*(1+TANH((DMAX-IC2PARS(8)*WLG_R(IK))/(DMAX*0.5))))**2
 !/IS2            END IF
 !
                IF (R(IK).GT.1.) THEN

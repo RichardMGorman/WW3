@@ -1224,6 +1224,7 @@
       USE W3IDATMD, ONLY: TI5, ICEP5
       USE W3GDATMD, ONLY: NSEA, MAPSF
       USE W3WDATMD, ONLY: TIME, TIC5, ICE, ICEH, ICEF, ICEDMAX
+!/IS2      USE W3GDATMD, ONLY: IS2PARS
 !/
       IMPLICIT NONE
 !/
@@ -1259,7 +1260,9 @@
         ELSE
           ICEF(ISEA) = ICEP5(IX,IY)
           ICEDMAX(ISEA) = ICEP5(IX,IY)          
-        END IF
+!/IS2          IF ( IS2PARS(25).GT.0.5 )                              &
+!/IS2          ICEDMAX(ISEA) = ICEF*(1.-IS2PARS(26)) + IS2PARS(27)*IS2PARS(26)
+         END IF
       END DO
 !
       RETURN

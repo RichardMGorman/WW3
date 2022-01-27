@@ -742,7 +742,7 @@
       USE W3SERVMD, ONLY : W3S2XY
 !/RTD      USE W3SERVMD, ONLY : W3THRTN, W3XYRTN, W3EQTOLL
       USE W3ARRYMD, ONLY : OUTA2I, PRTBLK
-      USE W3GDATMD, ONLY : SIG, GTYPE, FLAGLL, MAPSTA, MAPST2
+      USE W3GDATMD, ONLY : SIG, GTYPE, FLAGLL, MAPSTA, MAPST2, IS2PARS
 !/T      USE W3ODATMD, ONLY : NDST
       USE NETCDF
       IMPLICIT NONE
@@ -1223,9 +1223,15 @@
 !/IS2              CALL W3S2XY (NSEA, NSEA, NX+1, NY, ICEF(1:NSEA), MAPSF, X1 )
 !/IS2              NFIELD=1
 !/IS2              VARNM(1)='ic5'
-!/IS2              VARNL(1)='maximum floe diameter'
-!/IS2              VARNS(1)='maximum_ice_floe_diameter'
-!/IS2              VARNG(1)='maximum_ice_floe_diameter'
+!/IS2              IF ( IS2PARS(25) .LT. 0.5 ) THEN
+!/IS2                VARNL(1)='maximum floe diameter'
+!/IS2                VARNS(1)='maximum_ice_floe_diameter'
+!/IS2                VARNG(1)='maximum_ice_floe_diameter'
+!/IS2              ELSE
+!/IS2                VARNL(1)='mean floe diameter'
+!/IS2                VARNS(1)='mean_ice_floe_diameter'
+!/IS2                VARNG(1)='mean_ice_floe_diameter'
+!/IS2                END IF
 !/IS2              VARNC(1)=''
 !/IS2              VARND(1)=''
 !/IS2              VMIN = 0

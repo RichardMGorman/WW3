@@ -1088,7 +1088,7 @@
 !/BS1      USE W3SBS1MD
 !/BSX      USE W3SBSXMD
 !/IS2      USE W3SIS2MD
-!/IS2      USE W3GDATMD, ONLY: IICEDISP
+!/IS2      USE W3GDATMD, ONLY: IICEDISP, IS2PARS
 !/XXX      USE W3SXXXMD
       USE W3PARTMD, ONLY: W3PART
       USE W3DISPMD, ONLY: WAVNU1, LIU_FORWARD_DISPERSION
@@ -1277,9 +1277,12 @@
             UDIRR    = WDO(J)
             UABS     = MAX ( 0.001 , WAO(J) )
             CDIR     = MOD ( 270. - CDO(J)*RADE , 360. )
-            ICEDMAX  = MAX ( 0., ICEFO(J))
-            ICEF     = ICEDMAX
-            ICETHICK = MAX (0., ICEHO(J))
+            ICEF     = MAX ( 0., ICEFO(J))
+            ICEDMAX  = ICEF
+!/IS2           IF ( IS2PARS(25) .GT. 0.5 ) THEN
+!/IS2             ICEDMAX = ICEF*(1.-IS2PARS(26)) + IS2PARS(27)*IS2PARS(26)
+!/IS2             END IF
+             ICETHICK = MAX (0., ICEHO(J))
             ICECON   = MAX (0., ICEO(J))
 !
 !/STAB2            STAB0  = ZWIND * GRAV / 273.

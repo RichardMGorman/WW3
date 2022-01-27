@@ -654,9 +654,10 @@
 !/IS2                                 IS2CONC, IS2CREEPB, IS2CREEPC,  &
 !/IS2                                 IS2CREEPD, IS2CREEPN, IS2BREAKE,&
 !/IS2                                 IS2WIM1, IS2BREAKF, IS2FLEXSTR, &
-!/IS2                                 IS2ANDISN, IS2ANDISE, IS2ANDISD
+!/IS2                                 IS2ANDISN, IS2ANDISE, IS2ANDISD,&
+!/IS2                                 IS2DMAXWT, IS2DMAXDEF
 !/IS2      LOGICAL                 :: IS2BREAK, IS2DISP, IS2DUPDATE,  &
-!/IS2                                 IS2ISOSCAT, IS2ANDISB
+!/IS2                                 IS2ISOSCAT, IS2ANDISB, IS2INDMEAN
 !
 !/REF1      REAL                    :: REFCOAST, REFFREQ, REFMAP,     &
 !/REF1                                 REFSUBGRID, REFRMAX, REFMAPD,  &
@@ -901,7 +902,7 @@
 !/IS2                           IS2DAMP, IS2DUPDATE, IS2CREEPB, IS2CREEPC,  &
 !/IS2                           IS2CREEPD, IS2CREEPN, IS2BREAKE, IS2BREAKF, &
 !/IS2                           IS2WIM1, IS2FLEXSTR, IS2ANDISB, IS2ANDISE, IS2ANDISD,   &
-!/IS2                           IS2ANDISN
+!/IS2                           IS2ANDISN, IS2INDMEAN, IS2DMAXWT, IS2DMAXDEF
 !/REF1           NAMELIST /REF1/ REFCOAST, REFFREQ, REFMAP,  REFMAPD,       &
 !/REF1                          REFSUBGRID, REFICEBERG,                     &
 !/REF1                          REFCOSP_STRAIGHT, REFSLOPE, REFRMAX,        &
@@ -2265,12 +2266,16 @@
 !/IS2      IS2ANDISE=0.55    !energy of activation
 !/IS2      IS2ANDISD=1.672E-9!
 !/IS2      IS2ANDISN=1.      !dependency on stress. Equal to 1 normally?
+!/IS2      IS2INDMEAN=.FALSE. ! ICEF is mean, rather than max, floe diameter
+!/IS2      IS2DMAXWT=0.5
+!/IS2      IS2DMAXDEF=1000.
 !/IS2      CALL READNL ( NDSS, 'SIS2', STATUS )
 !/IS2      WRITE (NDSO,947) STATUS
 !/IS2      WRITE (NDSO,2948) ISC1, IS2BACKSCAT, IS2ISOSCAT, IS2BREAK, IS2DUPDATE, IS2FLEXSTR, IS2DISP, &
 !/IS2        IS2DAMP, IS2FRAGILITY, IS2DMIN, IS2C2, IS2C3, IS2CONC, IS2CREEPB,&
 !/IS2        IS2CREEPC, IS2CREEPD, IS2CREEPN, IS2BREAKE, IS2BREAKF, IS2WIM1,  &
-!/IS2        IS2ANDISB, IS2ANDISE, IS2ANDISD, IS2ANDISN
+!/IS2        IS2ANDISB, IS2ANDISE, IS2ANDISD, IS2ANDISN, IS2INDMEAN,   &
+!/IS2        IS2DMAXWT, IS2DMAXDEF
 !
 !/REF1      REFCOAST=0.
 !/REF1      REFMAP=0.
@@ -2707,7 +2712,8 @@
 !/IS2                    IS2DUPDATE, IS2FLEXSTR, IS2DISP,  IS2DAMP, IS2FRAGILITY, IS2DMIN, IS2C2,   &
 !/IS2                    IS2C3, IS2CONC, IS2CREEPB, IS2CREEPC, IS2CREEPD,  &
 !/IS2                    IS2CREEPN, IS2BREAKE, IS2BREAKF, IS2WIM1, IS2ANDISB, &
-!/IS2                    IS2ANDISE, IS2ANDISD, IS2ANDISN
+!/IS2                    IS2ANDISE, IS2ANDISD, IS2ANDISN, IS2INDMEAN, &
+!/IS2                    IS3DMAXWT, IS2DMAXDEF
 !
 !/UOST         WRITE (NDSO, 4502) ADJUSTL(TRIM(UOSTFILELOCAL)), ADJUSTL(TRIM(UOSTFILESHADOW)), &
 !/UOST                   UOSTFACTORLOCAL, UOSTFACTORSHADOW
@@ -4654,6 +4660,10 @@
 !/IS2      IS2PARS(23)=0.
 !/IS2      IF (IS2ANDISB) IS2PARS(23)=1.
 !/IS2      IS2PARS(24)=IS2ANDISE
+!/IS2      IS2PARS(25)=0.
+!/IS2      IF (IS2INDMEAN) IS2PARS(25)=1.
+!/IS2      IS2PARS(26)=IS2DMAXWT
+!/IS2      IS2PARS(27)=IS2DMAXDEF
 !
 ! 9.d Estimates shoreline direction for reflection
 !     and shoreline treatment in general for UNST grids. 
@@ -5530,7 +5540,10 @@
 !/IS2              '        anelastic dissipation        : ',L3/   &
 !/IS2              '        energy of activation         : ',F5.2/ &
 !/IS2              '        anelastic coefficient        : ',E11.3/ &
-!/IS2              '        anelastic exponent           : ',F5.2)
+!/IS2              '        anelastic exponent           : ',F5.2/ &
+!/IS2              '     TRUE: ICEF is Dmean, not Dmax   : ',L3/   &
+!/IS2              '        Dmaxdef wt in Dmean -> Dmax  : ',F5.2/ &
+!/IS2              '        Dmaxdef                      : ',F5.2)
 !/IS2 2948 FORMAT ( '  &SIS2 ISC1 =',E9.3,', IS2BACKSCAT =',E9.3,   &
 !/IS2               ', IS2ISOSCAT =',L3,', IS2BREAK =',L3,          &
 !/IS2               ', IS2DUPDATE =',L3,','/                        &
@@ -5544,7 +5557,9 @@
 !/IS2               '       IS2BREAKE =',F5.2,                      &
 !/IS2               ', IS2BREAKF =',F5.2,', IS2WIM1 =',F5.2,','/    &
 !/IS2               ', IS2ANDISB =',L3,', IS2ANDISE =',F5.2,        &
-!/IS2               ', IS2ANDISD =',E11.3,', IS2ANDISN=',F5.2, ' /')
+!/IS2               ', IS2ANDISD =',E11.3,', IS2ANDISN=',F5.2, ' /' &
+!/IS2               ', IS2INDMEAN =',L3,', IS2DMAXWT =',F5.2,       &
+!/IS2               ', IS2DMAXDEF=',F5.2, ' /')
 !/UOST 4500 FORMAT (/' Unresolved Obstacles Source Term (UOST) ',A,/ &
 !/UOST              ' --------------------------------------------------')
 !/UOST 4501 FORMAT ('    local alpha-beta file:  ',A,    &

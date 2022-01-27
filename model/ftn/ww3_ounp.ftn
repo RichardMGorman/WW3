@@ -1419,7 +1419,8 @@
       USE NETCDF
 !/IG1       USE W3GIG1MD, ONLY: W3ADDIG
 !/IG1       USE W3CANOMD, ONLY: W3ADD2NDORDER
-
+!/IS2      USE W3GDATMD, ONLY : IS2PARS
+!
       IMPLICIT NONE
 
 !/
@@ -1671,9 +1672,13 @@
           UDIRR    = WDO(J)
           UABS     = MAX ( 0.001 , WAO(J) )
           CDIR     = MOD ( 270. - CDO(J)*RADE , 360. )
-!/IS2           ICEDMAX  = MAX ( 0., ICEFO(J))
-!/IS2           ICEF     = ICEDMAX
-          ICETHICK = MAX (0., ICEHO(J))
+!/IS2           ICEF  = MAX ( 0., ICEFO(J))
+!/IS2           IF ( IS2PARS(25) .LT. 0.5 ) THEN
+!/IS2             ICEDMAX = ICEF
+!/IS2           ELSE
+!/IS2             ICEDMAX = ICEF*(1.-IS2PARS(26)) + IS2PARS(27)*IS2PARS(26)
+!/IS2             END IF
+           ICETHICK = MAX (0., ICEHO(J))
           ICECON   = MAX (0., ICEO(J))
 !
 !/STAB2            STAB0  = ZWIND * GRAV / 273.

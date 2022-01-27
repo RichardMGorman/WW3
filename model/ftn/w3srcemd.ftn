@@ -191,7 +191,7 @@
 !       CX-Y    Real.  I   Current velocity components.   ( !/BS1 )
 !       ICE     Real   I   Sea ice concentration          
 !       ICEH    Real   I   Sea ice thickness 
-!       ICEF    Real  I/O  Sea ice maximum floe diameter  (updated)        
+!       ICEF    Real  I/O  Sea ice max or mean floe diameter  (updated)        
 !       ICEDMAX Real  I/O  Sea ice maximum floe diameter          
 !       BERG    Real   I   Iceberg damping coefficient    ( !/BS1 )
 !       REFLEC  R.A.   I   reflection coefficients        ( !/BS1 )
@@ -510,6 +510,7 @@
 !/ST4      LOGICAL                 :: LLWS(NSPEC)
 !/ST4      REAL                    :: BRLAMBDA(NSPEC)
 !/IS2      DOUBLE PRECISION        :: SCATSPEC(NTH) 
+!/IS2      REAL                    :: DMAX
       REAL                    :: FOUT(NK,NTH), SOUT(NK,NTH), DOUT(NK,NTH)
 !/FLD1     REAL, SAVE              :: TAUNUX, TAUNUY
 !/FLD2     REAL, SAVE              :: TAUNUX, TAUNUY
@@ -1359,7 +1360,12 @@
 !/IS2   DO IK=1,NK
 !/IS2     SMOOTH_ICEDISP=0. 
 !/IS2     IF (IS2PARS(14)*(TPI/WN_R(IK)).LT.ICEF) THEN ! IF ICE IS NOT TOO MUCH BROKEN
-!/IS2       SMOOTH_ICEDISP=TANH((ICEF-IS2PARS(14)*(TPI/WN_R(IK)))/(ICEF*IS2PARS(13))) 
+!/IS2        IF ( IS2PARS(25) .GT. 0.5 ) THEN
+!/IS2          DMAX = ICEF*(1.-IS2PARS(26)) + IS2PARS(27)*IS2PARS(26)
+!/IS2        ELSE
+!/IS2          DMAX = ICEF
+!/IS2          END IF
+!/IS2       SMOOTH_ICEDISP=TANH((DMAX-IS2PARS(14)*(TPI/WN_R(IK)))/(DMAX*IS2PARS(13))) 
 !/IS2       END IF
 !/IS2     WN_R(IK)=WN1(IK)*(1-SMOOTH_ICEDISP)+WN_R(IK)*(SMOOTH_ICEDISP)
 !/IS2     END DO

@@ -56,7 +56,7 @@
 !      WLV       R.A.  Public   Water levels.  
 !      ICE       R.A.  Public   Ice coverage.  
 !      ICEH      R.A.  Public   Ice thickness.
-!      ICEF      R.A.  Public   Ice flow maximum diameter. 
+!      ICEF      R.A.  Public   Ice flow maximum or mean diameter. 
 !      ICEDMAX   R.A.  Public   Ice flow maximum diameter for updates. 
 !      BERG      R.A.  Public   Iceberg damping.
 !      UST       R.A.  Public   Friction velocity (absolute).

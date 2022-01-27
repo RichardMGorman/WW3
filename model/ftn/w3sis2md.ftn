@@ -614,7 +614,7 @@ ELSE
 !       DEPTH   Real  I     Water depth
 !       CICE    Real  I     Sea ice concentration
 !       ICEH    Real  I     ice thickness
-!       ICEF    Real  I/O   Maximum floe size (updated)
+!       ICEF    Real  I/O   Maximum or mean floe size (updated)
 !       ICEDMAX Real  I     Maximum floe size
 !       IX,IY   Int   I     Not used
 !       S       R.A.  O     Source term (1-D version)
@@ -749,8 +749,6 @@ ELSE
         ENDIF
 
       WLG = TPI/WN
-      ICEF_CREEP=ICEF
-      DMAX = ICEF
       BRK_CRIT = .FALSE.
       NSUM = NINT(0.3/(XFR-1.))
 !    
@@ -758,21 +756,30 @@ ELSE
 
 ! Minimum floe size that can break 
       D_FLEX_FAIL =  0.5* ( (PI**4*YOUNG*ICEH**3)/( 48*DENS*GRAV*MP2 ) )**.25 
+      IF ( IS2PARS(25) .LT. 0.5 ) THEN
+        ICEF_CREEP=ICEF
+        DMAX = ICEF
 ! Estimates mean floe diameter from max floe diameter 
-      IF (DMAX.GT.NICED) THEN
-        ICEDAVE=DMAX
-      ELSE
-        IF (IS2PARS(9).GT.0) THEN
-          ICEDAVE= ICEDAVETAB(MAX(1,NINT(DMAX)))
-        ELSE 
-          DO IK=1,NK
-            IF (IS2PARS(14)*(TPI/WN_R(IK)).LT.DMAX) THEN
-              ICEDAVE(IK)=W3FSD_DAVE( (TPI/WN_R(IK))*IS2PARS(14),DMAX,IS2PARS(8))
-            ELSE 
-              ICEDAVE(IK)=DMAX
-              ENDIF 
-            END DO
+        IF (DMAX.GT.NICED) THEN
+          ICEDAVE=DMAX
+        ELSE
+          IF (IS2PARS(9).GT.0) THEN
+            ICEDAVE= ICEDAVETAB(MAX(1,NINT(DMAX)))
+          ELSE 
+            DO IK=1,NK
+              IF (IS2PARS(14)*(TPI/WN_R(IK)).LT.DMAX) THEN
+                ICEDAVE(IK)=W3FSD_DAVE( (TPI/WN_R(IK))*IS2PARS(14),DMAX,IS2PARS(8))
+              ELSE 
+                ICEDAVE(IK)=DMAX
+                ENDIF 
+              END DO
+            ENDIF
           ENDIF
+      ELSE
+        DMAX = ICEF*(1.-IS2PARS(26)) + IS2PARS(27)*IS2PARS(26)
+        ICEF_CREEP = DMAX
+        ICEDAVE = ICEF
+!
         ENDIF
 !
 !/T      SOUT  = 0.
@@ -889,9 +896,13 @@ ELSE
 !
 !  4. update of floe size 
 !      
-        IF (IS2PARS(10).LT.0.5) THEN ! resets max floe size to the last forcing or initial value
+        IF (IS2PARS(10).LT.0.5) THEN ! resets floe size to the last forcing or initial value
           DMAX = ICEDMAX
-          ICEF = ICEDMAX
+          IF ( IS2PARS(25) .GT. 0.5 ) THEN
+            ICEF = (DMAX - IS2PARS(27))/(1.-IS2PARS(26)) 
+          ELSE
+            ICEF = ICEDMAX
+            END IF
           END IF
 !
         DO IK = 1, NK 
@@ -947,7 +958,11 @@ ELSE
                     /(2.*(CURVSPEC(IKBREAK)+CURVSPEC(IKM1)+CURVSPEC(IKP1)))
               END IF
 !	
-            ICEF = DMAX
+            IF ( IS2PARS(25) .GT. 0.5 ) THEN
+              ICEF = (DMAX - IS2PARS(27))/(1.-IS2PARS(26)) 
+            ELSE
+              ICEF = DMAX
+              END IF
             END IF
           END IF  !end of test  (IS2PARS(3).GT.0.5)
 !
