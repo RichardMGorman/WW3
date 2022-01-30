@@ -776,7 +776,7 @@ ELSE
             ENDIF
           ENDIF
       ELSE
-        DMAX = ICEF*(1.-IS2PARS(26)) + IS2PARS(27)*IS2PARS(26)
+        DMAX = ICEF**(1.-IS2PARS(26)) * IS2PARS(27)**IS2PARS(26)
         ICEF_CREEP = DMAX
         ICEDAVE = ICEF
 !
@@ -899,7 +899,7 @@ ELSE
         IF (IS2PARS(10).LT.0.5) THEN ! resets floe size to the last forcing or initial value
           DMAX = ICEDMAX
           IF ( IS2PARS(25) .GT. 0.5 ) THEN
-            ICEF = (DMAX - IS2PARS(27))/(1.-IS2PARS(26)) 
+            ICEF = (DMAX/(IS2PARS(27)**IS2PARS(26)))**(1./(1.-IS2PARS(26))) 
           ELSE
             ICEF = ICEDMAX
             END IF
@@ -959,7 +959,7 @@ ELSE
               END IF
 !	
             IF ( IS2PARS(25) .GT. 0.5 ) THEN
-              ICEF = (DMAX - IS2PARS(27))/(1.-IS2PARS(26)) 
+              ICEF = (DMAX*(IS2PARS(27)**-IS2PARS(26)))**(1./(1.-IS2PARS(26))) 
             ELSE
               ICEF = DMAX
               END IF

@@ -1676,7 +1676,7 @@
 !/IS2           IF ( IS2PARS(25) .LT. 0.5 ) THEN
 !/IS2             ICEDMAX = ICEF
 !/IS2           ELSE
-!/IS2             ICEDMAX = ICEF*(1.-IS2PARS(26)) + IS2PARS(27)*IS2PARS(26)
+!/IS2             ICEDMAX = ICEF**(1.-IS2PARS(26)) * IS2PARS(27)**IS2PARS(26)
 !/IS2             END IF
            ICETHICK = MAX (0., ICEHO(J))
           ICECON   = MAX (0., ICEO(J))
