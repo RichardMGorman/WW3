@@ -5437,18 +5437,18 @@
 !/ST6  925 FORMAT ( '  normalise by threshold spectral density    :  ',A/&
 !/ST6               '  normalise by spectral density              :  ',A/&
 !/ST6               '  coefficient and exponent  for                 '/  &
-!/ST6               '   inherent breaking term a1, L as in (21)   : ',E9.3,I3/ &
-!/ST6               '   cumulative breaking term a2, M as in (22) : ',E9.3,I3/ &
+!/ST6               '   inherent breaking term a1, L as in (21)   : ',E10.3,I3/ &
+!/ST6               '   cumulative breaking term a2, M as in (22) : ',E10.3,I3/ &
 !/ST6               ' ')
-!/ST6 2924 FORMAT ( '  &SDS6 SDSET = ',L,', SDSA1 = ',E9.3,              &
-!/ST6               ', SDSA2 = ',E9.3,', SDSP1 = ',I2,', SDSP1 = ',      &
+!/ST6 2924 FORMAT ( '  &SDS6 SDSET = ',L,', SDSA1 = ',E10.3,              &
+!/ST6               ', SDSA2 = ',E10.3,', SDSP1 = ',I2,', SDSP1 = ',      &
 !/ST6               I2,' /'                                              )
 !/ST6
 !/ST6  937 FORMAT (/'  Swell dissipation ',A/                            &
 !/ST6               ' --------------------------------------------------')
 !/ST6  940 FORMAT ( '  subroutine W3SWL6 activated           : ',A/      &
-!/ST6               '   coefficient b1 ',A,                ' : ',E9.3/   )
-!/ST6 2937 FORMAT ( '  &SWL6 SWLB1 = ',E9.3,', CSTB1 = ',L,' /')
+!/ST6               '   coefficient b1 ',A,                ' : ',E10.3/   )
+!/ST6 2937 FORMAT ( '  &SWL6 SWLB1 = ',E10.3,', CSTB1 = ',L,' /')
 !
 !/STX  924 FORMAT (/'  Experimental dissipation.'/)
 !
@@ -5513,16 +5513,16 @@
 !/IS1 946 FORMAT  ('  Isotropic (linear function of ice concentration)'/&
 !/IS1              '        slope                      : ',E10.3/ &
 !/IS1              '        offset                     : ',E10.3)
-!/IS1 2946 FORMAT ( '  &SIS1 ISC1 =',E9.3,', ISC2 =',E9.3)
+!/IS1 2946 FORMAT ( '  &SIS1 ISC1 =',E10.3,', ISC2 =',E10.3)
 !/IS2 947 FORMAT  (/'  Ice scattering ',A,/ &
 !/IS2              ' --------------------------------------------------')
 !/IS2 948 FORMAT  ('  IS2 Scattering ... '/&
-!/IS2              '        scattering coefficient       : ',E9.3/ &
-!/IS2              '        0: no back-scattering        : ',E9.3/ &
+!/IS2              '        scattering coefficient       : ',E10.3/ &
+!/IS2              '        0: no back-scattering        : ',E10.3/ &
 !/IS2              '     TRUE: istropic back-scattering  : ',L3/   &
 !/IS2              '     TRUE: update of ICEDMAX         : ',L3/   &
 !/IS2              '     TRUE: keeps updated ICEDMAX     : ',L3/   &
-!/IS2              '        flexural strength            : ',E9.3/ &
+!/IS2              '        flexural strength            : ',E10.3/ &
 !/IS2              '     TRUE: uses Robinson-Palmer disp.: ',L3/   &
 !/IS2              '        attenuation                  : ',F5.2/ &
 !/IS2              '        fragility                    : ',F5.2/ &
@@ -5530,7 +5530,7 @@
 !/IS2              '        pack scattering coef 1       : ',F5.2/ &
 !/IS2              '        pack scattering coef 2       : ',F5.2/ &
 !/IS2              '        scaling by concentration     : ',F5.2/ &
-!/IS2              '        creep B coefficient          : ',E9.3/ &
+!/IS2              '        creep B coefficient          : ',E10.3/ &
 !/IS2              '        creep C coefficient          : ',F5.2/ &
 !/IS2              '        creep D coefficient          : ',F5.2/ &
 !/IS2              '        creep N power                : ',F5.2/ &
@@ -5544,7 +5544,7 @@
 !/IS2              '     TRUE: ICEF is Dmean, not Dmax   : ',L3/   &
 !/IS2              '        Dmaxdef wt in Dmean -> Dmax  : ',F5.2/ &
 !/IS2              '        Dmaxdef                      : ',F5.2)
-!/IS2 2948 FORMAT ( '  &SIS2 ISC1 =',E9.3,', IS2BACKSCAT =',E9.3,   &
+!/IS2 2948 FORMAT ( '  &SIS2 ISC1 =',E10.3,', IS2BACKSCAT =',E10.3,   &
 !/IS2               ', IS2ISOSCAT =',L3,', IS2BREAK =',L3,          &
 !/IS2               ', IS2DUPDATE =',L3,','/                        &
 !/IS2               '       IS2FLEXSTR =',E11.3,', IS2DISP =',L3,   &
