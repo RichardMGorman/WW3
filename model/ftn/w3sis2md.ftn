@@ -776,8 +776,8 @@ ELSE
             ENDIF
           ENDIF
       ELSE
-        DMAX = MAX(ICEF**(1.-IS2PARS(26)) * IS2PARS(27)**IS2PARS(26)
-        DMAX = MAX(DMAX,IS2PARS(9))
+        DMAX = MAX( ICEF**(1.-IS2PARS(26)) * IS2PARS(27)**IS2PARS(26), &
+                    IS2PARS(9))
         ICEF_CREEP = DMAX
         ICEDAVE = MAX(ICEF,IS2PARS(9))
 !
