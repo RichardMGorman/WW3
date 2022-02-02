@@ -367,7 +367,8 @@
 !/IS2          IF (IC2PARS(8).GT.0) THEN
 !/IS2            WLG_R(IK)=TPI/WN_R(IK) 
 !/IS2            IF ( IS2PARS(25) .GT. 0.5 ) THEN
-!/IS2              DMAX = ICEF**(1.-IS2PARS(26)) * IS2PARS(27)**IS2PARS(26)
+!/IS2              DMAX = MAX( ICEF**(1.-IS2PARS(26)) * IS2PARS(27)**IS2PARS(26), &
+!/IS2                          IS2PARS(9) )
 !/IS2            ELSE
 !/IS2              DMAX = ICEF
 !/IS2              END IF

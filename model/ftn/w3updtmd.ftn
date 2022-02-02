@@ -1261,8 +1261,9 @@
           ICEF(ISEA) = ICEP5(IX,IY)
           ICEDMAX(ISEA) = ICEP5(IX,IY)          
 !/IS2          IF ( IS2PARS(25).GT.0.5 )                              &
-!/IS2          ICEDMAX(ISEA) = ICEF(ISEA)**(1.-IS2PARS(26)) *         &
-!/IS2                          IS2PARS(27)**IS2PARS(26)
+!/IS2          ICEDMAX(ISEA) = MAX( ICEF(ISEA)**(1.-IS2PARS(26)) *    &
+!/IS2                               IS2PARS(27)**IS2PARS(26),         &
+!/IS2                               IS2PARS(9) )
          END IF
       END DO
 !

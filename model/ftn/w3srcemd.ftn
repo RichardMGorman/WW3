@@ -1361,7 +1361,8 @@
 !/IS2     SMOOTH_ICEDISP=0. 
 !/IS2     IF (IS2PARS(14)*(TPI/WN_R(IK)).LT.ICEF) THEN ! IF ICE IS NOT TOO MUCH BROKEN
 !/IS2        IF ( IS2PARS(25) .GT. 0.5 ) THEN
-!/IS2          DMAX = ICEF**(1.-IS2PARS(26)) * IS2PARS(27)**IS2PARS(26)
+!/IS2          DMAX = MAX( ICEF**(1.-IS2PARS(26)) * IS2PARS(27)**IS2PARS(26), &
+!/IS2                      IS2PARS(9) )
 !/IS2        ELSE
 !/IS2          DMAX = ICEF
 !/IS2          END IF
