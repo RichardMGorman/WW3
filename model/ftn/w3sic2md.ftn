@@ -234,7 +234,8 @@
       USE W3SERVMD, ONLY: EXTCDE
       USE W3DISPMD
       USE W3GDATMD, ONLY: NK, NTH, NSPEC, SIG, MAPWN, IC2PARS, DDEN,  & 
-                          FLAGLL, YGRD, GTYPE, RLGTYPE, IS2PARS
+                          FLAGLL, YGRD, GTYPE, RLGTYPE
+!/IS2      USE W3GDATMD, ONLY: IS2PARS
       USE W3IDATMD, ONLY: INFLAGS2,ICEP1,ICEP2,ICEP3,ICEP4,ICEP5,WLEV,&
                           ICEI
 !/T      USE W3ODATMD, ONLY: NDST
@@ -270,7 +271,7 @@
                                  SMOOTH, RE, UORB, AORB, EB,   &
                                  DELI1, DELI2, FW, XI, FTURB,  & 
                                  CG_EFF(NK), WLG_R(NK), SMOOTH_DMAX(NK)
-      REAL                    :: DMAX
+!/IS2      REAL                    :: DMAX
       INTEGER                 :: IND, ITH, IS
       LOGICAL                 :: NOICE=.FALSE.
         ! Warning, ALPHA = 2 * WN_I -> Makes WN_I useless, doesnt it ?
