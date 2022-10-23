@@ -648,7 +648,7 @@
 !/ Local parameters
 !
       REAL                  :: IC5MINIG, IC5MINWT, IC5MAXKRATIO, &
-                               IC5MAXKI, IC5MINHW
+                               IC5MAXKI, IC5MINHW, IC5VEMOD
       REAL                  :: TISMODG, TWT, TRATIO, THW
       REAL, PARAMETER       :: NU = 0.3, RHOW = 1025.
       COMPLEX               :: GV, C1, C2
