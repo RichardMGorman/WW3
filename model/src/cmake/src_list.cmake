@@ -30,6 +30,7 @@ set(ftn_src
   w3nmlounfmd.F90
   w3nmlounpmd.F90
   w3nmlprncmd.F90
+  w3nmlprnqmd.F90
   w3nmlshelmd.F90
   w3nmltrncmd.F90
   w3nmluprstrmd.F90
@@ -55,6 +56,8 @@ set(ftn_src
   wmupdtmd.F90
   wmwavemd.F90
   w3tidemd.F90
+  qa_utils.f90
+  svd_lapack.f90
   )
 
 # Built when PDLIB is enabled

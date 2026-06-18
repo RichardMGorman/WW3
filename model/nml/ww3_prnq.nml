@@ -1,0 +1,214 @@
+! -------------------------------------------------------------------- !
+! WAVEWATCH III - ww3_prnq.nml - Quadtree pre-processing               !
+! -------------------------------------------------------------------- !
+!
+!    Spatial interpolation from inputs on multiple regular grids
+!    to outputs on a quadtree structure
+!
+! -------------------------------------------------------------------- !
+! Define the rectilinear reference grid via the GRID_NML namelist
+!
+! * coordinate system can be :
+!    'SPHE' : Spherical (degrees)
+!    'CART' : Cartesian (meters)
+!
+! * grid closure can only be applied in spherical coordinates
+!
+! * grid closure can be :
+!    'NONE' : No closure is applied
+!    'SMPL' : Simple grid closure. Grid is periodic in the
+!           : i-index and wraps at i=NX+1. In other words,
+!           : (NX+1,J) => (1,J).
+!
+!  * Max number of levels to coarsen (LVLREFT) & refine (LVLMAX) 
+!    the reference grid
+!
+! * namelist must be terminated with /
+! * definitions & defaults:
+!     GRID%COORD            = 'unset'            ! coordinate system
+!     GRID%CLOS             = 'unset'            ! grid closure
+!     GRID%LVLREFT          =  0                 ! Max. number of levels to coarsen
+!     GRID%LVLMAX           =  0                 ! Max. number of levels to refine
+!
+! -------------------------------------------------------------------- !
+&GRID_NML
+  GRID%COORD             =  'SPHE'
+  GRID%CLOS              =  'NONE'
+  GRID%LVLREFT           =  3
+  GRID%LVLMAX            =  10
+/
+!
+! -------------------------------------------------------------------- !
+! Define the rectilinear reference grid parameters via RECT_NML namelist
+!
+! * The minimum grid size is 3x3.
+!
+! * If the grid increments SX and SY are given in minutes of arc, the scaling
+!   factor SF must be set to 60. to provide an increment factor in degree.
+!
+! * If CSTRG='SMPL', then SX is forced to 360/NX.
+!
+! * value <= value_read / scale_fac
+!
+! * namelist must be terminated with /
+! * definitions & defaults:
+!     RECT%NX               = 0        ! number of points along x-axis
+!     RECT%NY               = 0        ! number of points along y-axis
+!
+!     RECT%SX               = 0.       ! grid increment along x-axis
+!     RECT%SY               = 0.       ! grid increment along y-axis
+!     RECT%SF               = 1.       ! scaling division factor for x-y axis
+!
+!     RECT%X0               = 0.       ! x-coordinate of lower-left corner (deg)
+!     RECT%Y0               = 0.       ! y-coordinate of lower-left corner (deg)
+!     RECT%SF0              = 1.       ! scaling division factor for x0,y0 coord
+! -------------------------------------------------------------------- !
+&RECT_NML
+  RECT%NX               =  180
+  RECT%NY               =  210
+  RECT%SX               = 15.
+  RECT%SY               = 10.
+  RECT%SF               = 32.
+  RECT%X0               = 120.
+  RECT%Y0               = -70.
+  RECT%SF0              = 1.
+/
+! -------------------------------------------------------------------- !
+! Define the output file(s) via the FILE_NML namelist
+! * namelist must be terminated with /
+! * definitions & defaults:
+!  FILES%FILENAME    = 'unset'         ! Output file name
+!  FILES%OUTTYPE     = 1               ! file type = 1 for ASCII bathymetry & obstructions
+!                                      !           = 2 for netcdf time-dependent data
+!                                      ! if OUTTYPE=1, two further ASCII output files
+!                                      !                 are specified:
+!  FILES%OUTFILEC    = 'unset'         ! Output quadtree cell file
+!  FILES%OUTFILEQ    = 'unset'         ! Output quadtree quad file
+!
+! -------------------------------------------------------------------- !
+&FILE_NML
+  FILES%FILENAME    = 'NIWA_bathy_data_8.txt'
+  FILES%OUTTYPE     = 1
+  FILES%OUTFILEC    = 'NIWA_bathy_cell_8.txt'
+  FILES%OUTFILEQ    = 'NIWA_bathy_quad_8.txt'
+/
+! -------------------------------------------------------------------- !
+! Define the output variables via OUTVAR_COUNT_NML and
+!                                 OUTVAR_NML namelists
+! * namelist must be terminated with /
+! * definitions & defaults:
+!   OUTVAR_COUNT%NVAR    = 3   !  Number of variables to output 
+!
+!     for OUTTYPE=1, variables are:
+!                    * 'bed elevation' (if NVAR=1) 
+!                    * 'bed elevation' and 'obs' (if NVAR=2) 
+!                    * 'bed elevation', 'obs_x' and 'obs_y' (if NVAR=3) 
+!                    hence NVAR <= 3 
+!     for OUTTYPE=1, an arbitrary number of variables
+!                    may be processed, as specified 
+!                    in the OUTVAR_NML namelist:
+!         OUTVAR(IVAR)%OUTVARNAME, for IVAR=1,NVAR
+! -------------------------------------------------------------------- !
+&OUTVAR_COUNT_NML
+  OUTVAR_COUNT%NVAR    = 3
+/
+! -------------------------------------------------------------------- !
+!
+!&OUTVAR_COUNT_NML
+!  OUTVAR_COUNT%NVAR    = 2
+!/
+!&OUTVAR_NML
+!  OUTVAR(1)%OUTVARNAME        = 'wind_x'
+!  OUTVAR(2)%OUTVARNAME        = 'wind_y'
+!/
+! -------------------------------------------------------------------- !
+!
+!  Input files/grids are specified in the SUBGRID_COUNT_NML,
+!     SUBGRID_NML and SUBGRID_VAR_NML namelists
+!
+! -------------------------------------------------------------------- !
+! SUBGRID_COUNT_NML:
+! * namelist must be terminated with /
+! * definitions & defaults:
+!  SUBGRID_COUNT%NSUBGRID  =  0   !     Number of input (sub-)grids
+!
+&SUBGRID_COUNT_NML
+  SUBGRID_COUNT%NSUBGRID  =  3
+/
+! -------------------------------------------------------------------- !
+! SUBGRID_NML:
+! * namelist must be terminated with /
+! * definitions & defaults:
+!  DO I=1,SUBGRID_COUNT%NSUBGRID
+!     SUBGRID(I)%FILENAME      = 'unset'      ! Name of the input netcdf file for subgrid I
+!     SUBGRID(I)%IPSG          = 1            ! (if > 0): grid index of subgrid I's parent subgrid
+!                                               i.e. which of the grids specified previously that 
+!                                               this grid is contained within, at 
+!                                               finer resolution. 
+!     SUBGRID(I)%XYTDIMNAME(1) = 'longitude'  ! X/lon dimension name in this file
+!     SUBGRID(I)%XYTVARNAME(1) = 'longitude'  ! X/lon variable name in this file
+!     SUBGRID(I)%XYTDIMNAME(2) = 'latitude'   ! Y/lat dimension name in this file
+!     SUBGRID(I)%XYTVARNAME(2) = 'latitude'   ! Y/lat variable name in this file
+!        If OUTTYPE = 2, data are time-dependent, so also specify the following:
+!     SUBGRID(I)%XYTDIMNAME(3) = 'time'       ! time dimension name this file
+!     SUBGRID(I)%XYTVARNAME(3) = 'time'       ! time variable name in this file
+!     SUBGRID(I)%ITFIRST       = 1            ! first time index to read from this file
+!     SUBGRID(I)%ITLAST        = 1            ! last time index to read from this file
+!     SUBGRID(I)%ITSTEP        = 1            ! time index stride to read from this file
+!  END DO
+! -------------------------------------------------------------------- !
+&SUBGRID_NML
+   SUBGRID(1)%FILENAME      = 'global_17a.nc'
+   SUBGRID(1)%IPSG          = 0
+   SUBGRID(1)%XYTDIMNAME(1) = 'longitude'
+   SUBGRID(1)%XYTVARNAME(1) = 'longitude'
+   SUBGRID(1)%XYTDIMNAME(2) = 'latitude'
+   SUBGRID(1)%XYTVARNAME(2) = 'latitude'
+!   SUBGRID(1)%XYTDIMNAME(3) = 'time'
+!   SUBGRID(1)%XYTVARNAME(3) = 'time'
+!   SUBGRID(1)%ITFIRST  = 1
+!   SUBGRID(1)%ITLAST = 1
+!   SUBGRID(1)%ITSTEP = 1
+!
+   SUBGRID(2)%FILENAME      = 'nzwave_8a.nc'
+   SUBGRID(2)%IPSG          = 1
+   SUBGRID(2)%XYTDIMNAME(1) = 'longitude'
+   SUBGRID(2)%XYTVARNAME(1) = 'longitude'
+   SUBGRID(2)%XYTDIMNAME(2) = 'latitude'
+   SUBGRID(2)%XYTVARNAME(2) = 'latitude'
+!
+   SUBGRID(3)%FILENAME      = 'nzwave_2a.nc'
+   SUBGRID(3)%IPSG          = 2
+   SUBGRID(3)%XYTDIMNAME(1) = 'longitude'
+   SUBGRID(3)%XYTVARNAME(1) = 'longitude'
+   SUBGRID(3)%XYTDIMNAME(2) = 'latitude'
+   SUBGRID(3)%XYTVARNAME(2) = 'latitude'
+/
+! -------------------------------------------------------------------- !
+!
+! In the SUBGRID_VAR_NML namelist: 
+!    For each of the I=1,NSUBGRID subgrids:
+!       for each of the IVAR=1:NVAR output field variables:
+!        specify the name the corresponding variable has in this input file:
+! * definitions & defaults:
+!      DO IVAR=1,SUBGRID_COUNT%NSUBGRID
+!        DO IVAR=1,OUTVAR_COUNT%NVAR
+!          SUBGRID_VAR(I,IVAR)%VARNAME = 'unset'
+!        END DO
+!      END DO
+!
+&SUBGRID_VAR_NML
+   SUBGRID_VAR(1,1)%VARNAME       = 'bed_elev'
+   SUBGRID_VAR(1,2)%VARNAME       = 'obs_x'
+   SUBGRID_VAR(1,3)%VARNAME       = 'obs_y'
+   SUBGRID_VAR(2,1)%VARNAME       = 'bed_elev'
+   SUBGRID_VAR(2,2)%VARNAME       = 'obs_x'
+   SUBGRID_VAR(2,3)%VARNAME       = 'obs_y'
+   SUBGRID_VAR(3,1)%VARNAME       = 'bed_elev'
+   SUBGRID_VAR(3,2)%VARNAME       = 'obs_x'
+   SUBGRID_VAR(3,3)%VARNAME       = 'obs_y'
+/
+
+! -------------------------------------------------------------------- !
+! WAVEWATCH III - end of namelist                                      !
+! -------------------------------------------------------------------- !
