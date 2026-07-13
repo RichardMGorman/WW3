@@ -63,6 +63,7 @@ PROGRAM W3STRT
   !/    06-Mar-2012 : Hardening output.                   ( version 4.07 )
   !/    06-Jun-2018 : Add DEBUGINIT/EXPORTWWM             ( version 6.04 )
   !/    04-Jul-2025 : Remove labelled statements          ( version X.XX )
+  !/    07-Jul-2026 : Include quadtrees (R.Gorman)        ( version X.XX )
   !/
   !/
   !/    Copyright 2009-2012 National Weather Service (NWS),
@@ -139,6 +140,7 @@ PROGRAM W3STRT
   !      PRTBLK    Subr.   Id.    Print plot of array.
   !      WAVNU1    Subr. W3DISPMD Solve dispersion relation.
   !      W3IOGR    Subr. W3IOGRMD Reading/writing model definition file.
+  !      W3STQT    Subr. W3ADGRMD Initial wave quadtree
   !      W3IORS    Subr. W3IORSMD Reading/writing restart files.
   !      W3DIST    Subr. W3GSRUMD Compute distance between two points.
   !      MPI_xxx   Subr. mpif.h   Standard MPI routines.
@@ -246,6 +248,7 @@ PROGRAM W3STRT
 #ifdef W3_MPI
   use mpi_f08
 #endif
+  USE W3ADGRMD
   !/
   IMPLICIT NONE
   !
@@ -310,6 +313,11 @@ PROGRAM W3STRT
   !
   FLOGRR(:,:) = .FALSE.
   !
+  ! Quadtree grids
+  !
+  IQGW = 1
+  IQGB = 2
+  !
   NDSTRC =  6
   NTRACE = 10
   CALL ITRACE ( NDSTRC, NTRACE )
@@ -356,6 +364,33 @@ PROGRAM W3STRT
   CALL W3IOGR ( 'READ', NDSM )
   !
   IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,902) GNAME
+  !
+  ! 2.b Quadtree options
+  !
+  IF ( GTYPE.EQ.QAGTYPE ) THEN
+  !
+  ! Save parameters of the bathymetry quadtree
+    NCMXQ(IQGB) = NSEA
+    NQMXQ(IQGB) = NQUAD
+  !
+  ! Read user quadtree options
+    CALL NEXTLN ( COMSTR , NDSI , NDSEN )
+    READ (NDSI,*,IOSTAT=IERR) NSTGT
+    IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3STRT','INPUT',12)
+  !
+  ! Create a wave quadtree from the bathy quadtree, reduced down 
+  ! to the required limits
+    CALL W3STQT ( NSTGT, NDSEN, IERR, NDST )
+    IF ( IERR.NE.0 ) THEN
+      IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,1004) IERR
+      CALL EXTCDE ( 14 )
+    END IF
+  !
+    IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,920) NSTGT,           &
+         NCTARGET_QA, DVTOLFAC_QA, DVMAX_QA/DVTOLFAC_QA,       &
+         DVMAX_QA, NSEA, NQUAD
+  !
+  END IF
   !
   ! 2.b MPP initializations
   !
@@ -417,37 +452,39 @@ PROGRAM W3STRT
       NOSIX=.TRUE.
     END IF
 
-    HPQMAX=-999.0
-    DO JSEA=1, NSEAL
+    IF ( GTYPE.NE.QAGTYPE ) THEN
+      HPQMAX=-999.0
+      DO JSEA=1, NSEAL
 #ifdef W3_DIST
-      ISEA   = IAPROC + (JSEA-1)*NAPROC
+        ISEA   = IAPROC + (JSEA-1)*NAPROC
 #endif
 #ifdef W3_SHRD
-      ISEA   = JSEA
+        ISEA   = JSEA
 #endif
-      IX     = MAPSF(ISEA,1)
-      IY     = MAPSF(ISEA,2)
-      IF(HPFAC(IY,IX).GT.HPQMAX)THEN
-        HPQMAX=HPFAC(IY,IX)
-      ENDIF
-    END DO
-    SIX = MAX(0.01*HPQMAX,SIX)
+        IX     = MAPSF(ISEA,1)
+        IY     = MAPSF(ISEA,2)
+        IF(HPFAC(IY,IX).GT.HPQMAX)THEN
+          HPQMAX=HPFAC(IY,IX)
+        ENDIF
+      END DO
+      SIX = MAX(0.01*HPQMAX,SIX)
 
-    HPQMAX=-999.0
-    DO JSEA=1, NSEAL
+      HPQMAX=-999.0
+      DO JSEA=1, NSEAL
 #ifdef W3_DIST
-      ISEA   = IAPROC + (JSEA-1)*NAPROC
+        ISEA   = IAPROC + (JSEA-1)*NAPROC
 #endif
 #ifdef W3_SHRD
-      ISEA   = JSEA
+        ISEA   = JSEA
 #endif
-      IX     = MAPSF(ISEA,1)
-      IY     = MAPSF(ISEA,2)
-      IF(HQFAC(IY,IX).GT.HPQMAX)THEN
-        HPQMAX=HQFAC(IY,IX)
-      ENDIF
-    END DO
-    SIY = MAX(0.01*HPQMAX,SIY)
+        IX     = MAPSF(ISEA,1)
+        IY     = MAPSF(ISEA,2)
+        IF(HQFAC(IY,IX).GT.HPQMAX)THEN
+          HPQMAX=HQFAC(IY,IX)
+        ENDIF
+      END DO
+      SIY = MAX(0.01*HPQMAX,SIY)
+    END IF
 
     HMAX   = MAX ( 0. , HMAX )
     !
@@ -618,38 +655,39 @@ PROGRAM W3STRT
       NOSIX=.TRUE.
     END IF
 
-    HPQMAX=-999.0
-    DO JSEA=1, NSEAL
+    IF ( GTYPE.NE.QAGTYPE ) THEN
+      HPQMAX=-999.0
+      DO JSEA=1, NSEAL
 #ifdef W3_DIST
-      ISEA   = IAPROC + (JSEA-1)*NAPROC
+        ISEA   = IAPROC + (JSEA-1)*NAPROC
 #endif
 #ifdef W3_SHRD
-      ISEA   = JSEA
+        ISEA   = JSEA
 #endif
-      IX     = MAPSF(ISEA,1)
-      IY     = MAPSF(ISEA,2)
-      IF(HPFAC(IY,IX).GT.HPQMAX)THEN
-        HPQMAX=HPFAC(IY,IX)
-      ENDIF
-    END DO
-    SIX = MAX(0.01*HPQMAX,SIX)
+        IX     = MAPSF(ISEA,1)
+        IY     = MAPSF(ISEA,2)
+        IF(HPFAC(IY,IX).GT.HPQMAX)THEN
+          HPQMAX=HPFAC(IY,IX)
+        ENDIF
+      END DO
+      SIX = MAX(0.01*HPQMAX,SIX)
 
-    HPQMAX=-999.0
-    DO JSEA=1, NSEAL
+      HPQMAX=-999.0
+      DO JSEA=1, NSEAL
 #ifdef W3_DIST
-      ISEA   = IAPROC + (JSEA-1)*NAPROC
+        ISEA   = IAPROC + (JSEA-1)*NAPROC
 #endif
 #ifdef W3_SHRD
-      ISEA   = JSEA
+        ISEA   = JSEA
 #endif
-      IX     = MAPSF(ISEA,1)
-      IY     = MAPSF(ISEA,2)
-      IF(HQFAC(IY,IX).GT.HPQMAX)THEN
-        HPQMAX=HQFAC(IY,IX)
-      ENDIF
-    END DO
-    SIY = MAX(0.01*HPQMAX,SIY)
-
+        IX     = MAPSF(ISEA,1)
+        IY     = MAPSF(ISEA,2)
+        IF(HQFAC(IY,IX).GT.HPQMAX)THEN
+          HPQMAX=HQFAC(IY,IX)
+        ENDIF
+      END DO
+      SIY = MAX(0.01*HPQMAX,SIY)
+    END IF
     DO
       IF ( THM .LT. 0. ) THEN
         THM    = THM + 360.
@@ -946,6 +984,16 @@ PROGRAM W3STRT
        '  WW3 will create a gaussian distribution    '/       &
        '  that is circular in real space. ')
   !
+920 FORMAT (/'  Initial wave quadtree parameters:'/                 &
+             '       Target No. of cells (user)        :',I8/       &
+             '       Target No. of cells (final)       :',I8/       &
+             '       Max./Min. diagnostic var. ratio   :',E12.4/    &
+             '       Min. value of diagnostic variable :',E12.4/    &
+             '       Max. value of diagnostic variable :',E12.4/    &
+             '       Final No. of cells                :',I8/       &
+             '       Final No. of quads                :',I8/       &
+             ' --------------------------------------------------')
+  !
 930 FORMAT (/'  Initial field ITYPE =',I2/                          &
        ' --------------------------------------------------')
   !
@@ -1009,6 +1057,9 @@ PROGRAM W3STRT
 1003 FORMAT (/' *** WAVEWATCH III ERROR IN W3STRT : '/               &
        '     NUMBER OF SEA POINTS LESS THAN NUMBER OF PROC.'/ &
        '     NSEA, NAPROC =',2I8/)
+1004 FORMAT (/' *** WAVEWATCH III ERROR IN W3STRT : '/               &
+              '     ERROR IN W3STQT'/                                &
+              '     IOSTAT =',I5/)
 #endif
   !/
   !/ End of W3STRT ----------------------------------------------------- /

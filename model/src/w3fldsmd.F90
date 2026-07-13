@@ -938,7 +938,7 @@ CONTAINS
 #ifdef W3_OASIS
        , COUPL_COMM                                 &
 #endif
-       )
+       , FLQA, NEW_QT, QTREE )
     !/
     !/                  +-----------------------------------+
     !/                  | WAVEWATCH III           NOAA/NCEP |
@@ -958,6 +958,7 @@ CONTAINS
     !/    22-Mar-2021 : adds momentum and density input     ( version 7.13 )
     !/    13-Aug-2021 : Allow scalar fields to be time      ( version 7.14 )
     !/                  interpolated
+    !/    24-Jun-2026 : Incorporate quadtrees. (R.Gorman)   ( version X.XX )
     !/
     !  1. Purpose :
     !
@@ -1005,8 +1006,12 @@ CONTAINS
     !                           6 : Premature EOF reading field.
     !                           7 : Error reading field.
     !       FLAGSC  Log.  I/O  Flag for coupling field
-    !       COUPL_COMM Int. I  MPI communicator for coupling
+    !       COUPL_COMM Int. I* MPI communicator for coupling
+    !       FLQA    Log.   I*  Flag for quadtree grid type
+    !       NEW_QT  Log.  I/O* Flag for new quadtree data read/written
+    !       QTREE QA_TREE I/O* Input/output quadtrees
     !     ----------------------------------------------------------------
+    !                        *=optional
     !
     !  4. Subroutines used :
     !
@@ -1068,6 +1073,7 @@ CONTAINS
     USE W3ODATMD, ONLY: DTOUT
     use mpi_f08,  ONLY: MPI_COMM
 #endif
+    USE QA_UTILS
     IMPLICIT NONE
     !/
     !/ ------------------------------------------------------------------- /
@@ -1087,7 +1093,10 @@ CONTAINS
     type(MPI_COMM), INTENT(IN), OPTIONAL :: COUPL_COMM
 #endif
 
-    !/
+    LOGICAL, OPTIONAL, INTENT(IN)    :: FLQA
+    LOGICAL, OPTIONAL, INTENT(INOUT) :: NEW_QT
+    TYPE(QA_TREE), OPTIONAL, INTENT(INOUT) :: QTREE(:)
+
     !/ ------------------------------------------------------------------- /
     !/ Local parameters
     !/
@@ -1099,6 +1108,8 @@ CONTAINS
     LOGICAL                 :: WRITE, FL2D, FLFRST, FLBE, FLST,    &
                                FLINTERP, FLCOUPL
     LOGICAL, PARAMETER      :: FLAGSC_DEFAULT = .FALSE.
+    LOGICAL                 :: IS_QA, NQT
+    INTEGER                 :: IQIN
     !/
     !/ ------------------------------------------------------------------- /
     !/
@@ -1158,6 +1169,17 @@ CONTAINS
     IF (FLCOUPL) FLINTERP = .FALSE.
 
     FLFRST = TFN(1) .EQ. -1
+!
+! Quadtree options
+!
+    IS_QA = .FALSE.
+    IF ( PRESENT(FLQA) ) IS_QA = FLQA
+    IF ( IS_QA ) THEN
+       NQT = PRESENT(QTREE)
+       IQIN = 0
+       IF ( NQT ) IQIN = MAX(IQIN,SIZE(QTREE,1))
+       IF ( PRESENT(NEW_QT) ) NQT = ( NEW_QT .AND. NQT )
+    END IF      
     !
 #ifdef W3_T
     WRITE (NDST,9001) WRITE, FL2D, FLBE, FLST, FLFRST
@@ -1190,6 +1212,11 @@ CONTAINS
               END DO
             END IF
           END DO
+          IF ( IS_QA ) THEN
+            ! Copy quadtree grids
+            IF ( PRESENT(QTREE) .AND. IQIN.GT.1 )          &
+                CALL QA_CPQT ( QTREE(IQIN), QTREE(1) )
+          END IF
 #ifdef W3_T
         ELSE
           WRITE (NDST,9021)
@@ -1207,10 +1234,32 @@ CONTAINS
         WRITE (NDST,9030) TF0
 #endif
         WRITE (NDS,IOSTAT=ISTAT) TF0
-        IF (IERR.NE.0) THEN
+        IF (ISTAT.NE.0) THEN
           IF ( NDSE .GE. 0 ) WRITE (NDSE,1003) ISTAT
           IERR   = 3
           RETURN
+        END IF
+        !
+        ! For a QA grid:
+        IF ( IS_QA ) THEN
+          ! write flag specifying if updated quadtree grid follows
+          J = 4
+          WRITE (NDS,IOSTAT=ISTAT) NQT
+          IF (ISTAT.NE.0) THEN
+            IF ( NDSE .GE. 0 ) WRITE (NDSE,1004) J, ISTAT
+            IERR   = 4
+            RETURN
+          END IF
+          IF ( NQT ) THEN
+            ! write the new quadtree grid
+            J = 5
+            CALL QA_IOQT( NDS, QTREE(1), 1, ISTAT, ndse=0 )
+            IF ( ISTAT.NE.0 ) THEN
+              IF ( NDSE .GE. 0 ) WRITE (NDSE,1004) J, ISTAT
+              IERR   = 4
+              RETURN
+            END IF
+          END IF
         END IF
         IF ( .NOT. FL2D ) THEN
           J      = 1
@@ -1308,6 +1357,39 @@ CONTAINS
 #ifdef W3_T
           WRITE (NDST,9031) TFN
 #endif
+          !
+          ! Quadtree data
+          IF ( IS_QA ) THEN
+            ! read flag specifying if updated quadtree grid follows
+            J = 4
+            READ (NDS,IOSTAT=ISTAT) NQT
+            IF (ISTAT .GT. 0) THEN
+              ! Error reading the file
+              IF ( NDSE .GE. 0 ) WRITE (NDSE,1007) J, ISTAT
+              IERR   = 7
+              RETURN
+            ELSE IF (ISTAT .LT. 0) THEN
+              ! Reached end of file
+              IF ( NDSE .GE. 0 ) WRITE (NDSE,1006) J, ISTAT
+              IERR   = -6
+            END IF
+            IF ( PRESENT(NEW_QT) ) NEW_QT = NQT
+            IF ( NQT ) THEN
+              ! read the new quadtree grid
+              J = 5
+              CALL QA_IOQT( NDS, QTREE(IQIN), -1, ISTAT, ndse=0 )
+              IF (ISTAT .GT. 0) THEN
+                ! Error reading the file
+                IF ( NDSE .GE. 0 ) WRITE (NDSE,1007) J, ISTAT
+                IERR   = 7
+                RETURN
+              ELSE IF (ISTAT .LT. 0) THEN
+                ! Reached end of file
+                IF ( NDSE .GE. 0 ) WRITE (NDSE,1006) J, ISTAT
+                IERR   = -6
+              END IF
+            END IF
+          END IF
           IF ( .NOT. FL2D ) THEN
             ! note: "J" here does *not* refer to data type, wlev etc.
             !       It refers to the dimension.
@@ -1409,6 +1491,11 @@ CONTAINS
           END DO
         END IF
       END DO
+      IF ( IS_QA ) THEN
+        ! Copy quadtree grids
+        IF ( PRESENT(QTREE) .AND. IQIN.GT.1 )                   &
+             CALL QA_CPQT ( QTREE(IQIN), QTREE(1) )
+      END IF
       !
     END IF
     !

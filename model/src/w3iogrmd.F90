@@ -192,6 +192,7 @@ CONTAINS
     !/    07-07-2021  : S_{nl} GKE NL5 (Q. Liu)             ( version 7.12 )
     !/    19-Jul-2021 : Momentum and air density support    ( version 7.14 )
     !/    04-Jul-2025 : Remove labelled statements          ( version X.XX )
+    !/    19-Jun-2026 : Include quadtrees (R.Gorman)        ( version X.XX )
     !/
     !/    Copyright 2009-2013 National Weather Service (NWS),
     !/       National Oceanic and Atmospheric Administration.  All rights
@@ -316,6 +317,7 @@ CONTAINS
 #ifdef W3_MPI
     use mpi_f08
 #endif
+    USE QA_UTILS
     !/
     !/ ------------------------------------------------------------------- /
     !/ Parameter list
@@ -873,6 +875,23 @@ CONTAINS
              DXYMAX, INDEX_CELL, CCON, COUNTCON, IE_CELL,     &
              POS_CELL, IOBP, IOBPA, IOBDP, IOBPD, IAA, JAA, POSI
 #endif
+      CASE ( QAGTYPE )
+        WRITE (NDSM)                                          &
+             SX, SY, X0, Y0, NQUAD
+        CALL QA_IOQT( NDSM, QTREE(IQGB), 1, IERR, ndse=NDSE )
+        IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3IOGR',        &
+                      'mod_def.'//FILEXT(:IEXT),51)
+#ifdef W3_ASCII
+        WRITE (NDSA,*)                                        &
+             'SX, SY, X0, Y0, NQUAD:',                        &
+             SX, SY, X0, Y0, NQUAD
+        CALL QA_IOQT( NDSA, QTREE(IQGB), 3, IERR, ndse=NDSE )
+        IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3IOGR',        &
+                       'mod_def.'//FILEXT(:IEXT)//'.txt',51)
+        CALL QA_IOQT( NDSA, QTREE(IQGB), 4, IERR, ndse=NDSE )
+        IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3IOGR',        &
+                       'mod_def.'//FILEXT(:IEXT)//'.txt',51)
+#endif
       END SELECT !GTYPE
       !
       WRITE (NDSM)                                            &
@@ -1033,10 +1052,21 @@ CONTAINS
              POS_CELL, IOBP, IOBPA, IOBDP, IOBPD, IAA, JAA, POSI
         IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3IOGR','mod_def.'//FILEXT(:IEXT),51)
         call print_memcheck(memunit, 'memcheck_____:'//' WIOGR SECTION 6')
+      CASE ( QAGTYPE )
+        READ (NDSM,IOSTAT=IERR)                               &
+                   SX, SY, X0, Y0, NQUAD
+        IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3IOGR','mod_def.'//FILEXT(:IEXT),51)
+        CALL W3QALL( IQGB, NSEA, NQUAD, 0, 0 )
+        CALL QA_IOQT( NDSM, QTREE(IQGB), -1, IERR, ndse=NDSE )
+        IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3IOGR','mod_def.'//FILEXT(:IEXT),51)
+        DO IX=1,NX
+          XGRD(1,IX) = X0 + (QTREE(IQGB)%XYVAL(IX,1)-1.)*SX
+          YGRD(1,IX) = Y0 + (QTREE(IQGB)%XYVAL(IX,2)-1.)*SY
+        END DO
 
       END SELECT !GTYPE
       !
-      IF (GTYPE.NE.UNGTYPE) CALL W3GNTX ( IGRD, NDSE, NDST )
+      IF (GTYPE.NE.UNGTYPE .AND. GTYPE.NE.QAGTYPE) CALL W3GNTX ( IGRD, NDSE, NDST )
       READ (NDSM,IOSTAT=IERR)   &
            ZB, MAPTMP, MAPFS, MAPSF, TRFLAG
       IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3IOGR','mod_def.'//FILEXT(:IEXT),51)

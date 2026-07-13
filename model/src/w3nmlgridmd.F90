@@ -137,6 +137,14 @@ MODULE W3NMLGRIDMD
     TYPE(NML_SMC_FILE_T)        :: AJSID
   END TYPE NML_SMC_T
 
+  ! quad structure
+  TYPE NML_QUAD_T
+    CHARACTER(256)              :: QAFILEC
+    CHARACTER(256)              :: QAFILEQ
+    INTEGER                     :: IDF
+  END TYPE NML_QUAD_T
+
+
   ! depth structure
   TYPE NML_DEPTH_T
     REAL                        :: SF
@@ -246,11 +254,11 @@ MODULE W3NMLGRIDMD
 CONTAINS
   !/ ------------------------------------------------------------------- /
   SUBROUTINE W3NMLGRID (NDSI, INFILE, NML_SPECTRUM, NML_RUN,           &
-       NML_TIMESTEPS, NML_GRID, NML_RECT, NML_CURV,   &
-       NML_UNST, NML_SMC, NML_DEPTH, NML_MASK,        &
-       NML_OBST, NML_SLOPE, NML_SED, NML_INBND_COUNT, &
-       NML_INBND_POINT, NML_EXCL_COUNT,               &
-       NML_EXCL_POINT, NML_EXCL_BODY,                 &
+       NML_TIMESTEPS, NML_GRID, NML_RECT, NML_CURV,      &
+       NML_UNST, NML_SMC, NML_QUAD, NML_DEPTH, NML_MASK, &
+       NML_OBST, NML_SLOPE, NML_SED, NML_INBND_COUNT,    &
+       NML_INBND_POINT, NML_EXCL_COUNT,                  &
+       NML_EXCL_POINT, NML_EXCL_BODY,                    &
        NML_OUTBND_COUNT, NML_OUTBND_LINE, IERR)
     !/
     !/                  +-----------------------------------+
@@ -284,6 +292,7 @@ CONTAINS
     !      NML_CURV          Type
     !      NML_UNST          Type
     !      NML_SMC           Type
+    !      NML_QUAD          Type
     !      NML_DEPTH         Type
     !      NML_MASK          Type
     !      NML_OBST          Type
@@ -320,6 +329,8 @@ CONTAINS
     !      REPORT_UNST_NML
     !      READ_SMC_NML
     !      REPORT_SMC_NML
+    !      READ_QUAD_NML
+    !      REPORT_QUAD_NML
     !      READ_DEPTH_NML
     !      REPORT_DEPTH_NML
     !      READ_MASK_NML
@@ -378,6 +389,7 @@ CONTAINS
     TYPE(NML_CURV_T), INTENT(INOUT)             :: NML_CURV
     TYPE(NML_UNST_T), INTENT(INOUT)             :: NML_UNST
     TYPE(NML_SMC_T), INTENT(INOUT)              :: NML_SMC
+    TYPE(NML_QUAD_T), INTENT(INOUT)             :: NML_QUAD
     TYPE(NML_DEPTH_T), INTENT(INOUT)            :: NML_DEPTH
     TYPE(NML_MASK_T), INTENT(INOUT)             :: NML_MASK
     TYPE(NML_OBST_T), INTENT(INOUT)             :: NML_OBST
@@ -446,6 +458,10 @@ CONTAINS
     ! read smc namelist
     CALL READ_SMC_NML (NDSI, NML_SMC)
     CALL REPORT_SMC_NML (NML_SMC)
+
+    ! read quad namelist
+    CALL READ_QUAD_NML (NDSI, NML_QUAD)
+    CALL REPORT_QUAD_NML (NML_QUAD)
 
     ! read depth namelist
     CALL READ_DEPTH_NML (NDSI, NML_DEPTH)
@@ -1411,6 +1427,110 @@ CONTAINS
     NML_SMC = SMC
 
   END SUBROUTINE READ_SMC_NML
+
+  !/ ------------------------------------------------------------------- /
+
+
+  !/ ------------------------------------------------------------------- /
+
+  SUBROUTINE READ_QUAD_NML (NDSI, NML_QUAD)
+    !/
+    !/                  +-----------------------------------+
+    !/                  | WAVEWATCH III           NOAA/NCEP |
+    !/                  |           M. Accensi              |
+    !/                  |                                   |
+    !/                  |                        FORTRAN 90 |
+    !/                  | Last update :         15-May-2018 |
+    !/                  +-----------------------------------+
+    !/
+    !  1. Purpose :
+    !
+    !
+    !  2. Method :
+    !
+    !     See source term routines.
+    !
+    !  3. Parameters :
+    !
+    !     Parameter list
+    !     ----------------------------------------------------------------
+    !      NDSI             Int.
+    !      NML_QUAD         Type.
+    !     ----------------------------------------------------------------
+    !
+    !  4. Subroutines used :
+    !
+    !      Name      TYPE  Module   Description
+    !     ----------------------------------------------------------------
+    !      STRACE    Subr. W3SERVMD SUBROUTINE tracing.
+    !     ----------------------------------------------------------------
+    !
+    !  5. Called by :
+    !
+    !      Name      TYPE  Module   Description
+    !     ----------------------------------------------------------------
+    !      W3NMLGRID Subr.   N/A    Namelist configuration routine.
+    !     ----------------------------------------------------------------
+    !
+    !  6. Error messages :
+    !
+    !     None.
+    !
+    !  7. Remarks :
+    !
+    !  8. Structure :
+    !
+    !     See source code.
+    !
+    !  9. Switches :
+    !
+    ! 10. Source code :
+    !
+    !/ ------------------------------------------------------------------- /
+
+    USE W3ODATMD, ONLY: NDSE
+    USE W3SERVMD, ONLY: EXTCDE
+#ifdef W3_S
+    USE W3SERVMD, ONLY: STRACE
+#endif
+
+    IMPLICIT NONE
+
+    INTEGER, INTENT(IN)                  :: NDSI
+    TYPE(NML_QUAD_T), INTENT(INOUT)      :: NML_QUAD
+
+    ! locals
+    INTEGER                   :: IERR
+    TYPE(NML_QUAD_T) :: QUAD
+    NAMELIST /QUAD_NML/ QUAD
+#ifdef W3_S
+    INTEGER, SAVE                           :: IENT = 0
+#endif
+
+    IERR = 0
+#ifdef W3_S
+    CALL STRACE (IENT, 'READ_QUAD_NML')
+#endif
+
+    ! set default values for quad structure
+    QUAD%QAFILEC         = 'unset'
+    QUAD%QAFILEQ         = 'unset'
+    QUAD%IDF             = 20
+
+    ! read quad namelist
+    REWIND (NDSI)
+    READ (NDSI, nml=QUAD_NML, iostat=IERR, iomsg=MSG)
+    IF (IERR.GT.0) THEN
+      WRITE (NDSE,'(A,/A)') &
+           'ERROR: READ_QUAD_NML: namelist read error', &
+           'ERROR: '//TRIM(MSG)
+      CALL EXTCDE (7)
+    END IF
+
+    ! save namelist
+    NML_QUAD = QUAD
+
+  END SUBROUTINE READ_QUAD_NML
 
   !/ ------------------------------------------------------------------- /
 
@@ -3184,8 +3304,88 @@ CONTAINS
   !/ ------------------------------------------------------------------- /
 
 
+  SUBROUTINE REPORT_QUAD_NML (NML_QUAD)
+    !/
+    !/                  +-----------------------------------+
+    !/                  | WAVEWATCH III           NOAA/NCEP |
+    !/                  |           M. Accensi              |
+    !/                  |                        FORTRAN 90 |
+    !/                  | Last update :         15-May-2018 |
+    !/                  +-----------------------------------+
+    !/
+    !/
+    !  1. Purpose :
+    !
+    !
+    !  2. Method :
+    !
+    !     See source term routines.
+    !
+    !  3. Parameters :
+    !
+    !     Parameter list
+    !     ----------------------------------------------------------------
+    !      NML_QUAD  Type.
+    !     ----------------------------------------------------------------
+    !
+    !  4. Subroutines used :
+    !
+    !      Name      TYPE  Module   Description
+    !     ----------------------------------------------------------------
+    !      STRACE    Subr. W3SERVMD SUBROUTINE tracing.
+    !     ----------------------------------------------------------------
+    !
+    !  5. Called by :
+    !
+    !      Name      TYPE  Module   Description
+    !     ----------------------------------------------------------------
+    !      W3NMLGRID Subr.   N/A    Namelist configuration routine.
+    !     ----------------------------------------------------------------
+    !
+    !  6. Error messages :
+    !
+    !     None.
+    !
+    !  7. Remarks :
+    !
+    !  8. Structure :
+    !
+    !     See source code.
+    !
+    !  9. Switches :
+    !
+    ! 10. Source code :
+    !
+    !/ ------------------------------------------------------------------- /
+
+#ifdef W3_S
+    USE W3SERVMD, ONLY: STRACE
+#endif
+
+    IMPLICIT NONE
+
+    TYPE(NML_QUAD_T), INTENT(IN) :: NML_QUAD
+#ifdef W3_S
+    INTEGER, SAVE                           :: IENT = 0
+#endif
+
+#ifdef W3_S
+    CALL STRACE (IENT, 'REPORT_QUAD_NML')
+#endif
+
+    WRITE (MSG,'(A)') 'QUAD % '
+    WRITE (NDSN,'(A)')
+    WRITE (NDSN,10) TRIM(MSG),'QAFILEC   = ', TRIM(NML_QUAD%QAFILEC)
+    WRITE (NDSN,10) TRIM(MSG),'QAFILEQ   = ', TRIM(NML_QUAD%QAFILEQ)
+    WRITE (NDSN,11) TRIM(MSG),'IDF       = ', NML_QUAD%IDF
 
 
+10  FORMAT (A,2X,A,A)
+11  FORMAT (A,2X,A,I8)
+13  FORMAT (A,2X,A,L1)
+14  FORMAT (A,2X,A,F8.2)
+
+  END SUBROUTINE REPORT_QUAD_NML
 
   !/ ------------------------------------------------------------------- /
 

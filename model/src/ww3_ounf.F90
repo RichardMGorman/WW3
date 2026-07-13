@@ -210,6 +210,7 @@ PROGRAM W3OUNF
        FL_DEFAULT_GBL_META, COORDS_ATTR
   !
   USE NETCDF
+  USE
 
 #ifdef W3_SMC
   USE W3SMCOMD, SMCNOVAL=>NOVAL
@@ -282,6 +283,10 @@ PROGRAM W3OUNF
   NDSTRC =  6
   NTRACE = 10
   CALL ITRACE ( NDSTRC, NTRACE )
+  !
+  ! Quadtree indices
+  IQGB = 1
+  IQGW = 2
   !
 #ifdef W3_S
   CALL STRACE (IENT, 'W3OUNF')
@@ -846,7 +851,7 @@ CONTAINS
   !> @author M. Accensi
   !> @date 22-Mar-2021
   !>
-  SUBROUTINE W3EXNC ( NX, NY, IX1, IXN, IY1, IYN, NSEA,             &
+  SUBROUTINE W3EXNC ( NX, NY, IX1, IXNM, IY1, IYN, NSEA,             &
        FILEPREFIX, E3DF, P2MSF, US3DF, USSPF,NCTYPE, &
        TOGETHER, NCVARTYPEI, FLG2D, NCIDS, S3, STRSTOPDATE )
     !/
@@ -940,6 +945,7 @@ CONTAINS
     USE W3GDATMD, ONLY : SIG, GTYPE, FLAGLL, MAPSTA, MAPST2
     USE W3GDATMD, ONLY : NK, UNGTYPE, MAPSF, NTRI, CLGTYPE, RLGTYPE, &
          XGRD, YGRD, SX, SY, X0, Y0, TRIGP, USSP_WN
+    USE W3GDATMD, ONLY : QAGTYPE, IQGW, QTREE
 #ifdef W3_RTD
     ! Rotated pole data from the mod_def file
     USE W3GDATMD, ONLY : POLAT, POLON, FLAGUNR, AnglD
@@ -954,7 +960,7 @@ CONTAINS
     !/ ------------------------------------------------------------------- /
     !/ Parameter list
     !/
-    INTEGER, INTENT(IN)     :: NX, NY, IX1, IXN, IY1, IYN, NSEA,     &
+    INTEGER, INTENT(IN)     :: NX, NY, IX1, IXNM, IY1, IYN, NSEA,     &
          E3DF(3,5), P2MSF(3), US3DF(3),        &
          USSPF(2), NCTYPE, NCVARTYPEI
     CHARACTER(30)           :: FILEPREFIX
@@ -1023,7 +1029,9 @@ CONTAINS
 #ifdef W3_T
     LOGICAL                 :: LTEMP(NGRPP)
 #endif
-
+    REAL,DIMENSION(:,:),  ALLOCATABLE  :: LON_BND, LAT_BND
+    DOUBLE PRECISION        :: DXYFAC
+    INTEGER                 :: LVLR, IXN
     TYPE(META_T)            :: META(3)
     !TYPE(META_T)            :: META
     !/
@@ -1098,10 +1106,13 @@ CONTAINS
     ! 1.1 Set-up transfer files
     MFILL  = NF90_FILL_SHORT
     MFILLR  = NF90_FILL_FLOAT
-    IF (GTYPE.NE.UNGTYPE) THEN
-      COORDTYPE=1
-    ELSE
+    IF (GTYPE.EQ.UNGTYPE) THEN
       COORDTYPE=2
+    ELSE IF (GTYPE.EQ.QAGTYPE) THEN
+      COORDTYPE=3
+      IXN = MIN(IXNM, NSEA)
+    ELSE
+      COORDTYPE=1
     ENDIF
 
     ! 1.2 Sets the date as ISO8601 convention
@@ -2065,9 +2076,16 @@ CONTAINS
               DIMLN(4)=0
               EXTRADIM=0
             END IF
-
-            ! If regular grid, initializes the lat/lon or x/y dimension lengths
-            IF (GTYPE.NE.UNGTYPE) THEN
+            !
+            IF (GTYPE.EQ.UNGTYPE) THEN 
+            ! If unstructured mesh, initializes the nelem,tri dimension lengths
+              DIMLN(2)=IXN-IX1+1
+              DIMLN(3)=NTRI
+            ELSEIF (GTYPE.EQ.QAGTYPE) THEN 
+            ! If quadtree mesh, initializes the node and nbound dimension lengths
+              DIMLN(2)=IXN-IX1+1
+              DIMLN(3)=2
+            ELSE
               IF( SMCGRD ) THEN
 #ifdef W3_SMC
                 IF( SMCOTYPE .EQ. 1 ) THEN
@@ -2082,13 +2100,11 @@ CONTAINS
                 ENDIF ! SMCOTYPE
 #endif
               ELSE ! SMCGRD
+
+            ! If regular grid, initializes the lat/lon or x/y dimension lengths
                 DIMLN(2)=IXN-IX1+1
                 DIMLN(3)=IYN-IY1+1
               ENDIF ! SMCGRD
-              ! If unstructured mesh, initializes the nelem,tri dimension lengths
-            ELSE
-              DIMLN(2)=IXN-IX1+1
-              DIMLN(3)=NTRI
             ENDIF
 
             ! Defines index of first field variable
@@ -2151,7 +2167,7 @@ CONTAINS
 
               ! If NOT unstructure mesh (i.e. regular grid)
               !! CHRISB: VARNM for lat/lon not actually used below.
-              !              IF (GTYPE.NE.UNGTYPE) THEN
+              !              IF (GTYPE.NE.UNGTYPE .AND. GTYPE.NE.QAGTYPE) THEN
               !                ! If spherical coordinate
               !                IF (FLAGLL) THEN
               !                  VARNM(NFIELD+1)='Longitude'
@@ -2383,6 +2399,48 @@ CONTAINS
                        'longitude_resolution','n/a')
                   CALL CHECK_ERR(IRET)
                 ENDIF
+              ELSE IF (GTYPE.EQ.QAGTYPE) THEN 
+              ! ... or quadtree
+                IF (.NOT.ALLOCATED(LON_BND)) ALLOCATE(LON_BND(NX,2))
+                IF (.NOT.ALLOCATED(LAT_BND)) ALLOCATE(LAT_BND(NX,2))
+                SXD=DBLE(0.000001d0*DNINT(1d6*(DBLE(SX)) ))
+                SYD=DBLE(0.000001d0*DNINT(1d6*(DBLE(SY)) ))
+                X0D=DBLE(0.000001d0*DNINT(1d6*(DBLE(X0)) ))
+                Y0D=DBLE(0.000001d0*DNINT(1d6*(DBLE(Y0)) ))
+                LVLR = QTREE(IQGW)%LVLREF
+                DO ISEA=1,NSEA
+                   lon(ISEA) = REAL( X0D +                             &
+                       SXD*( DBLE(QTREE(IQGW)%XYVAL(ISEA,1)) - 1.D0 ) )
+                   lat(ISEA) = REAL( Y0D +                             &
+                       SYD*( DBLE(QTREE(IQGW)%XYVAL(ISEA,2)) - 1.D0 ) )
+                   DXYFAC = 2.D0**(LVLR - QTREE(IQGW)%INDLVL(ISEA) - 1)
+                   LON_BND(ISEA,1) = LON(ISEA) - DXYFAC*SXD*CLATS(ISEA)
+                   LON_BND(ISEA,2) = LON(ISEA) + DXYFAC*SXD*CLATS(ISEA)
+                   LAT_BND(ISEA,1) = LAT(ISEA) - DXYFAC*SYD
+                   LAT_BND(ISEA,2) = LAT(ISEA) + DXYFAC*SYD
+                END DO
+                DIMLN(2)=NSEA
+                DIMLN(3)=2
+                WRITE(STR2,*) SY
+                STR2=ADJUSTL(STR2)
+                IF (FLAGLL) THEN
+                   IRET=NF90_PUT_ATT(NCID,NF90_GLOBAL,                &
+                         'reference_grid_latitude_resolution', TRIM(str2))
+                ELSE
+                   iret=nf90_put_att(ncid,NF90_GLOBAL,                 &
+                      'reference_grid_y_resolution', TRIM(str2))
+                END IF
+                CALL CHECK_ERR(IRET)
+                WRITE(str2,*) SX 
+                STR2=ADJUSTL(STR2)
+                IF (FLAGLL) THEN
+                   iret=nf90_put_att(ncid,NF90_GLOBAL,                 &
+                      'reference_grid_longitude_resolution',TRIM(str2))
+                ELSE
+                   iret=nf90_put_att(ncid,NF90_GLOBAL,                 &
+                      'reference_grid_x_resolution', TRIM(str2))
+                END IF
+                CALL CHECK_ERR(IRET)
               END IF
 
               ! Finishes declaration part in file by adding geographical bounds
@@ -2505,6 +2563,18 @@ CONTAINS
                 CALL CHECK_ERR(IRET)
               END IF
 
+              ! If quadtree mesh
+              IF (GTYPE.EQ.QAGTYPE) THEN 
+                iret=nf90_put_var(ncid,varid(1),lon(IX1:IXN))
+                call check_err(iret)
+                iret=nf90_put_var(ncid,varid(2),lat(IX1:IXN))
+                call check_err(iret)
+                iret=nf90_put_var(ncid,varid(4+extradim),LON_BND(IX1:IXN,:))
+                call check_err(iret)
+                iret=nf90_put_var(ncid,varid(5+extradim),LAT_BND(IX1:IXN,:))
+                call check_err(iret)
+              END IF
+
               ! Writes frequencies to netcdf file
               IF (EXTRADIM.EQ.1) THEN
                 ALLOCATE(FREQ(I2F-I1F+1))
@@ -2535,7 +2605,7 @@ CONTAINS
                 START(2)=1
                 COUNT(1)=IXN-IX1+1
                 COUNT(2)=IYN-IY1+1
-                IF (GTYPE.NE.UNGTYPE) THEN
+                IF (GTYPE.NE.UNGTYPE .AND. GTYPE.NE.QAGTYPE) THEN
                   IRET=NF90_PUT_VAR(NCID,VARID(20),MAPOUT(IX1:IXN,IY1:IYN), &
                        (/START(1:2)/),(/COUNT(1:2)/))
                 ELSE
@@ -2651,8 +2721,22 @@ CONTAINS
               IF (GTYPE.EQ.UNGTYPE) THEN
                 IRET=NF90_INQ_VARID (NCID, 'tri', VARID(4))
                 CALL CHECK_ERR(IRET)
-                ! If it is a regular grid
+              ELSE IF (GTYPE.EQ.QAGTYPE) THEN
+              ! If it is a quadtree mesh
+                iret=NF90_INQ_DIMID (ncid, 'node', dimid(2))
+                iret=NF90_INQ_DIMID (ncid, 'nbound', dimid(3))
+                ! If it is spherical coordinate
+                IF (FLAGLL) THEN
+                  IRET=NF90_INQ_VARID (NCID, 'longitude', varid(1))
+                  IRET=NF90_INQ_VARID (NCID, 'latitude', varid(2))
+                ! If it is cartesian coordinate
+                ELSE
+                  IRET=NF90_INQ_VARID (NCID, 'x', varid(1))
+                  IRET=NF90_INQ_VARID (NCID, 'y', varid(1))
+                END IF 
+                CALL CHECK_ERR(IRET)
               ELSE
+                ! If it is a regular grid
                 ! If it is spherical coordinate
                 IF (FLAGLL) THEN
 #ifdef W3_SMC
@@ -3279,7 +3363,7 @@ CONTAINS
   SUBROUTINE W3CRNC (NCFILE, NCID, DIMID, DIMLN, VARID,  &
        EXTRADIM, NCTYPE, MAPSTAOUT )
     !
-    USE W3GDATMD, ONLY : GTYPE, FLAGLL, UNGTYPE, CLGTYPE, RLGTYPE
+    USE W3GDATMD, ONLY : GTYPE, FLAGLL, UNGTYPE, CLGTYPE, RLGTYPE, QAGTYPE
 #ifdef W3_RTD
     ! Rotated pole parameters from the mod_def file
     USE W3GDATMD, ONLY : POLAT, POLON
@@ -3321,10 +3405,24 @@ CONTAINS
     !
     IRET = NF90_DEF_DIM(NCID, 'level', DIMLN(1), DIMID(1))
 
-    !
-    ! Regular structured case
-    !
     IF (GTYPE.NE.UNGTYPE) THEN
+      !
+      ! Unstructured case
+      !
+      IRET = NF90_DEF_DIM(NCID, 'node', DIMLN(2), DIMID(2))
+      IRET = NF90_DEF_DIM(NCID, 'element', DIMLN(3), DIMID(3))
+      CALL CHECK_ERR(IRET)
+    ELSE IF (GTYPE.EQ.QAGTYPE) THEN 
+      !
+      ! Quadtree case
+      !
+        IRET = NF90_DEF_DIM(NCID, 'node', DIMLN(2), DIMID(2))
+        IRET = NF90_DEF_DIM(NCID, 'nbound', DIMLN(3), DIMID(3))
+        CALL CHECK_ERR(IRET)
+    ELSE
+      !
+      ! Regular structured case
+      !
       IF (FLAGLL) THEN
 #ifdef W3_SMC
         IF(SMCGRD .AND. SMCOTYPE .EQ. 1) THEN
@@ -3342,13 +3440,6 @@ CONTAINS
         IRET = NF90_DEF_DIM(NCID, 'x', DIMLN(2), DIMID(2))
         IRET = NF90_DEF_DIM(NCID, 'y', DIMLN(3), DIMID(3))
       END IF
-      CALL CHECK_ERR(IRET)
-      !
-      ! Unstructured case
-      !
-    ELSE
-      IRET = NF90_DEF_DIM(NCID, 'node', DIMLN(2), DIMID(2))
-      IRET = NF90_DEF_DIM(NCID, 'element', DIMLN(3), DIMID(3))
       CALL CHECK_ERR(IRET)
     ENDIF
     !
@@ -3661,11 +3752,48 @@ CONTAINS
       IF (NCTYPE.EQ.4) IRET = NF90_DEF_VAR_DEFLATE(NCID, VARID(4), 1, 1, DEFLATE)
     END IF
     !
+    ! lon/x and lat/y bounds for quadtree grids
+    !
+    IF (GTYPE.EQ.QAGTYPE) THEN
+      IF (FLAGLL) THEN 
+        ivar=4+extradim
+        iret = nf90_def_var(ncid, 'longitude_bounds', nf90_float,   &
+                       (/ dimid(2), dimid(3)/), varid(ivar))
+        iret=nf90_put_att(ncid,varid(ivar),'units','degree_east')
+        iret=nf90_put_att(ncid,varid(ivar),'long_name',             &
+                          'longitude of cell walls')
+    !
+        ivar=5+extradim
+        iret = nf90_def_var(ncid, 'latitude_bounds', nf90_float,    &
+                       (/ dimid(2), dimid(3)/), varid(ivar))
+        iret=nf90_put_att(ncid,varid(ivar),'units','degree_north')
+        iret=nf90_put_att(ncid,varid(ivar),'long_name',             &
+                         'latitude of cell walls')
+      ELSE
+        ivar=4+extradim
+        iret = nf90_def_var(ncid, 'x_bounds', nf90_float,           &
+                       (/ dimid(2), dimid(3)/), varid(ivar))
+        iret=nf90_put_att(ncid,varid(ivar),'units','m')
+        iret=nf90_put_att(ncid,varid(ivar),'long_name',             &
+                          'x coordinate of cell walls')
+        !ivar=5+extradim
+        iret = nf90_def_var(ncid, 'y_bounds', nf90_float,           &
+                       (/ dimid(2), dimid(3)/), varid(ivar))
+        iret=nf90_put_att(ncid,varid(ivar),'units','m')
+        iret=nf90_put_att(ncid,varid(ivar),'long_name',             &
+                            'y coordinate of cell walls')
+      END IF
+    END IF
+    !
     !  Status map: useful for grid combination
     !
     IF (MAPSTAOUT) THEN
       IF (GTYPE.EQ.UNGTYPE) THEN
         IRET = NF90_DEF_VAR(NCID,'MAPSTA', NF90_SHORT,(/ DIMID(2) /), VARID(20))
+      ELSEIF (GTYPE.EQ.QAGTYPE) THEN 
+        IVAR=6+EXTRADIM
+        IRET = NF90_DEF_VAR(NCID,'MAPSTA', NF90_SHORT,               &
+                            (/ DIMID(2) /), VARID(IVAR)) 
       ELSE
         IRET = NF90_DEF_VAR(NCID,'MAPSTA', NF90_SHORT,(/ DIMID(2) , DIMID(3) /), &
              VARID(20))

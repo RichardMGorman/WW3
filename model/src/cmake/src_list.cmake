@@ -56,6 +56,7 @@ set(ftn_src
   wmupdtmd.F90
   wmwavemd.F90
   w3tidemd.F90
+  w3adgrmd.F90
   qa_utils.f90
   svd_lapack.f90
   )

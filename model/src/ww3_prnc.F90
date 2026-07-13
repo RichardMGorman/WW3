@@ -47,6 +47,8 @@ PROGRAM W3PRNC
   !/    21-Apr-2020 : Correction in scale factor          ( version 7.13 )
   !/    22-Mar-2021 : Add momentum and air density        ( version 7.13 )
   !/    04-Jul-2025 : Remove labelled statements          ( version X.XX )
+  !/    08-Jul-2026 : Allow for quadtrees, arbitrary      ( version X.XX )
+  !/                  time/spatial dim & var names (R. Gorman)
   !/
   !/    Copyright 2009 National Weather Service (NWS),
   !/       National Oceanic and Atmospheric Administration.  All rights
@@ -230,6 +232,7 @@ PROGRAM W3PRNC
 #ifdef W3_MPI
   use mpi_f08
 #endif
+  USE QA_UTILS
   !
   IMPLICIT NONE
   !/
@@ -365,6 +368,20 @@ PROGRAM W3PRNC
   CHARACTER*21            :: FNAMETXT
 #endif
   !
+  LOGICAL                 :: DEFAULT_TVAR, DEFAULT_SPVARS
+  CHARACTER(LEN=1024)     :: STRVARSNAME
+  CHARACTER(LEN=100)      :: SPVARSNAME(2)
+  CHARACTER(LEN=100)      :: TDIMNAME
+  CHARACTER(LEN=100)      :: TVARNAME
+  INTEGER                 :: NISPVARS
+  ! Quadtree variables
+  LOGICAL                 :: NEW_QT, FLQA
+  INTEGER                 :: MX, MY, MYOUT, NFILE
+  INTEGER                 :: IQGI, LVCELL, ISTAT(2)
+  INTEGER                 :: IQUAD, ISUB, ISEA
+  REAL                    :: XTARG, YTARG, XCELL, YCELL
+  INTEGER,  ALLOCATABLE   :: NEWCELL(:)
+  !
   EQUIVALENCE              ( NXI , NXJ(1) ) , ( NYI , NYJ(1) )
   !/
   !/ ------------------------------------------------------------------- /
@@ -455,20 +472,24 @@ PROGRAM W3PRNC
   !
   IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,900)
   !
-
+  ! Indices for input and bathymetry quadtree structures
+  IQGB = 1
+  IQGI = 2
   !
   !--- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   ! 2.  Read model definition file.
   !
   CALL W3IOGR ( 'READ', NDSM )
   IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,902) GNAME
-  ALLOCATE ( IX21(NX,NY), IX22(NX,NY), IY21(NX,NY), IY22(NX,NY),  &
-       JX21(NX,NY), JX22(NX,NY), JY21(NX,NY), JY22(NX,NY),  &
-       MAPOVR(NX,NY) )
-  ALLOCATE ( RD11(NX,NY), RD21(NX,NY), RD12(NX,NY), RD22(NX,NY),  &
-       XD11(NX,NY), XD21(NX,NY), XD12(NX,NY), XD22(NX,NY),  &
-       FX(NX,NY), FY(NX,NY), FA(NX,NY),                     &
-       A1(NX,NY), A2(NX,NY), A3(NX,NY) )
+  MX = NX
+  MY = NY
+  ALLOCATE ( IX21(MX,MY), IX22(MX,MY), IY21(MX,MY), IY22(MX,MY),  &
+             JX21(MX,MY), JX22(MX,MY), JY21(MX,MY), JY22(MX,MY),  &
+             MAPOVR(MX,MY) )
+  ALLOCATE ( RD11(MX,MY), RD21(MX,MY), RD12(MX,MY), RD22(MX,MY),  &
+             XD11(MX,MY), XD21(MX,MY), XD12(MX,MY), XD22(MX,MY),  &
+             FX(MX,MY), FY(MX,MY), FA(MX,MY),                     &
+             A1(MX,MY), A2(MX,MY), A3(MX,MY) )
   !
   !--- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   ! 3. Read types and variables from input file.
@@ -593,7 +614,13 @@ PROGRAM W3PRNC
     DO I=1,2
       IF (LEN_TRIM(DIMSNAME(I)).NE.0) NIDIMS=NIDIMS+1
     END DO
-
+    !
+    DEFAULT_TVAR = .TRUE.
+    TDIMNAME='time'
+    TVARNAME='time'
+    DEFAULT_SPVARS = .TRUE.
+    SPVARSNAME(1)=NML_FILE%LONGITUDE
+    SPVARSNAME(2)=NML_FILE%LATITUDE
 
     ! Check time start and stop
     READ(NML_FORCING%TIMESTART,*) TIMESTART
@@ -693,6 +720,14 @@ PROGRAM W3PRNC
     ELSE IF (IDTYPE.EQ.'F2') THEN
       ITYPE   = 4
       NFCOMP = 2
+    ELSE IF (IDTYPE.EQ.'LX') THEN
+      ITYPE   = 2
+      DEFAULT_SPVARS = .FALSE.
+      DEFAULT_TVAR = .FALSE.
+    ELSE IF (IDTYPE.EQ.'AX') THEN
+      ITYPE   = 7
+      DEFAULT_SPVARS = .FALSE.
+      DEFAULT_TVAR = .FALSE.
     ELSE
       WRITE (NDSE,1031) IDTYPE
       CALL EXTCDE ( 31 )
@@ -710,6 +745,40 @@ PROGRAM W3PRNC
     DO I=1,2
       IF (LEN_TRIM(DIMSNAME(I)).NE.0) NIDIMS=NIDIMS+1
     END DO
+    !
+    IF ( DEFAULT_SPVARS ) THEN
+      SPVARSNAME(1) = 'longitude'
+      SPVARSNAME(2) = 'latitude'
+    ELSE
+    !
+    ! Read the spatial variable names
+      CALL NEXTLN ( COMSTR , NDSI , NDSE )
+      READ (NDSI,'(A)',IOSTAT=IERR) STRVARSNAME
+      IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3PRNC','INPUT',41)
+    !
+      SPVARSNAME(:)=''
+      CALL STRSPLIT(STRVARSNAME,SPVARSNAME)
+    ! Counts the number of spatial variables
+      NISPVARS=0
+      DO I=1,2
+        IF (LEN_TRIM(SPVARSNAME(I)).NE.0) NISPVARS=NISPVARS+1
+      ENDDO
+    END IF
+    !
+    IF ( DEFAULT_TVAR ) THEN
+      TDIMNAME = 'time'
+      TVARNAME = 'time'
+    ELSE
+    ! Read the time dimension name
+      CALL NEXTLN ( COMSTR , NDSI , NDSE )
+      READ (NDSI,'(A)',IOSTAT=IERR) TDIMNAME
+      IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3PRNC','INPUT',41)
+    !
+    ! Read the time variable name
+      CALL NEXTLN ( COMSTR , NDSI , NDSE )
+      READ (NDSI,'(A)',IOSTAT=IERR) TVARNAME
+      IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3PRNC','INPUT',41)
+    END IF
     !
     CALL NEXTLN ( COMSTR , NDSI , NDSE )
     READ (NDSI,'(A)',IOSTAT=IERR) STRFIELDSNAME
@@ -813,7 +882,8 @@ PROGRAM W3PRNC
 
   ! instanciates time
   REFDATE(:)=0.
-  IRET=NF90_INQ_VARID(NCID,"time",VARIDTMP)
+  IRET=NF90_INQ_VARID(NCID,TRIM(TVARNAME),VARIDTMP)
+  IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"time",VARIDTMP)
   IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"MT",VARIDTMP)
   CALL CHECK_ERR(IRET)
   IRET=NF90_GET_ATT(NCID,VARIDTMP,"calendar",CALENDAR)
@@ -894,7 +964,11 @@ PROGRAM W3PRNC
     ALLOCATE (ALA(NXI,NYI))
     ALLOCATE (ALO(NXI,NYI))
     ! get longitude
-    IRET=NF90_INQ_VARID(NCID,"longitude",VARIDTMP)
+#ifdef W3_T
+    WRITE(NDST,*) 'TEST WW3_PRNC: INQ. ',SPVARSNAME(1)
+#endif
+    IRET=NF90_INQ_VARID(NCID,TRIM(SPVARSNAME(1)),VARIDTMP)
+    IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"longitude",VARIDTMP)
     IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"lon",VARIDTMP)
     IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"Longitude",VARIDTMP)
     IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"x",VARIDTMP)
@@ -920,7 +994,11 @@ PROGRAM W3PRNC
       call CHECK_ERR(IRET)
     END IF
     ! get latitude
-    IRET=NF90_INQ_VARID(NCID,"latitude",VARIDTMP)
+#ifdef W3_T
+    WRITE(NDST,*) 'TEST WW3_PRNC: INQ. ',SPVARSNAME(2)
+#endif
+    IRET=NF90_INQ_VARID(NCID,TRIM(SPVARSNAME(2)),VARIDTMP)
+    IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"latitude",VARIDTMP)
     IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"lat",VARIDTMP)
     IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"Latitude",VARIDTMP)
     IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"y",VARIDTMP)
@@ -960,6 +1038,11 @@ PROGRAM W3PRNC
       !
       RW(1) = FACTOR*X0        ; RW(2) = FACTOR*MAXX
       RW(3) = FACTOR*Y0        ; RW(4) = FACTOR*MAXY
+    ELSE IF ( GTYPE.EQ.QAGTYPE ) THEN
+      RW(1) = FACTOR*MINVAL(XGRD(1,:)) 
+      RW(2) = FACTOR*MAXVAL(XGRD(1,:)) 
+      RW(3) = FACTOR*MINVAL(YGRD(1,:))
+      RW(4) = FACTOR*MAXVAL(YGRD(1,:))
     ELSE
       RW(1) = FACTOR*XGRD(1,1) ; RW(2) = FACTOR*XGRD(NY,NX)
       RW(3) = FACTOR*YGRD(1,1) ; RW(4) = FACTOR*YGRD(NY,NX)
@@ -1028,7 +1111,7 @@ PROGRAM W3PRNC
   !
   IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,940)
   !
-  IF (ITYPE.NE.1 .AND. ITYPE.NE.5 .AND. ITYPE.NE.6 ) THEN
+  IF (ITYPE.NE.1 .AND. ITYPE.NE.5 .AND. ITYPE.NE.6 .AND. ITYPE.NE.7) THEN
     !
     ! 6.a Longitude - latitude grid
     !
@@ -1057,7 +1140,7 @@ PROGRAM W3PRNC
 #ifdef W3_T1
       WRITE (NDST,9045)
 #endif
-      IF (GTYPE .NE. UNGTYPE) THEN
+      IF (GTYPE .NE. UNGTYPE .AND. GTYPE.NE.QAGTYPE) THEN
         DO IY=1,NY
           DO IX=1,NX
             INGRID = W3GRMP( GSI, REAL(XGRD(IY,IX)), REAL(YGRD(IY,IX)),      &
@@ -1090,7 +1173,7 @@ PROGRAM W3PRNC
 #endif
           END DO
         END DO
-      ELSE ! GTYPE .NE. UNGTYPE
+      ELSE ! GTYPE .NE. UNGTYPE .AND. GTYPE.NE.QAGTYPE
         DO IX=1, NX
           X = XGRD(1,IX)
           Y = YGRD(1,IX)
@@ -1164,7 +1247,7 @@ PROGRAM W3PRNC
           RD22(IX,1) = EFAC *    RW(1)   *    RW(2)
 
         END DO ! IX=1, NX
-      END IF ! GTYPE .NE. UNGTYPE
+      END IF ! GTYPE .NE. UNGTYPE .AND. GTYPE.NE.QAGTYPE
       !
       CALL W3GSUD( GSI )
 
@@ -1375,9 +1458,73 @@ PROGRAM W3PRNC
           END DO
         END DO
       END IF ! NFCOMP .EQ. 2
+    !
+    ELSE IF ( ITYPE.EQ.7 ) THEN
+      ! 'AX' TYPE: point data to be mapped to nearest model
+      !            grid point
+      !
+      ! Initialise interpolation arrays
+      IX21 = 0
+      IX22 = 0
+      IY21 = 1
+      IY22 = 1
+      RD11 = 1.
+      RD12 = 0.
+      RD21 = 0.
+      RD22 = 0.
+      IF ( GTYPE.EQ.QAGTYPE ) THEN
+        NX = 0
+        DO I=1,NXI
+          ! Input point in reference grid coordinates
+          XTARG = (ALO(I,1) - X0)/SX + 1.
+          YTARG = (ALA(I,1) - Y0)/SY + 1.
+          ! Locate the nearest cell in the bathymetry quadtree
+          CALL QA_XY2CELL ( QTREE(IQGB), XTARG, YTARG, ISEA,       &
+                   XCELL, YCELL, LVCELL, IQUAD, ISUB, ISTAT )
+          ! If a valid cell is located within the reference grid
+          ! assign the corresponding interpolation indices and weights
+          IF ( ISTAT(1).EQ.0 .AND. ISEA.GT.0 .AND. ISEA.LE.MX ) THEN
+            IF ( IX21(ISEA,1).EQ.0 ) THEN
+              IX21(ISEA,1) = I
+              NX = NX + 1
+            END IF
+          END IF
+        END DO
+        ! Copy the bathymetry quadtree structure to a new quadtree 
+        ! for the input fields, which first needs to be (re)allocated
+        CALL W3QALL( IQGI, NX, QTREE(IQGB)%NQUAD, 0, 0 )
+        CALL QA_CPQT(QTREE(IQGB), QTREE(IQGI) )
+        ! Mark any cells not matched as undefined
+        DO ISEA=1,NX
+          IF ( IX21(ISEA,1).EQ.0 ) THEN
+            QTREE(IQGI)%CELL_TYPE(ISEA) = QTREE(IQGI)%UNDEF_TYPE
+          END IF
+        END DO
+        ! Remove undefined cells from the input quadtree structure
+        CALL QA_REMUNDEF( QTREE(IQGI), NEWCELL, IERR, NDSE )
+        ! Remove undefined cells from the index map
+        IF ( .NOT.ALLOCATED(NEWCELL) ) ALLOCATE ( NEWCELL(MX) )
+        DO ISEA=1,NX
+           IF ( NEWCELL(ISEA).EQ.0 ) CYCLE
+           IX22(NEWCELL(ISEA),1) = IX21(ISEA,1)
+        END DO
+        IX21 = IX22
+        ! Copy to the second set of interpolation arrays
+        JX21 = IX21
+        JX22 = IX22
+        JY21 = 1
+        JY22 = 1
+        XD11 = RD11
+        XD12 = RD12
+        XD21 = RD21
+        XD22 = RD22
+      ELSE
+        WRITE (NDSE,1066) 
+        CALL EXTCDE ( 9 )
+      END IF
       !
     END IF ! ITYPE.EQ.2
-  END IF ! ITYPE.NE.1 .AND. ITYPE.NE.5
+  END IF ! ITYPE.NE.1 .AND. ITYPE.NE.5 .AND. ITYPE.NE.6 .AND. ITYPE.NE.7
   !
   ! 6.c Input location and format
   !
@@ -1425,15 +1572,18 @@ PROGRAM W3PRNC
   END IF
 
   ! Create output binary file
-  IF ( ITYPE .LE. 4 .OR. ITYPE.EQ.6 ) THEN
+  IF ( ITYPE .LE. 4 .OR. ITYPE.EQ.6 .OR. ITYPE.EQ.7 ) THEN
+    MYOUT = MY
+    IF ( GTYPE.EQ.QAGTYPE ) MYOUT = QTREE(IQGB)%NQUAD
     IF ( IAPROC .EQ. NAPOUT )  &
          CALL W3FLDO ( 'WRITE', IDFLD, NDSDAT, NDST, NDSE,      &
-         NX, NY, GTYPE, IERR, FPRE=FNMPRE(:J),                  &
+         MX, MYOUT, GTYPE, IERR, FPRE=FNMPRE(:J),               &
          FHDR=FLHDR, TIDEFLAGIN=TIDEFLAG)
   ELSE
+    MYOUT = 0
     IF ( IAPROC .EQ. NAPOUT )  &
          CALL W3FLDO ( 'WRITE', IDFLD, NDSDAT, NDST, NDSE,           &
-         RECLDT, 0, GTYPEDUM, IERR, FPRE=FNMPRE(:J) )
+         RECLDT, MYOUT, GTYPEDUM, IERR, FPRE=FNMPRE(:J) )
   END IF
 
 #ifdef W3_T
@@ -1497,7 +1647,8 @@ PROGRAM W3PRNC
 #ifdef W3_MPI
     END IF
 #endif
-    IRET=NF90_INQ_VARID(NCID,"time",VARIDTMP)
+    IRET=NF90_INQ_VARID(NCID,TRIM(TVARNAME),VARIDTMP)
+    IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"time",VARIDTMP)
     IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"MT",VARIDTMP)
     CALL CHECK_ERR(IRET)
     ALLOCATE(ALLTIMES(NTI))
@@ -1848,7 +1999,8 @@ PROGRAM W3PRNC
       !
       ! 8.a Read new time and fields
       !
-      IRET=NF90_INQ_VARID(NCID,"time",VARIDTMP)
+      IRET=NF90_INQ_VARID(NCID,TRIM(TVARNAME),VARIDTMP)
+      IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"time",VARIDTMP)
       IF ( IRET/=NF90_NOERR ) IRET=NF90_INQ_VARID(NCID,"MT",VARIDTMP)
       CALL CHECK_ERR(IRET)
       IRET=NF90_GET_VAR(NCID,VARIDTMP,CURJULDAY,start=(/ITIME/))
@@ -1895,7 +2047,7 @@ PROGRAM W3PRNC
       !
       ! ... Input
       !
-      IF ( ITYPE .LE. 4 .OR. ITYPE.EQ.6 ) THEN
+      IF ( ITYPE .LE. 4 .OR. ITYPE.EQ.6 .OR. ITYPE.EQ.7 ) THEN
         IF (NDIMSGRID.EQ.1) THEN
           IRET=NF90_GET_VAR(NCID,VARIDF(1),XC(:,1),start=(/1,ITIME/),count=(/MXM,1/))
         ELSE
@@ -2215,7 +2367,11 @@ PROGRAM W3PRNC
       WRITE (NDST,9065)
       DO IX=1, NX
         DO IY=1, NY
-          MAPOUT(IX,IY) = MAPSTA(IY,IX)
+          IF ( GTYPE.EQ.QAGTYPE ) THEN
+            MAPOUT(IX,IY) = QTREE(IQGI)%CELL_TYPE(IX)
+          ELSE
+            MAPOUT(IX,IY) = MAPSTA(IY,IX)
+          END IF
         END DO
       END DO
       IX0    = 1
@@ -2257,9 +2413,12 @@ PROGRAM W3PRNC
 #ifdef W3_O3
         IF ( IAPROC .EQ. NAPOUT )  WRITE (NDSO,977)
 #endif
-        IF ( IAPROC .EQ. NAPOUT ) CALL W3FLDG ('WRITE', IDFLD, NDSDAT, NDST, NDSE, NX, NY,  &
-             NX, NY, TIME, TIME, TIME, FX, FY, FA, TIME,  &
-             FX, FY, FA, IERR)
+        FLQA = GTYPE.EQ.QAGTYPE
+        NEW_QT = ITIME.EQ.1
+        IF ( IAPROC .EQ. NAPOUT ) CALL W3FLDG ('WRITE', IDFLD,       &
+             NDSDAT, NDST, NDSE, MX, MY, NX, NY, TIME, TIME, TIME,   &
+             FX, FY, FA, TIME, FX, FY, FA, IERR,                     & 
+             FLQA, new_qt=NEW_QT, qtree=QTREE(IQGI:IQGI) )
 
       ELSE IF ( ITYPE .EQ. 5 ) THEN
         IF ( NDAT .EQ. 0 ) THEN
@@ -2451,6 +2610,8 @@ PROGRAM W3PRNC
        '     IOSTAT =',I5/)
 1064 FORMAT (/' *** WAVEWATCH III ERROR IN W3PRNC : '/               &
        '     GRID DIMENSIONS ', A,' NOT FOUND... CHECK DIMENSION NAMES')
+1066 FORMAT (/' *** WAVEWATCH III ERROR IN W3PRNC : '/               &
+       '     ONLY ABLE TO PROCESS AX FILE TYPE FOR QUADTREE'/)
   !
 #ifdef W3_O15
 1070 FORMAT (/' *** WAVEWATCH III ERROR IN W3PRNC : '/          &

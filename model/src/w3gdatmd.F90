@@ -95,6 +95,7 @@ MODULE W3GDATMD
   !/    15-Apr-2020 : Adds optional opt-out for CFL on BC ( version 7.08 )
   !/    06-May-2021 : Add SMCTYPE, ARCTC options.   JGLi  ( version 7.12 )
   !/    07-Jun-2021 : the GKE module (NL5, Q. Liu)        ( version 7.12 )
+  !/    19-Jun-2026 : Include quadtrees (R.Gorman)        ( version X.XX )
   !/
   !/
   !/    Copyright 2009-2013 National Weather Service (NWS),
@@ -123,6 +124,7 @@ MODULE W3GDATMD
   !      CLGTYPE   I.P.  Public   Named constant for curvilinear grid type
   !      UNGTYPE   I.P.  Public   Named constant for Unstructured triangular grid
   !      SMCTYPE   I.P.  Public   Named constant for unstructured SMC grid type
+  !      QAGTYPE   I.P.  Public   Named constant for quadtree grid type
   !      FLAGLL    Log.  Public   Flag to indicate coordinate system for all grids
   !                               .TRUE.: Spherical (lon/lat in degrees)
   !                               .FALSE.: Cartesian (meters)
@@ -145,6 +147,7 @@ MODULE W3GDATMD
   !                               CLGTYPE: Curvilinear grid
   !                               UNGTYPE: Unstructured triangular grid
   !                               SMCTYPE: Unstructured SMC grid
+  !                               QAGTYPE: Quadtree adaptive grid
   !      RSTYPE    Int.  Public   Integer identifyng restart type
   !      ICLOSE    Int.  Public   Parameter indicating type of index closure of grid.
   !                               ICLOSE_NONE: No grid closure
@@ -242,12 +245,43 @@ MODULE W3GDATMD
   !      IICESMOOTH Log.  Public   Flag to smooth the ice covered dispertion relation in broken ice.
   !      IC_NUMERICS Log. Public  Turn on/off IC numerics fix
   !
+  !      NQUAD     Int.  Public   Number of quads in quadtree grid
+  !      IQGW      Int.  Public   Index for wave quadtree grid
+  !      IQGB      Int.  Public   Index for bathy quadtree grid
+  !      IQGA(0,N) Int.  Public   Indices for last & next atmosphere quadtree grids
+  !      IQGC(0,N) Int.  Public   Indices for last & next current quadtree grids
+  !      IQGL(0,N) Int.  Public   Indices for last & next level quadtree grids
+  !      IQGI(0,N) Int.  Public   Indices for last & next ice quadtree grids
+  !      WTS1_QA QA_WEIGHTS1 Pub. Precomputed 1st-order neighbour weights
+  !      NAUX_QA   Int.  Public   Number of auxiliary quadtree grids 
+  !      NCTARGET_QA Int. Public  Targwet number of cells when adapting grid
+  !      DVTYPE_QA Int.  Public   Type of diagnostic variable used for adaptivity
+  !      DVMAX_QA  Real  Public   Max. value of diagnostic variable before refining
+  !      DVTOLFAC_QA Real Public  Ratio of max/min values of diagnostic variable
+  !      DIAGVAR_QA R.A. Public   Diagnostic variable for adapting the grid
+  !      NMOD_QA   Int.  Public   Number of cell modifications when adapting
+  !      NFROM_QA  I.A.  Public   Number of old cells used to interpolate to each new cell
+  !      ITO_QA    I.A.  Public   Indices of new cells created in adapting the grid
+  !      IFROM_QA  I.A.  Public   Indices of old cells used to interpolate to each new cell
+  !      WFROM_QA  R.A.  Public   Weights for old cells used to interpolate to each new cell
+  !      IAUX_QA   I.A.  Public   Auxiliary qtree indices matching cells in wave quadtree
+  !      EXAUX_QA  L.A.  Public   Flags whether IAUX_QA is an exact match
+  !      DATB_QA   R.A.  Public   Data (bed elev., trans. coeffs.) on the bathy. quadtree
+  !      LVRANGE_QA I.A. Public   Range of levels, for propagation
+  !      MAPML_QA  I.A.  Public   Cell type, on multilevel grid
   !
   !      GNAME     C*30  Public   Grid name.
   !      FILEXT    C*13  Public   Extension of WAVEWATCH III file names
   !                               default in 'ww3'.
   !      BTBETA    Real  Public   The constant used for separating wind sea
   !                               and swell when we estimate WBT
+  !     ----------------------------------------------------------------
+  !     Variables for multiple quadtrees not included in structures, no pointers used:
+  !      QTREE   QA_TREE Public   Quadtree structures
+  !      NCMXQ     I.A.  Public   Max. number of cells in quadtree structures
+  !      NQMXQ     I.A.  Public   Max. number of quads in quadtree structures
+  !
+  !
   !     ----------------------------------------------------------------
   !
   !     All elements of SGRD are aliased to pointers with the same
@@ -563,6 +597,8 @@ MODULE W3GDATMD
   !      W3DIMS    Subr. Public   Set dimensions of spectral grid.
   !      W3SETG    Subr. Public   Point to selected grid / model.
   !      W3GNTX    Subr. Public   Construct grid arrays
+  !      W3DIMQ    Subr. Public   Initialise quadtree variables
+  !      W3QALL    Subr. Public   Allocate quadtree structures
   !     ----------------------------------------------------------------
   !
   !  4. Subroutines and functions used :
@@ -605,6 +641,7 @@ MODULE W3GDATMD
   !/ Required modules
   !/
   USE W3GSRUMD
+  USE QA_UTILS
   !/
   !/ Specify default accessibility
   !/
@@ -626,6 +663,7 @@ MODULE W3GDATMD
   INTEGER, PARAMETER      :: CLGTYPE = 2
   INTEGER, PARAMETER      :: UNGTYPE = 3
   INTEGER, PARAMETER      :: SMCTYPE = 4
+  INTEGER, PARAMETER      :: QAGTYPE = 5      
 
   INTEGER, PARAMETER      :: ICLOSE_NONE = ICLO_NONE
   INTEGER, PARAMETER      :: ICLOSE_SMPL = ICLO_SMPL
@@ -776,6 +814,26 @@ MODULE W3GDATMD
     INTEGER, POINTER      :: EDGES(:,:), NEIGH(:,:)
     REAL(8), POINTER      :: TRIA(:)
     REAL, POINTER         :: CROSSDIFF(:,:)
+!
+! Quadtree data
+!
+    INTEGER                :: NQUAD
+    INTEGER                :: IQGW, IQGB, IQGL0, IQGLN,           &
+                              IQGI0, IQGIN, IQGA0, IQGAN,         &
+                              IQGC0, IQGCN
+    INTEGER                :: NAUX_QA, NCTARGET_QA, NMOD_QA
+    INTEGER                :: DVTYPE_QA
+    REAL                   :: DVMAX_QA, DVTOLFAC_QA
+    REAL, POINTER          :: DIAGVAR_QA(:)
+    INTEGER, POINTER       :: NFROM_QA(:), IFROM_QA(:,:),         &
+                              ITO_QA(:), IAUX_QA(:,:)
+    LOGICAL, POINTER       :: EXAUX_QA(:,:)
+    REAL, POINTER          :: WFROM_QA(:,:)
+    REAL, POINTER          :: DATB_QA(:,:)
+    INTEGER, POINTER       :: LVRANGE_QA(:,:)
+    INTEGER, POINTER       :: MAPML_QA(:)
+    LOGICAL                :: GQAINIT
+    TYPE(QA_WEIGHTS1)      :: WTS1_QA
 
 #ifdef W3_UOST
     CHARACTER(LEN=256)      :: UOSTFILELOCAL, UOSTFILESHADOW
@@ -791,6 +849,10 @@ MODULE W3GDATMD
 #endif
 
   END TYPE GRID
+  !
+  ! Conventional declarations for multiple quadtree grids
+  TYPE(QA_TREE), POINTER   :: QTREE(:)
+  INTEGER, ALLOCATABLE     :: NCMXQ(:), NQMXQ(:)
   !
   TYPE SGRD   ! this is the spectral grid with all parameters that vary with freq. and direction
     INTEGER               :: NK=0, NK2=0, NTH=0, NSPEC=0
@@ -1135,6 +1197,26 @@ MODULE W3GDATMD
   REAL, POINTER           :: CROSSDIFF(:,:)
   REAL,POINTER            :: MAXX, MAXY, DXYMAX
   LOGICAL, POINTER        :: GUGINIT
+  !
+  ! Quadtree data
+  !
+  INTEGER, POINTER        :: NQUAD
+  INTEGER, POINTER        :: IQGW, IQGB, IQGL0, IQGLN,            &
+                             IQGI0, IQGIN, IQGA0, IQGAN,          &
+                             IQGC0, IQGCN
+  TYPE(QA_WEIGHTS1), POINTER :: WTS1_QA
+  INTEGER, POINTER        :: NAUX_QA, NCTARGET_QA, NMOD_QA
+  INTEGER, POINTER        :: DVTYPE_QA
+  REAL, POINTER           :: DVMAX_QA, DVTOLFAC_QA
+  REAL, POINTER           :: DIAGVAR_QA(:)
+  INTEGER, POINTER        :: NFROM_QA(:), IFROM_QA(:,:),          &
+                             ITO_QA(:), IAUX_QA(:,:)
+  LOGICAL, POINTER        :: EXAUX_QA(:,:)
+  REAL, POINTER           :: WFROM_QA(:,:)
+  REAL, POINTER           :: DATB_QA(:,:)
+  INTEGER, POINTER        :: LVRANGE_QA(:,:)
+  INTEGER, POINTER        :: MAPML_QA(:)
+  LOGICAL, POINTER        :: GQAINIT       
   !
   REAL,    POINTER        :: FFACBERG
 #ifdef W3_REF1
@@ -1553,6 +1635,7 @@ CONTAINS
     DO I=NLOW, NUMBER
       GRIDS(I)%GINIT  = .FALSE.
       GRIDS(I)%GUGINIT  = .FALSE.
+      GRIDS(I)%GQAINIT  = .FALSE.
       SGRDS(I)%SINIT  = .FALSE.
       MPARS(I)%PINIT  = .FALSE.
 #ifdef W3_NL2
@@ -1704,7 +1787,8 @@ CONTAINS
       CALL EXTCDE (2)
     END IF
     !
-    IF ( MX.LT.3 .OR. (MY.LT.3.AND.GTYPE.NE.UNGTYPE) .OR. MSEA.LT.1 ) THEN
+    IF ( MX.LT.3 .OR. (MY.LT.3.AND.GTYPE.NE.UNGTYPE.AND.GTYPE.NE.QAGTYPE) &
+                 .OR. MSEA.LT.1 ) THEN
       WRITE (NDSE,1003) MX, MY, MSEA, GTYPE
       CALL EXTCDE (3)
     END IF
@@ -2153,7 +2237,254 @@ CONTAINS
     !/
   END SUBROUTINE W3DIMS
   !/ ------------------------------------------------------------------- /
-  SUBROUTINE W3SETG ( IMOD, NDSE, NDST )
+  !/ ------------------------------------------------------------------- /
+  SUBROUTINE W3DIMQ  ( IMOD, MSEAB, MSEAW, MAUX_QA, MINDML, NDSE, &
+                           NDST )
+  !/
+  !/                  +-----------------------------------+
+  !/                  | WAVEWATCH III           NOAA/NCEP |
+  !/                  |           H. L. Tolman            |
+  !/                  |           R. M. Gorman            |
+  !/                  |                        FORTRAN 90 |
+  !/                  | Last update :         21-May-2014 |
+  !/                  +-----------------------------------+
+  !/
+  !/    11-Nov-2017 : Origination, from W3DIMX (R.Gorman)  ( version  )
+  !/
+  !  1. Purpose :
+  !
+  !     Initialize quadtree variables on an individual spatial grid at 
+  !     the proper dimensions.
+  !
+  !  2. Method :
+  !
+  !     Allocate directly into the structure array GRIDS. Note that
+  !     this cannot be done through the pointer alias!
+  !
+  !  3. Parameters :
+  !
+  !     Parameter list
+  !     ----------------------------------------------------------------
+  !       IMOD    Int.   I   Model number to point to.
+  !       MSEAB   Int.   I   Allocated number of bathy cells.
+  !       MSEAW   Int.   I   Allocated number of wave cells.
+  !       MAUX_QA Int.   I   Allocated number of auxiliary quadtrees.
+  !       MINDML  Int.   I   Allocated number of multilevel grid cells.
+  !       NDSE    Int.   I   Error output unit number.
+  !       NDST    Int.   I   Test output unit number.
+  !     ----------------------------------------------------------------
+  !
+  !  4. Subroutines used :
+  !
+  !       See module documentation.
+  !
+  !  5. Called by :
+  !
+  !      Name      Type  Module   Description
+  !     ----------------------------------------------------------------
+  !      W3IOGR    Subr. W3IOGRMD Model definition file IO program.
+  !      W3GRID    Subr. W3GRIDMD Model set up subroutine.
+  !     ----------------------------------------------------------------
+  !
+  !  6. Error messages :
+  !  
+  !     - Check on input parameters.
+  !     - Check on previous allocation.
+  !
+  !  7. Remarks :
+  !
+  !     - Grid dimensions apre passed through parameter list and then 
+  !       locally stored to assure consistency between allocation and
+  !       data in structure.
+  !     - W3SETG needs to be called after allocation to point to 
+  !       proper allocated arrays.
+  !
+  !  8. Structure :
+  !
+  !     See source code.
+  !
+  !  9. Switches :
+  !
+  !     !/S    Enable subroutine tracing.
+  !     !/T    Enable test output
+  !
+  ! 10. Source code :
+  !
+  !/ ------------------------------------------------------------------- /
+      USE W3SERVMD, ONLY: EXTCDE
+  !/S      USE W3SERVMD, ONLY: STRACE
+  !
+      IMPLICIT NONE
+  !
+  !/
+  !/ ------------------------------------------------------------------- /
+  !/ Parameter list
+  !/
+      INTEGER, INTENT(IN)     :: IMOD, MSEAB, MSEAW, MAUX_QA, MINDML, &
+                                 NDSE, NDST
+  !/
+  !/ ------------------------------------------------------------------- /
+  !/ Local parameters
+  !/
+      INTEGER                 :: NS
+  !/S      INTEGER, SAVE           :: IENT = 0
+  !/
+  !/S      CALL STRACE (IENT, 'W3DIMQ')
+  !
+  ! -------------------------------------------------------------------- /
+  ! 1.  Test input and module status
+  !
+      IF ( NGRIDS .EQ. -1 ) THEN
+          WRITE (NDSE,1001)
+          CALL EXTCDE (1)
+        END IF
+  !
+      IF ( IMOD.LT.-NAUXGR .OR. IMOD.GT.NGRIDS ) THEN
+          WRITE (NDSE,1002) IMOD, -NAUXGR, NGRIDS
+          CALL EXTCDE (2)
+        END IF
+  !
+      IF ( MSEAB.LT.1 .OR. MSEAW.LT.1 ) THEN
+        WRITE (NDSE,1003) MSEAB, MSEAW, GTYPE
+        CALL EXTCDE (3)
+        END IF
+  !
+      IF ( GRIDS(IMOD)%GQAINIT ) THEN
+        WRITE (NDSE,1004)
+        CALL EXTCDE (4)
+        END IF
+  !
+  !/T      WRITE (NDST,9000) IMOD, MSEAB, MSEAW, MAUX_QA
+  !
+  ! -------------------------------------------------------------------- /
+  ! 2.  Allocate arrays
+  !
+      ALLOCATE ( GRIDS(IMOD)%DATB_QA(MSEAB,3) )
+      ALLOCATE ( GRIDS(IMOD)%NFROM_QA(MSEAW),                         &
+                 GRIDS(IMOD)%ITO_QA(MSEAW),                           &
+                 GRIDS(IMOD)%IFROM_QA(MSEAW,9),                       &
+                 GRIDS(IMOD)%WFROM_QA(MSEAW,9),                       &
+                 GRIDS(IMOD)%DIAGVAR_QA(MSEAW),                       &
+                 GRIDS(IMOD)%IAUX_QA(MSEAW,MAUX_QA),                  &
+                 GRIDS(IMOD)%EXAUX_QA(MSEAW,MAUX_QA),                 &
+                 GRIDS(IMOD)%LVRANGE_QA(MSEAW,2),                     &
+                 GRIDS(IMOD)%MAPML_QA(MINDML) )
+  !
+  !/T      WRITE (NDST,9001)
+  !
+  ! -------------------------------------------------------------------- /
+  ! 2.  Update counters in grid
+  !
+      GRIDS(IMOD)%NAUX_QA  = MAUX_QA
+      GRIDS(IMOD)%GQAINIT  = .TRUE.
+  !
+  !/T      WRITE (NDST,9002)
+  !
+  ! -------------------------------------------------------------------- /
+  ! 3.  Reset grid pointers
+  !
+      CALL W3SETG ( IMOD, NDSE, NDST )
+  !
+  !/T      WRITE (NDST,9003)
+  !
+  ! 4. Copy bathymetry data
+  !
+      DATB_QA = 0.
+      NS = MIN(MSEAB,SIZE(ZB,1))
+      DATB_QA(1:NS,1) = ZB(1:NS)
+      NS = MIN(MSEAB,SIZE(TRNX,2))
+      DATB_QA(1:NS,2) = TRNX(1,1:NS)
+      NS = MIN(MSEAB,SIZE(TRNY,2))
+      DATB_QA(1:NS,3) = TRNY(1,1:NS)
+  !
+  !/T      WRITE (NDST,9004)
+  !
+  ! 5. Deallocate arrays that had been used for the bathymetry grid,
+  !    ready to be reallocated for the wave grid
+  !
+      IF ( MSEAB.EQ.MSEAW ) RETURN
+      DEALLOCATE ( GRIDS(IMOD)%MAPSTA,                                &
+                   GRIDS(IMOD)%MAPST2,                                &
+                   GRIDS(IMOD)%MAPFS,                                 &
+                   GRIDS(IMOD)%MAPSF,                                 &
+                   GRIDS(IMOD)%FLAGST,                                &
+  !/RTD                   GRIDS(IMOD)%AnglD,                                 &
+                   GRIDS(IMOD)%ZB,                                    &
+                   GRIDS(IMOD)%CLATS,                                 &
+                   GRIDS(IMOD)%CLATIS,                                &
+                   GRIDS(IMOD)%CTHG0S,                                &
+                   GRIDS(IMOD)%TRNX,                                  &
+                   GRIDS(IMOD)%TRNY,                                  &
+                   GRIDS(IMOD)%XGRD,                                  &
+                   GRIDS(IMOD)%YGRD,                                  &
+                   GRIDS(IMOD)%DXDP,                                  &
+                   GRIDS(IMOD)%DXDQ,                                  &
+                   GRIDS(IMOD)%DYDP,                                  &
+                   GRIDS(IMOD)%DYDQ,                                  &
+                   GRIDS(IMOD)%DPDX,                                  &
+                   GRIDS(IMOD)%DPDY,                                  &
+                   GRIDS(IMOD)%DQDX,                                  &
+                   GRIDS(IMOD)%DQDY,                                  &
+                   GRIDS(IMOD)%GSQRT,                                 &
+                   GRIDS(IMOD)%HPFAC,                                 &
+                   GRIDS(IMOD)%HQFAC    )
+  !/BT4      DEALLOCATE ( GRIDS(IMOD)%SED_D50,                               &
+  !/BT4                   GRIDS(IMOD)%SED_PSIC )
+  !
+  !/SMC      DEALLOCATE ( GRIDS(IMOD)%NLvCel,                                &
+  !/SMC                 GRIDS(IMOD)%NLvUFc,                                  &
+  !/SMC                 GRIDS(IMOD)%NLvVFc,                                  &
+  !/SMC                 GRIDS(IMOD)%IJKCel,                                  &
+  !/SMC                 GRIDS(IMOD)%IJKUFc,                                  &
+  !/SMC                 GRIDS(IMOD)%IJKVFc,                                  &
+  !/SMC                 GRIDS(IMOD)%CTRNX,                                   &  
+  !/SMC                 GRIDS(IMOD)%CTRNY,                                   &
+  !/SMC                 GRIDS(IMOD)%CLATF ) 
+  !
+  !/PR2      DEALLOCATE ( GRIDS(IMOD)%NLvUFc,                                &
+  !/PR2                 GRIDS(IMOD)%NLvVFc,                                  &
+  !/PR2                 GRIDS(IMOD)%IJKCel,                                  &
+  !/PR2                 GRIDS(IMOD)%IJKUFc,                                  &
+  !/PR2                 GRIDS(IMOD)%IJKVFc )
+  !
+  !/ARC      DEALLOCATE ( GRIDS(IMOD)%ICLBAC,                                &
+  !/ARC                 GRIDS(IMOD)%ANGARC,                                  &
+  !/ARC                 GRIDS(IMOD)%SPCBAC ) 
+  !/REF1     DEALLOCATE ( GRIDS(IMOD)%RREF  )
+  !/REF1      DEALLOCATE ( GRIDS(IMOD)%REFPARS )
+  !/REF1      DEALLOCATE ( GRIDS(IMOD)%REFLC )
+  !/REF1      DEALLOCATE ( GRIDS(IMOD)%REFLD )
+  !/IG1       DEALLOCATE ( GRIDS(IMOD)%IGPARS )
+  !
+  !/T      WRITE (NDST,9005)
+      GRIDS(IMOD)%GINIT = .FALSE.
+      RETURN
+  !
+  ! Formats
+  !
+ 1001 FORMAT (/' *** ERROR W3DIMQ : GRIDS NOT INITIALIZED *** '/      &
+               '                    RUN W3NMOD FIRST '/)
+ 1002 FORMAT (/' *** ERROR W3DIMQ : ILLEGAL MODEL NUMBER *** '/       &
+               '                    IMOD   = ',I10/                   &
+               '                    NAUXGR = ',I10/                   &
+               '                    NGRIDS = ',I10/)
+ 1003 FORMAT (/' *** ERROR W3DIMQ : ILLEGAL GRID DIMENSION(S) *** '/  &
+               '                    INPUT = ',3I10 /)
+ 1004 FORMAT (/' *** ERROR W3DIMQ : ARRAY(S) ALREADY ALLOCATED *** ')
+  !
+  !/T 9000 FORMAT (' TEST W3DIMQ : MODEL ',I4,' DIM. AT ',3I8)
+  !/T 9001 FORMAT (' TEST W3DIMQ : ARRAYS ALLOCATED')
+  !/T 9002 FORMAT (' TEST W3DIMQ : DIMENSIONS STORED')  !
+
+  !/T 9003 FORMAT (' TEST W3DIMQ : POINTERS RESET')
+  !/T 9004 FORMAT (' TEST W3DIMQ : BATHY DATA COPIED')
+  !/T 9005 FORMAT (' TEST W3DIMQ : ARRAYS DEALLOCATED')
+  !/
+  !/ End of W3DIMQ ----------------------------------------------------- /
+  !/
+   END SUBROUTINE W3DIMQ
+  !/ ------------------------------------------------------------------- /
+   SUBROUTINE W3SETG ( IMOD, NDSE, NDST )
     !/
     !/                  +-----------------------------------+
     !/                  | WAVEWATCH III           NOAA/NCEP |
@@ -2187,6 +2518,7 @@ CONTAINS
     !/    13-Jul-2012 : Move data structures GMD (SNL3) and nonlinear
     !/                  filter (SNLS) from 3.15 (HLT).      ( version 4.08 )
     !/    03-Sep-2012 : Clean up of UG grids                ( version 4.08 )
+    !/    19-Jun-2026 : Include quadtrees (R.Gorman)        ( version X.XX )
     !/
     !  1. Purpose :
     !
@@ -2383,6 +2715,7 @@ CONTAINS
     !
     GINIT  => GRIDS(IMOD)%GINIT
     GUGINIT  => GRIDS(IMOD)%GUGINIT
+    GQAINIT  => GRIDS(IMOD)%GQAINIT      
     FLDRY  => GRIDS(IMOD)%FLDRY
     FLCX   => GRIDS(IMOD)%FLCX
     FLCY   => GRIDS(IMOD)%FLCY
@@ -2430,6 +2763,49 @@ CONTAINS
     XGRD   => GRIDS(IMOD)%XGRD
     YGRD   => GRIDS(IMOD)%YGRD
     ZB     => GRIDS(IMOD)%ZB
+    !
+    !/    Quadtree data
+
+    NQUAD => GRIDS(IMOD)%NQUAD
+    IQGW => GRIDS(IMOD)%IQGW
+    IQGB => GRIDS(IMOD)%IQGB
+    IQGA0 => GRIDS(IMOD)%IQGA0
+    IQGAN => GRIDS(IMOD)%IQGAN
+    IQGC0 => GRIDS(IMOD)%IQGC0
+    IQGCN => GRIDS(IMOD)%IQGCN
+    IQGL0 => GRIDS(IMOD)%IQGL0
+    IQGLN => GRIDS(IMOD)%IQGLN
+    IQGI0 => GRIDS(IMOD)%IQGI0
+    IQGIN => GRIDS(IMOD)%IQGIN
+    WTS1_QA => GRIDS(IMOD)%WTS1_QA
+    NAUX_QA => GRIDS(IMOD)%NAUX_QA
+    NCTARGET_QA => GRIDS(IMOD)%NCTARGET_QA
+    NMOD_QA => GRIDS(IMOD)%NMOD_QA
+    DVTYPE_QA => GRIDS(IMOD)%DVTYPE_QA
+    DVMAX_QA => GRIDS(IMOD)%DVMAX_QA
+    DVTOLFAC_QA => GRIDS(IMOD)%DVTOLFAC_QA
+    DIAGVAR_QA => GRIDS(IMOD)%DIAGVAR_QA
+    NFROM_QA => GRIDS(IMOD)%NFROM_QA
+    IFROM_QA => GRIDS(IMOD)%IFROM_QA
+    WFROM_QA => GRIDS(IMOD)%WFROM_QA
+    ITO_QA => GRIDS(IMOD)%ITO_QA
+    IAUX_QA => GRIDS(IMOD)%IAUX_QA
+    EXAUX_QA => GRIDS(IMOD)%EXAUX_QA
+    DATB_QA => GRIDS(IMOD)%DATB_QA
+    LVRANGE_QA => GRIDS(IMOD)%LVRANGE_QA
+    MAPML_QA => GRIDS(IMOD)%MAPML_QA
+    !
+    DATB_QA    => GRIDS(IMOD)%DATB_QA
+    NFROM_QA   => GRIDS(IMOD)%NFROM_QA
+    ITO_QA     => GRIDS(IMOD)%ITO_QA
+    IFROM_QA   => GRIDS(IMOD)%IFROM_QA
+    WFROM_QA   => GRIDS(IMOD)%WFROM_QA
+    DIAGVAR_QA => GRIDS(IMOD)%DIAGVAR_QA
+    IAUX_QA    => GRIDS(IMOD)%IAUX_QA
+    EXAUX_QA   => GRIDS(IMOD)%EXAUX_QA
+    LVRANGE_QA => GRIDS(IMOD)%LVRANGE_QA
+    MAPML_QA   => GRIDS(IMOD)%MAPML_QA
+    !
     !
     IF ( GINIT ) THEN
       !
@@ -3551,7 +3927,211 @@ CONTAINS
     !/ End of W3SETREF ----------------------------------------------------- /
     !/
   END SUBROUTINE W3SETREF
-
+           
+  !/ ------------------------------------------------------------------- /
+  !
+  SUBROUTINE W3QALL ( IQ, MCELL, MQUAD, UNDEF, IORD )
+  !/
+  !/       Richard Gorman, NIWA
+  !/         June, 2014:      Adapted from QA_ALLOC
+  !
+  !  1. Purpose :
+  !
+  !      Allocate arrays for a threaded quadtree structure
+  !      or nullify in zero size case
+  !
+  !  2. Method :
+  !
+  !
+  !  3. Parameters :
+  !
+  !     Parameter list
+  !     ----------------------------------------------------------------
+  !       IQ         Int.   I  Index of Quadtree structure
+  !       MCELL      Int.   I  Allocated max. number of cells
+  !       MQUAD      Int.   I  Allocated max. number of quads
+  !       UNDEF      Int.   I  Value of flag for unused cell indices
+  !       IORD       Int.   I  Type of interpolation weights used: 
+  !                             0=none,1=1st order,2=2nd order 
+  !     ----------------------------------------------------------------
+  !
+  !  4. Subroutines used :
+  !
+  !     None
+  !
+  !  5. Called by :
+  !
+  !      Name      Type  Module   Description
+  !     ---------------------------------------------------------------- 
+  !     W3INIT     Subr. w3initmd Initialise the wave model
+  !     W3STQT     Subr. w3adgrmd Create an initial quadtree structure
+  !     W3FLQO     Subr. w3adgrmd Allocate and read quadtree data from input files
+  !     W3IOGR     Subr. w3iogrmd Allocate and read quadtree data from mod def. file
+  !     W3GRID     Subr. w3gridmd Create model definition file
+  !     ----------------------------------------------------------------
+  !
+  !  6. Error messages :
+  !
+  !  7. Remarks :
+  !
+  !  8. Structure :
+  !
+  !  9. Switches :
+  !
+  ! 10. Source code :
+  !
+  !/ ------------------------------------------------------------------- /
+  !/
+      IMPLICIT NONE
+  !/
+  !/ Parameter list
+  !/
+      INTEGER, INTENT(IN)         :: IQ
+      INTEGER, INTENT(IN)         :: MCELL
+      INTEGER, INTENT(IN)         :: MQUAD
+      INTEGER, INTENT(IN)         :: UNDEF
+      INTEGER, INTENT(IN)         :: IORD
+  !/
+  !/ ------------------------------------------------------------------- /    
+  !
+  !  Local parameters
+      INTEGER     ::  MC1, MC2, MN2
+  !/
+  !/ ------------------------------------------------------------------- /    
+  !
+  !
+  !  QTREE scalars:
+  !    Initialise, as empty
+  !
+      QTREE(IQ)%NCELL = 0
+      QTREE(IQ)%NCELL_DEF = 0
+      QTREE(IQ)%NQUAD = 0
+      QTREE(IQ)%NX0 = 0
+      QTREE(IQ)%NY0 = 0
+      QTREE(IQ)%LVLREF = 0
+      QTREE(IQ)%LVLMAX = 0
+      QTREE(IQ)%LVLHI = 0
+      QTREE(IQ)%KEEP_REF = .FALSE.
+      QTREE(IQ)%DYNAMIC = .TRUE.
+      QTREE(IQ)%UNDEF_TYPE = UNDEF
+      QTREE(IQ)%IWTORDER = IORD
+  !
+  !  QTREE QUAD allocatable arrays:
+  !
+      IF ( ALLOCATED (QTREE(IQ)%QLEVEL) )                             &
+                               DEALLOCATE ( QTREE(IQ)%QLEVEL )
+      IF ( ALLOCATED (QTREE(IQ)%QNBR) )                               &
+                               DEALLOCATE ( QTREE(IQ)%QNBR )
+      IF ( ALLOCATED (QTREE(IQ)%QPARENT) )                            &
+                               DEALLOCATE ( QTREE(IQ)%QPARENT )
+      IF ( ALLOCATED (QTREE(IQ)%QCHILD) )                             &
+                               DEALLOCATE ( QTREE(IQ)%QCHILD )
+      IF ( ALLOCATED (QTREE(IQ)%QICELL) )                             &
+                               DEALLOCATE ( QTREE(IQ)%QICELL )
+  !
+      IF ( MQUAD.GT.0 ) THEN
+  !
+  !    Calling with MQUAD<=0 will just deallocate.
+  !    Otherwise, allocate with the specified size ...
+  !
+          ALLOCATE ( QTREE(IQ)%QLEVEL(MQUAD) )
+          ALLOCATE ( QTREE(IQ)%QNBR(MQUAD,4) )
+          ALLOCATE ( QTREE(IQ)%QPARENT(MQUAD) )
+          ALLOCATE ( QTREE(IQ)%QCHILD(MQUAD,4) )
+          ALLOCATE ( QTREE(IQ)%QICELL(MQUAD,0:4) )
+  !
+  !    ... and initialise as null
+  !
+          QTREE(IQ)%QLEVEL = 0
+          QTREE(IQ)%QNBR = 0
+          QTREE(IQ)%QPARENT = 0
+          QTREE(IQ)%QCHILD = 0
+          QTREE(IQ)%QICELL = 0
+        ENDIF
+  !
+  !  QTREE CELL pointer arrays:
+  !
+      IF ( ALLOCATED (QTREE(IQ)%INDQUAD) )                            &
+                               DEALLOCATE ( QTREE(IQ)%INDQUAD )
+      IF ( ALLOCATED (QTREE(IQ)%INDSUB) )                             &
+                               DEALLOCATE ( QTREE(IQ)%INDSUB )
+      IF ( ALLOCATED (QTREE(IQ)%INDLVL) )                             &
+                               DEALLOCATE ( QTREE(IQ)%INDLVL )
+      IF ( ALLOCATED (QTREE(IQ)%NGBR) )                               &
+                               DEALLOCATE ( QTREE(IQ)%NGBR )
+      IF ( ALLOCATED (QTREE(IQ)%CELL_TYPE) )                          &
+                               DEALLOCATE ( QTREE(IQ)%CELL_TYPE )
+      IF ( ALLOCATED (QTREE(IQ)%INDML) )                              &
+                               DEALLOCATE ( QTREE(IQ)%INDML )
+      IF ( ALLOCATED (QTREE(IQ)%XYVAL) )                              &
+                               DEALLOCATE ( QTREE(IQ)%XYVAL )
+  !
+      IF ( ALLOCATED (QTREE(IQ)%NCASE) )                              &
+                               DEALLOCATE ( QTREE(IQ)%NCASE )
+  !
+      IF ( ALLOCATED( QTREE(IQ)%NGNBR) )                              &
+                               DEALLOCATE ( QTREE(IQ)%NGNBR )
+      IF ( ALLOCATED( QTREE(IQ)%GNBR) )                               &
+                               DEALLOCATE ( QTREE(IQ)%GNBR )
+      IF ( ALLOCATED( QTREE(IQ)%INDWT) )                              &
+                               DEALLOCATE ( QTREE(IQ)%INDWT )
+  !
+      IF ( MCELL.GT.0 ) THEN
+  !
+  !    Calling with MCELL<=0 will just deallocate.
+  !    Otherwise, allocate with the specified size ...
+  !
+          ALLOCATE ( QTREE(IQ)%INDQUAD(MCELL) )
+          ALLOCATE ( QTREE(IQ)%INDSUB(MCELL) )
+          ALLOCATE ( QTREE(IQ)%INDLVL(MCELL) )
+          ALLOCATE ( QTREE(IQ)%NGBR(MCELL,8) )
+          ALLOCATE ( QTREE(IQ)%CELL_TYPE(MCELL) )
+          ALLOCATE ( QTREE(IQ)%INDML(MCELL) )
+          ALLOCATE ( QTREE(IQ)%XYVAL(MCELL,2) )
+  !
+  !    If weight arrays are needed, allocate them with the specified size
+  !    otherwise with a dummy size 1
+  !
+          IF ( IORD.GE.1 ) THEN
+              MC1 = MCELL
+            ELSE
+              MC1 = 1
+            END IF
+          ALLOCATE ( QTREE(IQ)%NCASE(MC1) )
+  !
+          IF ( IORD.GE.2 ) THEN
+              MC2 = MCELL
+              MN2 = MCELL
+            ELSE
+              MC2 = 1
+              MN2 = 1
+            END IF
+          ALLOCATE ( QTREE(IQ)%NGNBR(MC2) )
+          ALLOCATE ( QTREE(IQ)%GNBR(MC2,MN2) )
+          ALLOCATE ( QTREE(IQ)%INDWT(MC2) )
+  !
+  !    ... and initialise all quadtree cell arrays as null
+  !
+          QTREE(IQ)%INDQUAD = 0
+          QTREE(IQ)%INDSUB = 0
+          QTREE(IQ)%INDLVL = 0
+          QTREE(IQ)%NGBR = 0
+          QTREE(IQ)%CELL_TYPE = UNDEF
+          QTREE(IQ)%INDML = 0
+          QTREE(IQ)%XYVAL = 0.
+  !
+          QTREE(IQ)%NCASE = 0
+  !
+          QTREE(IQ)%NGNBR = 0
+          QTREE(IQ)%GNBR = 0
+          QTREE(IQ)%INDWT = 0
+        END IF
+  !
+      RETURN
+  END SUBROUTINE W3QALL
+  !/
+  !/ ------------------------------------------------------------------- /
+  !/
   !/
   !/ End of module W3GDATMD -------------------------------------------- /
   !/

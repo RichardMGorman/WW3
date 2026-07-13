@@ -50,6 +50,8 @@ MODULE W3PRO1MD
   !/                  scheme                              ( version 5.03 )
   !/                  (W. E. Rogers, NRL)
   !/    05-Jun-2018 : Add DEBUG                           ( version 6.04 )
+  !/    25-Jun-2026 : Adding quadtree subroutines         ( version X.XX )
+  !/                  (R. Gorman, NIWA)
   !/
   !/    Copyright 2009-2014 National Weather Service (NWS),
   !/       National Oceanic and Atmospheric Administration.  All rights
@@ -74,6 +76,8 @@ MODULE W3PRO1MD
   !      W3MAP1    Subr. Public   Set up auxiliary maps.
   !      W3XYP1    Subr. Public   First order spatial propagation.
   !      W3KTP1    Subr. Public   First order spectral propagation.
+  !      W3XYQ1    Subr. Public   First order spatial propagation for quadtrees
+  !      W3MPQ1    Subr. Public   For quadtrees: compute refinement levels
   !     ----------------------------------------------------------------
   !
   !  4. Subroutines and functions used :
@@ -1228,6 +1232,683 @@ CONTAINS
     !/ End of W3KTP1 ----------------------------------------------------- /
     !/
   END SUBROUTINE W3KTP1
+    !/ ------------------------------------------------------------------- /
+  SUBROUTINE W3XYQ1 ( ISP, DTG, MAPSTA, FIELD, VGX, VGY, LVRANGE )
+    !/
+    !/                  +-----------------------------------+
+    !/                  | WAVEWATCH-III           NOAA/NCEP |
+    !/                  |           H. L. Tolman            |
+    !/                  | QUADTREE version             NIWA |
+    !/                  |           R. M. Gorman            |
+    !/                  |                        FORTRAN 90 |
+    !/                  | Last update :         27-May-2014 |
+    !/                  +-----------------------------------+
+    !/
+    !/    13-Dec-1999 : Origination.
+    !/    13-May-2008 : Inclusion of new code (R. Gorman)
+    !/    20-Oct-2009 : Bringing into line with WAVEWATCH III v4.18qa
+    !/
+    !  1. Purpose :
+    !
+    !     Propagation in physical space for a given spectral component,
+    !     on a quadtree grid. 
+    !
+    !  2. Method :
+    !
+    !     First order scheme with flux formulation.
+    !
+    !  3. Parameters :
+    !
+    !     Parameter list
+    !     ----------------------------------------------------------------
+    !       ISP     Int.   I   Number of spectral bin (IK-1)*NTH+ITH
+    !       DTG     Real   I   Total time step.
+    !       MAPSTA  I.A.   I   Grid point status map.
+    !       FIELD   R.A.  I/O  Wave action spectral densities on full
+    !                          grid.
+    !       VGX/Y   Real   I   Speed of grid.
+    !       LVRANGE I.A.   I   For each cell, gives the minimum and maximum
+    !                          refinement level of the cell and its immediate
+    !                          neighbours
+    !     ----------------------------------------------------------------
+    !
+    !     Local variables.
+    !     ----------------------------------------------------------------
+    !       NTLOC   Int.  Number of local steps.
+    !       VCX     R.A.  Propagation velocities.
+    !       VCY     R.A.
+    !       VFLX    R.A.  Discrete fluxes between grid points.
+    !       VFLY    R.A.
+    !     ----------------------------------------------------------------
+    !
+    !  4. Subroutines used :
+    !
+    !     See module documentation.
+    !
+    !  5. Called by :
+    !
+    !      Name      Type  Module   Description
+    !     ---------------------------------------------------------------- 
+    !      W3WAVE    Subr. W3WAVEMD Wave model routine.
+    !     ----------------------------------------------------------------
+    !
+    !  6. Error messages :
+    !
+    !       None.
+    !
+    !  7. Remarks :
+    !
+    !     - The local work arrays are initialized on the first entry to
+    !       the routine.
+    !
+    !  8. Structure :
+    !
+    !     ---------------------------------------
+    !       1.  Preparations
+    !         a Set constants
+    !         b Initialize arrays
+    !       2.  Calculate local discrete fluxes
+    !       3.  Calculate propagation fluxes
+    !       4.  Propagate
+    !       5.  Update boundary conditions
+    !     ---------------------------------------
+    !
+    !  9. Switches :
+    !
+    !     !/S   Enable subroutine tracing.
+    !     !/OMPH  Hybrid OpenMP directives.
+    !
+    !     !/T   Enable general test output.
+    !     !/T1  Test output local fluxes (V)FX-YL.
+    !     !/T2  Test output propagation fluxes (V)FLX-Y.
+    !     !/T3  Test output propagation.
+    !
+    ! 10. Source code :
+    !
+    !/ ------------------------------------------------------------------- /
+    USE CONSTANTS
+    USE QA_UTILS
+    !
+    USE W3TIMEMD, ONLY: DSEC21
+    !
+    USE W3GDATMD, ONLY: NK, NTH, SIG, ECOS, ESIN, NSEA, MAPSF,      &
+                        DTCFL, CLATS, IQGW, QTREE, FLAGLL, FLCX,    &
+                        FLCY, SX, SY
+    USE W3WDATMD, ONLY: TIME
+    USE W3ADATMD, ONLY: CG, CX, CY, ATRNX, ATRNY
+    USE W3IDATMD, ONLY: FLCUR
+    USE W3ODATMD, ONLY: NDST, FLBPI, NBI, TBPI0, TBPIN, ISBPI,      &
+                          BBPI0, BBPIN
+#ifdef W3_S                          
+    USE W3SERVMD, ONLY: STRACE
+#endif    
+    !/
+    IMPLICIT NONE
+    !/
+    !/ ------------------------------------------------------------------- /
+    !/ Parameter list
+    !/
+    INTEGER, INTENT(IN)     :: ISP, MAPSTA(NSEA)
+    REAL, INTENT(IN)        :: DTG, VGX, VGY
+    REAL, INTENT(INOUT)     :: FIELD(0:NSEA+2)
+    INTEGER, INTENT(IN)     :: LVRANGE(NSEA,2)
+    !/
+    !/ ------------------------------------------------------------------ /
+    !/ Local parameters
+    !/
+    INTEGER                 :: IK, ITH, NTLOC, ITLOC, ISEA, NTSUB, &
+                               ITSUB, JXN, JXP, JYN, JYP, IBI,     &
+                               INBRX1, INBRX2, INBRY1, INBRY2, IXY
+    INTEGER                 :: LVLR, LVLT, LVLM, LVLCALC, LVL1,    &
+                               LVL2, LVL
+#ifdef W3_T3                               
+    INTEGER                 :: IX, IXF, IYF
+#endif  
+#ifdef W3_S
+    INTEGER, SAVE           :: IENT = 0
+#endif    
+    REAL                    :: CG0, CGL, CGA, CC, CGN, CP, CQ
+    REAL                    :: VCB
+    REAL                    :: RD1, RD2, DXYFAC, DTLOC, DTRAD
+    REAL                    :: FNBR
+    REAL                    :: TRAT, TSUBFAC
+#ifdef W3_T3
+    REAL                    :: AOLD
+#endif
+    !/
+    !/ Automatic work arrays
+    !/
+    REAL                    :: CXTOT(NSEA), CYTOT(NSEA)
+    REAL                    :: VCX(NSEA), VCY(NSEA),               &
+                               VFLW(NSEA), VFLE(NSEA),             &
+                               VFLS(NSEA), VFLN(NSEA)
+    INTEGER, ALLOCATABLE    :: LVLSTEP(:)
+    !/
+    !/ ------------------------------------------------------------------- /
+    !/
+#ifdef W3_S
+    CALL STRACE (IENT, 'W3XYQ1')
+#endif    
+    !
+    ! 1.  Preparations --------------------------------------------------- *
+    ! 1.a Set constants
+    !
+    ITH    = 1 + MOD(ISP-1,NTH)
+    IK     = 1 + (ISP-1)/NTH
+    !
+    CG0    = 0.575 * GRAV / SIG(1)
+    CGL    = 0.575 * GRAV / SIG(IK)
+    !
+    IF ( FLCUR ) THEN
+      CGA    = SQRT(MAXVAL((CGL*ECOS(ITH)+CX(1:NSEA))**2          &
+                          +(CGL*ESIN(ITH)+CY(1:NSEA))**2))
+      CC     = SQRT(MAXVAL(CX(1:NSEA)**2+CY(1:NSEA)**2))
+#ifdef W3_MGP      
+      CGA    = SQRT(MAXVAL((CGL*ECOS(ITH)+CX(1:NSEA)-VGX)**2      &
+                          +(CGL*ESIN(ITH)+CY(1:NSEA)-VGY)**2))
+      CC     = SQRT(MAXVAL((CX(1:NSEA)-VGX)**2+(CY(1:NSEA)-VGY)**2))
+#endif
+    ELSE
+      CGA    = CGL
+#ifdef W3_MGP      
+      CGA    = SQRT((CGL*ECOS(ITH)-VGX)**2+(CGL*ESIN(ITH)-VGY)**2)
+#endif
+      CC     = 0.
+    END IF
+    !
+    CGN    = 0.9999 * MAX ( CGA, CC, 0.001*CG0 )
+    !
+    ! 1.b Universal time stepping
+    !
+    TRAT = DTG/(DTCFL*CG0/CGN)
+    NTLOC  = 1 + INT(TRAT)
+    DTLOC  = DTG / REAL(NTLOC)
+    DTRAD  = DTLOC
+    IF ( FLAGLL ) DTRAD=DTRAD/(DERA*RADIUS)
+
+    !
+#ifdef W3_T    
+    WRITE (NDST,9000) NTLOC
+    WRITE (NDST,9001) ISP, ITH, IK
+#endif    
+    !
+    ! 1.c Level-dependent time substepping
+    !      In each universal time step, cells with level 0 to LVLT will be 
+    !       updated once, while cells with level L > LVLT will
+    !       be updated 2**(L - LVLT) times.
+    !      That makes a total number of substeps
+    !        NTSUB = 1 + 2 + ... + 2**(LVLMAX-LVLT) = 2**(LVLM-LVLT+1) - 1
+    !      First determine LVLT, so that one step at that level won't exceed 
+    !      the CFL time step (which applies at the reference level).
+    !      Then call QA_TSORDER to compute the sequence of levels calculated 
+    !      at each substep
+    !
+    LVLR = QTREE(IQGW)%LVLREF
+    LVLM = QTREE(IQGW)%LVLHI
+    LVLT = LVLR
+    !LVLT = LVLM   ! Turn off substepping
+    DO WHILE ( TRAT.LT.1. .AND. LVLT.LE.LVLM )
+      TRAT = 2.*TRAT
+      IF ( TRAT.LT.1. ) LVLT = LVLT + 1
+    END DO
+    NTSUB = 2**(LVLM-LVLT+1) - 1
+    ALLOCATE ( LVLSTEP(NTSUB) )
+    CALL QA_TSORDER( NTSUB, LVLM, LVLT, LVLSTEP, iopt=1 )
+    !
+#ifdef W3_T    
+    WRITE (NDST,9002) LVLT, NTSUB
+#endif
+    !
+    ! 1.d Initialize arrays
+    !
+    VCX   = 0.
+    VCY   = 0.
+    CXTOT  = 0.
+    CYTOT  = 0.
+    !
+    ! 2.  Calculate field and velocities --------------------------------- *
+    !
+    !     FIELD = A / CG * CLATQ
+    !     VCX   = COS*CG / CLATQ
+    !     VCY   = SIN*CG
+    !
+#ifdef W3_T1    
+    WRITE (NDST,9020)
+#endif  
+    !     Propagation velocity components (relative to water):
+#ifdef W3_OMPH
+    !$OMP PARALLEL DO PRIVATE (ISEA, IXY)
+#endif
+    DO ISEA=1, NSEA
+      IXY = MAPSF(ISEA,3)
+      IF ( MAPSTA(IXY).EQ.0 ) CYCLE
+      FIELD(IXY) = FIELD(IXY) / CG(IK,ISEA) * CLATS(ISEA)
+      CXTOT(IXY) = ECOS(ITH) * CG(IK,ISEA) / CLATS(ISEA)
+      CYTOT(IXY) = ESIN(ITH) * CG(IK,ISEA)
+#ifdef W3_MGP 
+      CXTOT(IXY) = CXTOT(IXY) - VGX/CLATS(ISEA)
+      CXTOT(IXY) = CYTOT(IXY) - VGY
+#endif    
+#ifdef W3_T1    
+      WRITE (NDST,9021) ISEA, IXY, FIELD(IXY), CXTOT(IXY), CYTOT(IXY)
+#endif
+    END DO
+#ifdef W3_OMPH
+    !$OMP END PARALLEL DO
+#endif
+    FIELD(0) = 0.
+    !
+    !     Propagation velocity components (adjusted for currents):
+    IF ( FLCUR ) THEN
+#ifdef W3_OMPH
+      !$OMP PARALLEL DO PRIVATE (ISEA, IXY)
+#endif
+      DO ISEA=1, NSEA
+        IXY      = MAPSF(ISEA,3)
+        IF ( MAPSTA(IXY).EQ.0 ) CYCLE
+        CXTOT(IXY) = CXTOT(IXY) + CX(ISEA)/CLATS(ISEA)
+        CYTOT(IXY) = CYTOT(IXY) + CY(ISEA)
+      END DO
+#ifdef W3_OMPH
+      !$OMP END PARALLEL DO
+#endif
+    END IF
+    !
+    !     Multiply x- component by dT/dX(m)          
+    IF ( FLCX ) THEN
+#ifdef W3_OMPH
+      !$OMP PARALLEL DO PRIVATE (ISEA, IXY, CP)
+#endif
+      DO ISEA=1, NSEA
+        IXY    = MAPSF(ISEA,3)
+        IF ( MAPSTA(IXY).EQ.0 ) CYCLE
+        CP = CXTOT(IXY)/SX
+        VCX(IXY) = CP*DTRAD
+      END DO
+#ifdef W3_OMPH
+      !$OMP END PARALLEL DO
+#endif
+    ELSE
+      VCX = 0.0
+    END IF
+    !     Multiply y- component by dT/dY(m)          
+    IF ( FLCY ) THEN
+#ifdef W3_OMPH
+      !$OMP PARALLEL DO PRIVATE (ISEA, IXY, CQ)
+#endif
+      DO ISEA=1, NSEA
+        IXY    = MAPSF(ISEA,3)
+    !            CQ = CXTOT(IXY)/SX
+        CQ = CXTOT(IXY)/SY
+        VCY(IXY) = CQ*DTRAD
+      END DO
+#ifdef W3_OMPH
+      !$OMP END PARALLEL DO
+#endif
+    ELSE
+      VCY = 0.0
+    END IF
+    !
+    ! ====================== Loop partial ================================ *
+    !     Applies to all cells
+    !
+    DO ITLOC=1, NTLOC
+    !
+    !       Time substep loop
+    !      
+      DO ITSUB=1, NTSUB
+          ! Level of cells processed at this iteration of the substep loop:
+          ! (if LVCALC = LVLT, all levels <= LVLT are processed)
+        LVLCALC = LVLSTEP(ITSUB)
+          ! Time step for this iteration, as a fraction of the universal 
+          ! partial time step
+        TSUBFAC = 2.**(LVLT-LVLCALC)
+    !
+#ifdef W3_T1    
+        WRITE (NDST,9010) ITLOC
+#endif    
+    !
+    ! 3.  Calculate propagation fluxes ----------------------------------- *
+    !     Only for boundaries of cells that will be updated
+    !
+#ifdef W3_OMPH
+        !$OMP PARALLEL DO PRIVATE (ISEA, IXY, LVL1, LVL2, INBRX1,    &
+        !$OMP          INBRX2, INBRY1, INBRY2, VCB, FNBR)
+#endif
+        DO ISEA=1,NSEA
+          IXY = MAPSF(ISEA,3)
+          IF ( MAPSTA(IXY).EQ.0 ) CYCLE
+          LVL1 = MAX(LVRANGE(ISEA,1),LVLT)
+          LVL2 = MAX(LVRANGE(ISEA,2),LVLT)
+          IF ( LVLCALC.LT.LVL1 .OR. LVLCALC.GT.LVL2 ) CYCLE
+          ! Flux through the east wall:
+          INBRX1 = QTREE(IQGW)%NGBR(ISEA,2)
+          INBRX2 = QTREE(IQGW)%NGBR(ISEA,6)
+          IF ( INBRX1 .GT. 0 .AND. INBRX2 .GT. 0 ) THEN
+            VCB  = ( VCX(ISEA) + VCX(INBRX1) + VCX(INBRX2) )/3.
+            FNBR = 0.5*( FIELD(INBRX1) + FIELD(INBRX2) )
+          ELSEIF ( INBRX1 .GT. 0 ) THEN
+            VCB  = ( VCX(ISEA) + VCX(INBRX1) )*0.5
+            FNBR = FIELD(INBRX1)
+          ELSE
+            VCB  = VCX(ISEA)
+            FNBR = 0.
+          END IF
+          VFLE(ISEA) = MAX ( VCB , 0. ) * FIELD(ISEA)               &
+                     + MIN ( VCB , 0. ) * FNBR
+          ! Flux through the west wall:
+          INBRX1 = QTREE(IQGW)%NGBR(ISEA,1)
+          INBRX2 = QTREE(IQGW)%NGBR(ISEA,5)
+          IF ( INBRX1 .GT. 0 .AND. INBRX2 .GT. 0 ) THEN
+            VCB  = ( VCX(ISEA) + VCX(INBRX1) + VCX(INBRX2) )/3.
+            FNBR = 0.5*( FIELD(INBRX1) + FIELD(INBRX2) )
+          ELSEIF ( INBRX1 .GT. 0 ) THEN
+            VCB  = ( VCX(ISEA) + VCX(INBRX1) )*0.5
+            FNBR = FIELD(INBRX1)
+          ELSE
+            VCB  = VCX(ISEA)
+            FNBR = 0.
+          END IF
+          VFLW(ISEA) = MIN ( VCB , 0. ) * FIELD(ISEA)               &
+                     + MAX ( VCB , 0. ) * FNBR
+          ! Flux through the north wall:
+          INBRY1 = QTREE(IQGW)%NGBR(ISEA,4)
+          INBRY2 = QTREE(IQGW)%NGBR(ISEA,8)
+          IF ( INBRY1 .GT. 0 .AND. INBRY2 .GT. 0 ) THEN
+            VCB  = ( VCY(ISEA) + VCY(INBRY1) + VCY(INBRY2) )/3.
+            FNBR = 0.5*( FIELD(INBRY1) + FIELD(INBRY2) )
+          ELSEIF ( INBRY1 .GT. 0 ) THEN
+            VCB  = ( VCY(ISEA) + VCY(INBRY1) )*0.5
+            FNBR = FIELD(INBRY1)
+          ELSE
+            VCB  = VCY(ISEA)
+            FNBR = 0.
+          END IF
+          VFLN(ISEA) = MAX ( VCB , 0. ) * FIELD(ISEA)               &
+                     + MIN ( VCB , 0. ) * FNBR
+          ! Flux through the south wall:
+          INBRY1 = QTREE(IQGW)%NGBR(ISEA,3)
+          INBRY2 = QTREE(IQGW)%NGBR(ISEA,7)
+          IF ( INBRY1 .GT. 0 .AND. INBRY2 .GT. 0 ) THEN
+            VCB  = ( VCY(ISEA) + VCY(INBRY1) + VCY(INBRY2) )/3.
+            FNBR = 0.5*( FIELD(INBRY1) + FIELD(INBRY2) )
+          ELSEIF ( INBRY1 .GT. 0 ) THEN
+            VCB  = ( VCY(ISEA) + VCY(INBRY1) )*0.5
+            FNBR = FIELD(INBRY1)
+          ELSE
+            VCB  = VCY(ISEA)
+            FNBR = 0.
+          END IF
+          VFLS(ISEA) = MIN ( VCB , 0. ) * FIELD(ISEA)               &
+                     + MAX ( VCB , 0. ) * FNBR
+        END DO
+#ifdef W3_OMPH
+        !$OMP END PARALLEL DO
+#endif
+    !
+    ! 4.  Propagate ------------------------------------------------------ *
+    !
+#ifdef W3_T3    
+        WRITE (NDST,9040)
+#endif    
+    !
+#ifdef W3_OMPH
+        !$OMP PARALLEL DO PRIVATE (ISEA, AOLD, IXY, LVL, JXN, JXP,   &
+        !$OMP          JYN, JYP)
+#endif
+        DO ISEA=1, NSEA
+    !
+#ifdef W3_T3
+          AOLD   = FIELD(ISEA) * CG(IK,ISEA) / CLATQ(ISEA)
+#endif
+          IXY = MAPSF(ISEA,3)
+          IF ( MAPSTA(IXY).EQ.0 ) CYCLE
+          LVL = QTREE(IQGW)%INDLVL(ISEA)
+          ! Inverse ratio of cell DX and DY to those at the reference level
+          DXYFAC = 2.**(LVL-LVLR)
+          LVL = MAX(LVL,LVLT)
+          IF ( LVL.NE.LVLCALC ) CYCLE
+          IF ( MAPSTA(IXY).EQ.1 ) THEN
+    !
+            IF ( VFLW(ISEA) .GT. 0. ) THEN
+              JXN   = -1
+            ELSE
+              JXN   =  0
+            END IF
+            IF ( VFLE(ISEA  ) .LT. 0. ) THEN
+              JXP   =  1
+            ELSE
+              JXP   =  0
+            END IF
+            IF ( VFLS(ISEA) .GT. 0. ) THEN
+              JYN   = -1
+            ELSE
+              JYN   =  0
+            END IF
+            IF ( VFLN(ISEA  ) .LT. 0. ) THEN
+              JYP   =  1
+            ELSE
+              JYP   =  0
+            END IF
+    !
+            FIELD(ISEA) =  FIELD(ISEA)                              &
+                   + DXYFAC*TSUBFAC*( ATRNX(ISEA,JXN) * VFLW(ISEA)  &
+                                    - ATRNX(ISEA,JXP) * VFLE(ISEA)  &
+                                    + ATRNY(ISEA,JYN) * VFLS(ISEA)  &
+                                    - ATRNY(ISEA,JYP) * VFLN(ISEA) )
+#ifdef W3_T3
+            WRITE (NDST,9041) ISEA,                                 &
+               (QTREE(IQGW)%NGBR(ISEA,II),II=1,4),                  &
+               VFLW(ISEA), VFLE(ISEA),                              &
+               VFLS(ISEA), VFLN(ISEA),                              &
+               CG(IK,ISEA)/CLATQ(ISEA), AOLD, FIELD(ISEA)
+#endif
+          ELSE IF (MAPSTA(IXY).NE.0) THEN
+    !
+#ifdef W3_T3
+            WRITE (NDST,9042) ISEA, MAPSTA(IXY), AOLD, FIELD(ISEA)
+#endif
+    !
+          END IF
+    !
+        END DO
+#ifdef W3_OMPH
+        !$OMP END PARALLEL DO
+#endif
+    !
+    ! 5.  Update boundary conditions ------------------------------------- *
+    !
+        IF ( FLBPI ) THEN
+          RD1    = DSEC21 ( TBPI0, TIME ) - DTG *                   &
+                                 REAL(NTLOC - ITLOC)/REAL(NTLOC)
+          RD2    = DSEC21 ( TBPI0, TBPIN )
+          IF ( RD2 .GT. 0.001 ) THEN
+            RD2    = MIN(1.,MAX(0.,RD1/RD2))
+            RD1    = 1. - RD2
+          ELSE
+            RD1    = 0.
+            RD2    = 1.
+          END IF
+          DO IBI=1, NBI
+            ISEA = ISBPI(IBI)
+            FIELD(ISEA) = ( RD1*BBPI0(ISP,IBI) +                    &
+                     RD2*BBPIN(ISP,IBI) ) * CLATS(ISEA)/CG(IK,ISEA)
+          END DO
+        END IF
+    !
+    ! ... End of partial time substep loop
+    !
+      END DO
+    !
+    ! ... End of partial time step loop
+    !
+    END DO
+    !
+    ! Rescale FIELD
+    !
+#ifdef W3_OMPH
+    !$OMP PARALLEL DO PRIVATE (ISEA, IXY)
+#endif
+    DO ISEA=1,NSEA
+      IXY = MAPSF(ISEA,3)
+      IF ( MAPSTA(IXY).EQ.0 ) CYCLE
+      FIELD(ISEA) = CG(IK,ISEA) / CLATS(ISEA) * FIELD(ISEA)
+    END DO
+#ifdef W3_OMPH
+    !$OMP END PARALLEL DO
+#endif
+    !
+    RETURN
+    !
+    ! Formats
+    !
+#ifdef W3_T
+9000 FORMAT (' TEST W3XYQ1 : NTLOC :',I4)
+9001 FORMAT (' TEST W3XYQ1 : ISP, ITH, IK :',I8,2I4)
+9002 FORMAT (' TEST W3XYQ1 : LVLT, NTSUB :',2I4)
+#endif
+    !
+#ifdef W3_T1
+9010 FORMAT (' TEST W3XYQ1 : ITLOC =',I3)
+    !
+9020 FORMAT (' TEST W3XYQ1 : ISEA, IXY, FIELD, VCX, VCY')
+9021 FORMAT ('           ',2I8,3E12.4)
+9025 FORMAT ('               ',I4,2E12.4)
+#endif
+    
+#ifdef W3_T2
+9032 FORMAT (' TEST W3XYQ1 : CLOSE. : IY, VFLX')
+9033 FORMAT ('            ',I4,E12.4)
+#endif
+    !
+#ifdef W3_T3
+9040 FORMAT (' TEST W3XYQ1 : PROPAGATION '/                      &
+             '      ISEA, ISEAW, ISEAE, ISEAS, ISEAN',           &
+             '  FLXW, FLXE, FLXS, FLXN, FAC, A(2)')
+9041 FORMAT (2X,5I5,1X,4E10.3,1X,E10.3,1X,2E10.3)
+9042 FORMAT (2X,I5,'( MAP = ',I2,' )',56X,2E10.3)
+#endif
+    !/
+    !/ End of W3XYQ1 ----------------------------------------------------- /
+    !/
+  END SUBROUTINE W3XYQ1
+    !      
+    !/ ------------------------------------------------------------------- /
+    !--
+  SUBROUTINE W3MPQ1 ( MAPSTA, LVRANGE )
+    !/
+    !/                  +-----------------------------------+
+    !/                  | WAVEWATCH-III           NOAA/NCEP |
+    !/                  |           H. L. Tolman            |
+    !/                  | QUADTREE version             NIWA |
+    !/                  |           R. M. Gorman            |
+    !/                  |                        FORTRAN 90 |
+    !/                  | Last update :         27-May-2014 |
+    !/                  +-----------------------------------+
+    !/
+    !/    29-May-2014 : Origination.
+    !/
+    !  1. Purpose :
+    !
+    !     Compute range of refinement levels for each cell and its
+    !     neighbours in a quadtree grid, prior to computing spatial propagation. 
+    !
+    !  2. Method :
+    !
+    !  3. Parameters :
+    !
+    !     Parameter list
+    !     ----------------------------------------------------------------
+    !       MAPSTA  I.A.   I   Grid point status map.
+    !       LVRANGE I.A.   O   For each cell, gives the minimum and maximum
+    !                          refinement level of the cell and its immediate
+    !                          neighbours
+    !     ----------------------------------------------------------------
+    !
+    !     Local variables.
+    !     ----------------------------------------------------------------
+    !       NTLOC   Int.  Number of local steps.
+    !       VCX     R.A.  Propagation velocities.
+    !       VCY     R.A.
+    !       VFLX    R.A.  Discrete fluxes between grid points.
+    !       VFLY    R.A.
+    !     ----------------------------------------------------------------
+    !
+    !  4. Subroutines used :
+    !
+    !     See module documentation.
+    !
+    !  5. Called by :
+    !
+    !      Name      Type  Module   Description
+    !     ---------------------------------------------------------------- 
+    !      W3WAVE    Subr. W3WAVEMD Wave model routine.
+    !     ----------------------------------------------------------------
+    !
+    !  6. Error messages :
+    !
+    !       None.
+    !
+    !  7. Remarks :
+    !
+    !     - The local work arrays are initialized on the first entry to
+    !       the routine.
+    !
+    !  8. Structure :
+    !
+    !  9. Switches :
+    !
+    ! 10. Source code :
+    !
+    !/ ------------------------------------------------------------------- /
+    USE QA_UTILS
+    !
+    USE W3GDATMD, ONLY: NSEA, MAPSF, IQGW, QTREE
+#ifdef W3_S
+    USE W3SERVMD, ONLY: STRACE
+#endif
+    !/
+    IMPLICIT NONE
+    !/
+    !/ ------------------------------------------------------------------- /
+    !/ Parameter list
+    !/
+    INTEGER, INTENT(IN)     :: MAPSTA(NSEA)
+    INTEGER, INTENT(OUT)    :: LVRANGE(NSEA,2)
+    !/
+    !/ ------------------------------------------------------------------ /
+    !/ Local parameters
+    !/
+    INTEGER                 :: ISEA, IXY, LVL, II, INBR
+    !/
+    !/ ------------------------------------------------------------------- /
+    !/
+#ifdef W3_S
+    CALL STRACE (IENT, 'W3MPQ1')
+#endif
+    !
+    DO ISEA=1,NSEA
+      IXY = MAPSF(ISEA,3)
+      IF ( MAPSTA(IXY).EQ.0 ) CYCLE
+      LVL = QTREE(IQGW)%INDLVL(ISEA)
+      LVRANGE(ISEA,1) = LVL
+      LVRANGE(ISEA,2) = LVL
+      DO II=1,4
+        INBR = QTREE(IQGW)%NGBR(ISEA,II)
+        IF ( INBR .GT. 0 ) THEN
+          LVL = QTREE(IQGW)%INDLVL(INBR)
+          LVRANGE(ISEA,1) = MIN(LVRANGE(ISEA,1),LVL)
+          LVRANGE(ISEA,2) = MAX(LVRANGE(ISEA,2),LVL)
+        END IF
+      END DO
+    END DO
+    !
+    RETURN
+    !/
+    !/ End of W3MPQ1 ----------------------------------------------------- /
+    !/
+  END SUBROUTINE W3MPQ1
+    !/
   !/
   !/ End of module W3PRO1MD -------------------------------------------- /
   !/

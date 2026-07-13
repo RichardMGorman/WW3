@@ -557,6 +557,7 @@ $               'RECT'  : rectilinear
 $               'CURV'  : curvilinear
 $               'UNST'  : unstructured (triangle-based)
 $               'SMCG'  : Spherical Multiple-Cell grid.
+$               'QUAD'  : Quadtree adaptive grid
 $      FLAGLL : Flag to indicate coordinate system :
 $               T  : Spherical (lon/lat in degrees)
 $               F  : Cartesian (meters)

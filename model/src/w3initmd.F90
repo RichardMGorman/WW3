@@ -207,6 +207,7 @@ CONTAINS
     !/    02-Sep.2012 : Set up for > 999 test files.        ( version 4.10 )
     !/    03-Sep-2012 : Switch test file on/off (TSTOUT)    ( version 4.10 )
     !/    03-Sep-2012 : Clean up of UG grids                ( version 4.08 )
+    !/    25-Jun-2026 : Incorporate quadtrees (R. Gorman)   ( version X.XX )
     !/
     !  1. Purpose :
     !
@@ -372,7 +373,7 @@ CONTAINS
 
     USE CONSTANTS
     !/
-    USE W3GDATMD, ONLY: W3SETG, RSTYPE
+    USE W3GDATMD, ONLY: W3SETG, RSTYPE, W3DIMX, W3DIMQ, W3QALL
     USE W3WDATMD, ONLY: W3SETW, W3DIMW
     USE W3ADATMD, ONLY: W3SETA, W3DIMA
     USE W3IDATMD, ONLY: W3SETI, W3DIMI
@@ -389,8 +390,12 @@ CONTAINS
     USE W3ARRYMD, ONLY: PRTBLK
     !/
     USE W3GDATMD, ONLY: NX, NY, NSEA, NSEAL, MAPSTA, MAPST2,  &
-         MAPSF, FLAGLL, ZB, DMIN, DTCFL, DTMAX, &
-         FLCK, NK, NTH, NSPEC, SIG, GNAME
+         MAPSF, FLAGLL, ZB, DMIN, DTCFL, DTMAX,      &
+         FLCK, NK, NTH, NSPEC, SIG, GNAME,           &
+         QTREE, NCMXQ, NQMXQ, NAUX_QA, IQGW, IQGB,   &
+         NCTARGET_QA, GTYPE, QAGTYPE, NQUAD,         &
+         IAUX_QA, EXAUX_QA, LVRANGE_QA, WTS1_QA,     &
+         MAPML_QA
 #ifdef W3_PDLIB
     USE W3GDATMD, ONLY : FLCTH, B_JGS_BLOCK_GAUSS_SEIDEL, B_JGS_USE_JACOBI
 #endif
@@ -418,6 +423,11 @@ CONTAINS
     USE W3IDATMD, ONLY: FLLEV, FLCUR, FLWIND, FLICE, FLTAUA, FLRHOA,&
          FLMDN, FLMTH, FLMVS, FLIC1, FLIC2, FLIC3,   &
          FLIC4, FLIC5
+    USE W3ADGRMD, ONLY: W3ADG1
+#ifdef W3_PR1
+    USE W3PRO1MD, ONLY: W3MPQ1
+#endif
+    USE QA_UTILS
     USE W3DISPMD, ONLY: WAVNU1, WAVNU3
     USE W3PARALL, ONLY: SET_UP_NSEAL_NSEALM
 #ifdef W3_PDLIB
@@ -520,6 +530,9 @@ CONTAINS
     CHARACTER(LEN=23)       :: DTME21
     CHARACTER(LEN=30)       :: LFILE, TFILE
     integer                 :: memunit
+    INTEGER                 :: NDSEN
+    INTEGER                 :: NSEA_SAV, NINDML
+    LOGICAL                 :: GET_TYPE
     !/
     !/ ------------------------------------------------------------------- /
     !
@@ -790,10 +803,74 @@ CONTAINS
     END IF
     IF ( IAPROC .EQ. NAPLOG ) WRITE (NDSO,920)
     !
-    ! 2.b Save MAPSTA
+    IF ( GTYPE.EQ. QAGTYPE ) THEN
     !
-    ALLOCATE ( MAPTST(NY,NX) )
-    MAPTST  = MAPSTA
+    ! 2.b.1 For the quadtree case, get the adapted grid size from the restart file:
+    !
+    !   Save parameters of the bathymetry quadtree
+      NCMXQ(IQGB) = NSEA
+      NQMXQ(IQGB) = NQUAD
+      NINDML = MAXVAL(QTREE(IQGB)%INDML)
+    !
+    !   Get the adapted grid size from the restart file:
+      CALL W3IORS ( 'GRID', NDS(6), SIG(NK), IMOD )
+    !
+    !   Adjust allocations using user input
+      NQMXQ(IQGW) = NQUAD
+      NCMXQ(IQGW) = NSEA
+      IF ( NCTARGET_QA.GT.NCMXQ(IQGW)) THEN
+        NQMXQ(IQGW) = NQMXQ(IQGW) + (NCTARGET_QA - NSEA + 3)/3
+        NCMXQ(IQGW) = NCTARGET_QA
+      END IF
+      NQMXQ(IQGW) = MAX(NQUAD, NQMXQ(IQGW))
+      NX = NSEA
+      NY = 1
+#ifdef W3_PR2        
+      NUFc = 2*NCMXQ(IQGW)          
+      NVFc = NUFc          
+      NRLv = 1 + QTREE(IQGW)%LVLMAX          
+#endif
+    !
+    !   Allocate quadtree arrays, and deallocate those arrays
+    !   from the model definition file that need to be resized          
+      CALL W3DIMQ  ( 1, NCMXQ(IQGB), NCMXQ(IQGW), NAUX_QA,        &
+                         NINDML, NDSEN, NDST )
+    !   ... and reallocate:
+      IF ( NCMXQ(IQGW).NE.NCMXQ(IQGB) ) CALL W3DIMX( IMOD,        &
+                         NCMXQ(IQGW), NY, NCMXQ(IQGW)             &
+#ifdef W3_PR2        
+                         , NUFc, NVFc, NRLv                       &
+#endif
+                         , NDSEN, NDST )
+    !
+    !   MAPSTA etc. will be recomputed later, after the quadtree grid 
+    !   is read from the restart file
+    !
+    !   Allocate a wave quadtree 
+      CALL W3QALL ( IQGW, NCMXQ(IQGW), NQMXQ(IQGW), 0, 1 )
+    !   Precompute the first-order weights                            
+      CALL QA_DERWTS( WTS1_QA )
+    !
+    !   Compute status map on multilevel grid
+      MAPML_QA = QTREE(IQGB)%UNDEF_TYPE
+      DO ISEA=1,QTREE(IQGB)%NCELL
+        IS = QTREE(IQGB)%INDML(ISEA)
+        MAPML_QA(IS) = QTREE(IQGB)%CELL_TYPE(ISEA)
+      END DO
+#ifdef W3_T        
+      WRITE(NDST,*) 'TEST W3INIT qtree alloc, NSEA, NSEAL = ',    &
+                      NSEA,NSEAL
+#endif
+    ELSE
+    !
+    ! 2.b.2 For other grid types, save MAPSTA
+    !       Allocate a dummy quadtree structure that will be passed
+    !       to W3FLDG, but not used
+    !
+      ALLOCATE ( MAPTST(NY,NX) )
+      MAPTST  = MAPSTA 
+      CALL W3QALL ( 1, 1, 1, 0, 0)
+    END IF
     call print_memcheck(memunit, 'memcheck_____:'//' WW3_INIT SECTION 2e')
     !
     !
@@ -836,6 +913,11 @@ CONTAINS
     !
     ! 2.c.2 Allocate arrays
     !
+    IF ( GTYPE.EQ.QAGTYPE ) THEN
+      NSEA_SAV = NSEA
+      NSEA = NCMXQ(IQGW)
+    END IF
+
     IF ( IAPROC .LE. NAPROC ) THEN
       CALL W3DIMW ( IMOD, NDSE, NDST )
       call print_memcheck(memunit, 'memcheck_____:'//' WW3_INIT SECTION 2h')
@@ -854,6 +936,8 @@ CONTAINS
     CALL PRINT_MY_TIME("After W3DIMI")
 #endif
     call print_memcheck(memunit, 'memcheck_____:'//' WW3_INIT SECTION 3')
+    !
+    IF ( GTYPE.EQ.QAGTYPE ) NSEA = NSEA_SAV
     !
     ! 2.c.3 Calculated expected number of prop. calls per processor
     !
@@ -1004,16 +1088,67 @@ CONTAINS
 #endif
 
     !
-    ! 3.b Compare MAPSTA from grid and restart
+    IF ( GTYPE.EQ.QAGTYPE ) THEN
     !
-    DO IX=1, NX
-      DO IY=1, NY
-        IF ( ABS(MAPSTA(IY,IX)).EQ.2 .OR.                           &
-             ABS(MAPTST(IY,IX)).EQ.2 ) THEN
-          MAPSTA(IY,IX) = SIGN ( MAPTST(IY,IX) , MAPSTA(IY,IX) )
+    ! 3.b.1  For quadtrees, compute mappings from wave to all auxiliary grids.
+    !        Compute mappings to interpolation weights table.
+    !        Map spatial data from bathymetry to wave quadtree.
+    !        Compute level ranges for propagation.
+    !
+#ifdef W3_T
+      WRITE(NDST,*) 'TEST W3INIT after W3IORS, NSEA, NSEAL = ',   &
+                        NSEA,NSEAL            
+#endif
+    !        Trivial mapping between wave quadtree and itself:
+      DO ISEA=1,NSEA
+        IAUX_QA(ISEA,IQGW) = ISEA
+      END DO
+      EXAUX_QA(:,IQGW) = .TRUE.      
+      DO J = 2,NAUX_QA
+        GET_TYPE = .FALSE.
+        IF ( J.EQ.2 ) GET_TYPE = .TRUE.
+        CALL QA_Q2QMAP( QTREE(IQGW), QTREE(J), GET_TYPE,     &
+                        IAUX_QA(:,J), exact12=EXAUX_QA(:,J), &
+                        ierr=IERR, ndse=NDSE )
+        IF ( IERR.GT.0 ) THEN
+          IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,8003) J, IERR
+          CALL EXTCDE ( 3 )
         END IF
       END DO
-    END DO
+#ifdef W3_T
+      WRITE(NDST,9028) NAUX_QA
+#endif!
+      CALL  QA_NBDIST ( QTREE(IQGW), ierr=IERR, ndse=NDSE )
+      IF ( IERR.NE.0 ) THEN
+        IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,8004) IERR
+        CALL EXTCDE ( 3 )
+      END IF
+    !
+      DO ISEA=1,NSEA
+        CALL W3ADG1 ( ISEA )
+      END DO
+    !  Compute maps for propagation
+#ifdef W3_PR1    
+      CALL W3MPQ1 ( MAPSTA, LVRANGE_QA )
+#endif
+#ifdef W3_PR1    
+      CALL QA_QT2SMC ( QTREE(IQGW), -9, IJKCel, IJKUFc, IJKVFc,    &
+                           NLvUFc, NLvVFc, ierr=IERR, ndse=NDSE )
+#endif
+      ALLOCATE ( MAPTST(NY,NX) )
+    ELSE
+    !
+    ! 3.b.2  For other grid types, compare MAPSTA from grid and restart
+    !
+      DO IX=1, NX
+        DO IY=1, NY
+          IF ( ABS(MAPSTA(IY,IX)).EQ.2 .OR.                           &
+             ABS(MAPTST(IY,IX)).EQ.2 ) THEN
+          MAPSTA(IY,IX) = SIGN ( MAPTST(IY,IX) , MAPSTA(IY,IX) )
+          END IF
+        END DO
+      END DO
+    END IF
     call print_memcheck(memunit, 'memcheck_____:'//' WW3_INIT SECTION 3b')
     !
 #ifdef W3_DEBUGCOH
@@ -1632,6 +1767,12 @@ CONTAINS
 8002 FORMAT (/' *** WAVEWATCH III WARNING IN W3INIT : '/             &
          '     SIGNIFICANT PART OF RESOURCES RESERVED FOR',          &
          ' OUTPUT :',F6.1,'%'/)
+8003 FORMAT (/' *** WAVEWATCH III ERROR IN W3INIT : '/               &
+              '     ERROR IN QA_Q2QMAP FOR AUX. QTREE J = ',I2/      &
+              '     IOSTAT =',I5/)
+8004 FORMAT (/' *** WAVEWATCH III ERROR IN W3INIT : '/               &
+              '     ERROR IN QA_NBDIST'/                             &
+              '     IOSTAT =',I5/)
 #ifdef W3_DIST
 8020 FORMAT (/' *** WAVEWATCH III ERROR IN W3INIT : '/               &
          '     NUMBER OF SEA POINTS LESS THAN NUMBER OF PROC.'/      &
@@ -1660,6 +1801,7 @@ CONTAINS
 9025 FORMAT (' TEST W3INIT : MPP PROPAGATION MAP SPECTRAL COMP.')
 9026 FORMAT (4X,I4,2X,24I4)
 9027 FORMAT (10X,24I4)
+9028 FORMAT (' TEST W3INIT : NAUX_QA :', I8)
     !
 9030 FORMAT (' TEST W3INIT : INITIALIZATION USING WINDS, ',       &
          'PERFORMED IN W3WAVE')

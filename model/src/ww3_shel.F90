@@ -399,6 +399,8 @@ PROGRAM W3SHEL
 #else 
   INTEGER              :: MPICOMM = -99
 #endif
+  LOGICAL             :: FLQA, NEW_QT
+  INTEGER             :: NXWND, NXICE, NXCUR, NXLEV, NXINP, NYINP
   !
   !/
   !/ ------------------------------------------------------------------- /
@@ -651,7 +653,6 @@ PROGRAM W3SHEL
   FLLSTI = .FALSE. ! This is associated with J.EQ.4 (ice)
   FLLSTR = .FALSE. ! This is associated with J.EQ.6 (rhoa)
   FLLST_ALL = .FALSE. ! For all
-
   ! If using experimental mud or ice physics, additional lines will
   !  be read in from ww3_shel.inp and applied, so JFIRST is changed from
   !  its initialization setting "JFIRST=1" to some lower value.
@@ -679,6 +680,24 @@ PROGRAM W3SHEL
 #ifdef W3_IC5
   JFIRST=-7
 #endif
+  !
+  ! 1.d Default quadtree grid IDs: 
+  !  Wave and bathy
+  IQGW = 1
+  IQGB = 1
+  !  Levels, currents, winds and ice:
+  !  for homogeneous fields, these will be on the wave quadtree.
+  !  Also, for non-quadtree simulations, these will refer to a 
+  !  dummy "wave quadtree" QTREE(1) passed to, but not used by, W3FLDG
+  IQGL0 = IQGW
+  IQGLN = IQGW
+  IQGC0 = IQGW
+  IQGCN = IQGW
+  IQGA0 = IQGW
+  IQGAN = IQGW
+  IQGI0 = IQGW
+  IQGIN = IQGW
+
 
   call print_memcheck(memunit, 'memcheck_____:'//' WW3_SHEL SECTION 2a')
   !
@@ -1590,6 +1609,46 @@ PROGRAM W3SHEL
 
     ! force minimal allocation to avoid memory seg fault
     IF ( .NOT.ALLOCATED(X) .AND. NPTS.EQ.0 ) ALLOCATE ( X(1), Y(1), PNAMES(1) )
+    !
+    FLQA = GTYPE.EQ.QAGTYPE
+    !
+    IF ( FLQA ) THEN
+      ! TO DO: Namelist version of this
+      ! Quadtree simulations:
+      ! default size of all quadtree grids:
+      NCMXQ = NSEA
+      NQMXQ = NQUAD
+      ! Save parameters of the bathymetry quadtree
+      IQGB = 2
+      ! Auxiliary quadtrees (wave and bathy at least):          
+      NAUX_QA = 2
+      !
+      ! Read user quadtree options
+      CALL NEXTLN ( COMSTR , NDSI , NDSEN )
+      READ (NDSI,*,IOSTAT=IERR) NCTARGET_QA, DVTYPE_QA,   &
+                                DVTOLFAC_QA, DVMAX_QA
+      IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3SHEL','INPUT',1001)
+      SELECT CASE (DVTYPE_QA)
+        CASE (0)
+          DVTSTR = 'no adaptivity'
+        CASE (1)
+          DVTSTR = 'depth-dependent CFL factor'
+        CASE (2)
+          DVTSTR = '2nd derivative of wind speed'
+        CASE (3)
+          DVTSTR = '2nd derivative of wave spectrum'
+        CASE (12)
+          DVTSTR = 'CFL factor x 2nd deriv. wind speed'
+        CASE (13)
+          DVTSTR = 'CFL factor x wind speed'
+        CASE DEFAULT
+          DVTSTR = 'UNDEFINED: default to 2nd der. wind'
+          DVTYPE_QA = 2
+      END SELECT
+      IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,4900) NCTARGET_QA,  &
+                             DVTYPE_QA, DVTSTR,  DVTOLFAC_QA,   &
+                             DVMAX_QA/DVTOLFAC_QA, DVMAX_QA 
+    END IF
 
     ! 2.6 Homogeneous field data
 
@@ -1729,8 +1788,10 @@ PROGRAM W3SHEL
           IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,954) IDFLDS(J)
         ELSE
           FLAGTIDE = 0
-          CALL W3FLDO ('READ', IDSTR(J), NDSF(J), NDST,     &
-               NDSEN, NX, NY, GTYPE,               &
+          NXINP = NX
+          NYINP = NY
+          CALL W3FLDO ('READ', IDSTR(J), NDSF(J), NDST,         &
+               NDSEN, NXINP, NYINP, GTYPE,                      &
                IERR, FPRE=TRIM(FNMPRE), TIDEFLAGIN=FLAGTIDE )
           IF ( IERR .NE. 0 ) &
             CALL FINALISE(MPICOMM, IERR_MPI, NDSO, NDS(1), CLKDT1, CLKDT2)
@@ -1739,6 +1800,17 @@ PROGRAM W3SHEL
           IF (FLAGTIDE.GT.0.AND.J.EQ.2) FLAGSTIDE(2)=.TRUE.
 #endif
           IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,955) IDFLDS(J)
+          IF ( FLQA ) THEN
+            ! Allocate quadtree structures for the various inputs
+            ! and read their initial states
+            ! NXINP, NYINP returned from W3FLDO are actually 
+            ! NCELL, NQUAD
+            CALL W3FLQO( J, NDSF(J), NXINP, NYINP, IERR )
+            IF ( IERR .NE. 0 ) THEN
+              IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,1011) IERR, J
+              CALL EXTCDE ( 1011 )
+            END IF
+          END IF
         END IF
       ELSE
         IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,954) IDFLDS(J)
@@ -1921,11 +1993,29 @@ PROGRAM W3SHEL
   !
   IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,951) 'Wave model ...'
   !
+  ! 5.a-1
+  IF ( FLQA ) THEN
+    ! Quadtree simulations:
+    ! default size of all quadtree grids:
+    NCMXQ = NSEA
+    NQMXQ = NQUAD
+    ! Save parameters of the bathymetry quadtree
+    IQGB = 2
+    ! Auxiliary quadtrees (wave and bathy at least):          
+    NAUX_QA = 2
+  END IF
+  !
 #ifdef W3_TIDE
   IF (FLAGSTIDE(1).OR.FLAGSTIDE(2)) THEN
     CALL VUF_SET_PARAMETERS
-    IF (FLAGSTIDE(1)) CALL W3FLDTIDE1 ( 'READ',  NDSF(1), NDST, NDSEN, NX, NY, IDSTR(1), IERR )
-    IF (FLAGSTIDE(2)) CALL W3FLDTIDE1 ( 'READ',  NDSF(2), NDST, NDSEN, NX, NY, IDSTR(2), IERR )
+    NXLEV = NX
+    NXCUR = NX
+    IF ( FLQA ) THEN
+      NXLEV = NCMXQ(IQGLN)
+      NXCUR = NCMXQ(IQGLN)
+    END IF
+    IF (FLAGSTIDE(1)) CALL W3FLDTIDE1 ( 'READ',  NDSF(1), NDST, NDSEN, NXLEV, NY, IDSTR(1), IERR )
+    IF (FLAGSTIDE(2)) CALL W3FLDTIDE1 ( 'READ',  NDSF(2), NDST, NDSEN, NXCUR, NY, IDSTR(2), IERR )
   END IF
 #endif
   !
@@ -1961,12 +2051,20 @@ PROGRAM W3SHEL
   call print_memcheck(memunit, 'memcheck_____:'//' WW3_SHEL SECTION 5')
   !
 #ifdef W3_TIDE
-  IF (FLAGSTIDE(1)) CALL W3FLDTIDE2 ( 'READ',  NDSF(1), NDST, NDSEN, NX, NY, IDSTR(1), 1, IERR )
-  IF (FLAGSTIDE(2)) CALL W3FLDTIDE2 ( 'READ',  NDSF(2), NDST, NDSEN, NX, NY, IDSTR(2), 1, IERR )
+  IF (FLAGSTIDE(1)) CALL W3FLDTIDE2 ( 'READ',  NDSF(1), NDST, NDSEN, NXLEV, NY, IDSTR(1), 1, IERR )
+  IF (FLAGSTIDE(2)) CALL W3FLDTIDE2 ( 'READ',  NDSF(2), NDST, NDSEN, NXCUR, NY, IDSTR(2), 1, IERR )
   ALLOCATE(V_ARG(170,1),F_ARG(170,1),U_ARG(170,1))  ! to be removed later ...
 #endif
+  IF ( FLQA .AND. IAPROC.EQ.NAPOUT )         &
+         WRITE( NDSO,957) NX, NY, NSEA, NQUAD
   !
   ALLOCATE ( XXX(NX,NY) )
+  IF ( FLQA ) THEN
+    ALLOCATE ( XXL(NCMXQ(IQGLN),NY), XXC(NCMXQ(IQGCN),NY),      &
+               XXI(NCMXQ(IQGIN),NY)  )
+  ELSE
+    ALLOCATE ( XXL(NX,NY), XXC(NX,NY), XXI(NX,NY) )
+  END IF
   !
 #ifdef W3_MPI
   CALL MPI_BARRIER ( MPICOMM, IERR_MPI )
@@ -2130,8 +2228,10 @@ PROGRAM W3SHEL
           !
           ! IC1 : (in context of IC3 & IC2, this is ice thickness)
           IF ( J .EQ. -7 ) THEN
+            NXICE = NX
+            IF ( FLQA ) NXICE = NCMXQ(IQGIN)
             IF ( FLH(J) ) THEN
-              CALL W3FLDH (J, NDST, NDSEN, NX, NY, NX, NY,    &
+              CALL W3FLDH (J, NDST, NDSEN, NXICE, NY, NXICE, NY,    &
                    TIME0, TIMEN, NH(J), NHMAX, THO, HA, HD, HS,&
                    TTT, XXX, XXX, XXX, TI1, XXX, XXX, ICEP1, IERR)
             ELSE
@@ -2140,62 +2240,75 @@ PROGRAM W3SHEL
               IF (.NOT.FLAGSCI) ID_OASIS_TIME = -1
 #endif
               CALL W3FLDG ('READ', IDSTR(J), NDSF(J),         &
-                   NDST, NDSEN, NX, NY, NX, NY, TIME0, TIMEN, &
+                   NDST, NDSEN, NXICE, NY, NXICE, NY, TIME0, TIMEN, &
                    TTT, XXX, XXX, XXX, TI1, XXX, XXX, ICEP1,  &
                    IERR, FLAGSC(J)                            &
 #ifdef W3_OASICM
                    , MPICOMM                       &
 #endif
+                   , flqa=FLQA, new_qt=NEW_QT,                &
+                   qtree=QTREE(IQGI0:IQGIN) 
                    )
             END IF
             IF ( IERR .LT. 0 ) FLLST_ALL(J) = .TRUE.
 
             ! IC2 : (in context of IC3, this is ice viscosity)
           ELSE IF ( J .EQ. -6 ) THEN
+            NXICE = NX
+            IF ( FLQA ) NXICE = NCMXQ(IQGIN)
             IF ( FLH(J) ) THEN
-              CALL W3FLDH (J, NDST, NDSEN, NX, NY, NX, NY,    &
+              CALL W3FLDH (J, NDST, NDSEN, NXICE, NY, NXICE, NY,    &
                    TIME0, TIMEN, NH(J), NHMAX, THO, HA, HD, HS,&
                    TTT, XXX, XXX, XXX, TI2, XXX, XXX, ICEP2, IERR)
             ELSE
               CALL W3FLDG ('READ', IDSTR(J), NDSF(J),         &
-                   NDST, NDSEN, NX, NY, NX, NY, TIME0, TIMEN, &
+                   NDST, NDSEN, NXICE, NY, NXICE, NY, TIME0, TIMEN, &
                    TTT, XXX, XXX, XXX, TI2, XXX, XXX, ICEP2,  &
-                   IERR, FLAGSC(J))
-            END IF
+                   IERR, FLAGSC(J), flqa=FLQA, new_qt=NEW_QT, &
+                   qtree=QTREE(IQGI0:IQGIN) )
+             END IF
             IF ( IERR .LT. 0 )FLLST_ALL(J) = .TRUE.
 
             ! IC3 : (in context of IC3, this is ice density)
           ELSE IF ( J .EQ. -5 ) THEN
+            NXICE = NX
+            IF ( FLQA ) NXICE = NCMXQ(IQGIN)
             IF ( FLH(J) ) THEN
-              CALL W3FLDH (J, NDST, NDSEN, NX, NY, NX, NY,    &
+              CALL W3FLDH (J, NDST, NDSEN, NXICE, NY, NXICE, NY,    &
                    TIME0, TIMEN, NH(J), NHMAX, THO, HA, HD, HS,&
                    TTT, XXX, XXX, XXX, TI3, XXX, XXX, ICEP3, IERR)
             ELSE
               CALL W3FLDG ('READ', IDSTR(J), NDSF(J),         &
-                   NDST, NDSEN, NX, NY, NX, NY, TIME0, TIMEN, &
+                   NDST, NDSEN, NXICE, NY, NXICE, NY, TIME0, TIMEN, &
                    TTT, XXX, XXX, XXX, TI3, XXX, XXX, ICEP3,  &
-                   IERR, FLAGSC(J))
+                   IERR, FLAGSC(J), flqa=FLQA, new_qt=NEW_QT, &
+                   qtree=QTREE(IQGI0:IQGIN) )
             END IF
             IF ( IERR .LT. 0 )FLLST_ALL(J) = .TRUE.
 
             ! IC4 : (in context of IC3, this is ice modulus)
           ELSE IF ( J .EQ. -4 ) THEN
+            NXICE = NX
+            IF ( FLQA ) NXICE = NCMXQ(IQGIN)
             IF ( FLH(J) ) THEN
-              CALL W3FLDH (J, NDST, NDSEN, NX, NY, NX, NY,    &
+              CALL W3FLDH (J, NDST, NDSEN, NXICE, NY, NXICE, NY,    &
                    TIME0, TIMEN, NH(J), NHMAX, THO, HA, HD, HS,&
                    TTT, XXX, XXX, XXX, TI4, XXX, XXX, ICEP4, IERR)
             ELSE
               CALL W3FLDG ('READ', IDSTR(J), NDSF(J),         &
-                   NDST, NDSEN, NX, NY, NX, NY, TIME0, TIMEN, &
+                   NDST, NDSEN, NXICE, NY, NXICE, NY, TIME0, TIMEN, &
                    TTT, XXX, XXX, XXX, TI4, XXX, XXX, ICEP4,  &
-                   IERR, FLAGSC(J))
+                   IERR, FLAGSC(J), flqa=FLQA, new_qt=NEW_QT, &
+                   qtree=QTREE(IQGI0:IQGIN) )
             END IF
             IF ( IERR .LT. 0 )FLLST_ALL(J) = .TRUE.
 
             ! IC5 : ice flow diam.
           ELSE IF ( J .EQ. -3 ) THEN
+            NXICE = NX
+            IF ( FLQA ) NXICE = NCMXQ(IQGIN)
             IF ( FLH(J) ) THEN
-               CALL W3FLDH (J, NDST, NDSEN, NX, NY, NX, NY,    &
+               CALL W3FLDH (J, NDST, NDSEN, NXICE, NY, NXICE, NY,    &
                    TIME0, TIMEN, NH(J), NHMAX, THO, HA, HD, HS,&
                    TTT, XXX, XXX, XXX, TI5, XXX, XXX, ICEP5, IERR)
             ELSE
@@ -2204,12 +2317,14 @@ PROGRAM W3SHEL
               IF (.NOT.FLAGSCI) ID_OASIS_TIME = -1
 #endif
               CALL W3FLDG ('READ', IDSTR(J), NDSF(J),         &
-                   NDST, NDSEN, NX, NY, NX, NY, TIME0, TIMEN, &
+                   NDST, NDSEN, NXICE, NY, NXICE, NY, TIME0, TIMEN, &
                    TTT, XXX, XXX, XXX, TI5, XXX, XXX, ICEP5,  &
                    IERR, FLAGSC(J)                            &
 #ifdef W3_OASICM
                    , MPICOMM                                  &
 #endif
+                   , flqa=FLQA, new_qt=NEW_QT,                &
+                   qtree=QTREE(IQGI0:IQGIN) 
                    )
             END IF
             IF ( IERR .LT. 0 )FLLST_ALL(J) = .TRUE.
@@ -2258,9 +2373,11 @@ PROGRAM W3SHEL
 
             ! LEV : water levels
           ELSE IF ( J .EQ. 1 ) THEN
+            NXLEV = NX
+            IF ( FLQA ) NXLEV = NCMXQ(IQGLN)
             IF ( FLH(J) ) THEN
-              CALL W3FLDH (J, NDST, NDSEN, NX, NY, NX, NY,    &
-                   TIME0, TIMEN, NH(J), NHMAX, THO, HA, HD, HS,&
+              CALL W3FLDH (J, NDST, NDSEN, NXLEV, NY, NXLEV, NY,  &
+                   TIME0, TIMEN, NH(J), NHMAX, THO, HA, HD, HS,   &
                    TTT, XXX, XXX, XXX, TLN, XXX, XXX, WLEV, IERR)
             ELSE
 #ifdef W3_TIDE
@@ -2277,12 +2394,14 @@ PROGRAM W3SHEL
                 IF (.NOT.FLAGSC(J)) ID_OASIS_TIME = -1
 #endif
                 CALL W3FLDG ('READ', IDSTR(J), NDSF(J),         &
-                     NDST, NDSEN, NX, NY, NX, NY, TIME0, TIMEN, &
+                     NDST, NDSEN, NXLEV, NY, NXLEV, NY, TIME0, TIMEN, &
                      TTT, XXX, XXX, XXX, TLN, XXX, XXX, WLEV,   &
                      IERR, FLAGSC(J)                            &
 #ifdef W3_OASOCM
                      , MPICOMM                       &
 #endif
+                     , flqa=FLQA, new_qt=NEW_QT,    &
+                       qtree=QTREE(IQGL0:IQGLN) 
                      )
 #ifdef W3_TIDE
               END IF
@@ -2293,9 +2412,11 @@ PROGRAM W3SHEL
 
             ! CUR : currents
           ELSE IF ( J .EQ. 2 ) THEN
+            NXCUR = NX
+            IF ( FLQA ) NXCUR = NCMXQ(IQGCN)
             IF ( FLH(J) ) THEN
-              CALL W3FLDH (J, NDST, NDSEN, NX, NY, NX, NY,    &
-                   TIME0, TIMEN, NH(J), NHMAX, THO, HA, HD, HS,&
+              CALL W3FLDH (J, NDST, NDSEN, NXCUR, NY, NXCUR, NY, &
+                   TIME0, TIMEN, NH(J), NHMAX, THO, HA, HD, HS,  &
                    TC0, CX0, CY0, XXX, TCN, CXN, CYN, XXX, IERR)
               !
 #ifdef W3_SMC
@@ -2322,12 +2443,14 @@ PROGRAM W3SHEL
                 IF (.NOT.FLAGSC(J)) ID_OASIS_TIME = -1
 #endif
                 CALL W3FLDG ('READ', IDSTR(J), NDSF(J),         &
-                     NDST, NDSEN, NX, NY, NX, NY, TIME0, TIMEN, &
+                     NDST, NDSEN, NXCUR, NY, NXCUR, NY, TIME0, TIMEN, &
                      TC0, CX0, CY0, XXX, TCN, CXN, CYN, XXX,    &
                      IERR, FLAGSC(J)                            &
 #ifdef W3_OASOCM
                      , MPICOMM                                  &
 #endif
+                     , flqa=FLQA, new_qt=NEW_QT,                &
+                       qtree=QTREE(IQGC0:IQGCN) 
                      )
 #ifdef W3_TIDE
               END IF
@@ -2336,8 +2459,10 @@ PROGRAM W3SHEL
 
             ! WND : winds
           ELSE IF ( J .EQ. 3 ) THEN
+            NXWND = NX
+            IF ( FLQA ) NXWND = NCMXQ(IQGAN)
             IF ( FLH(J) ) THEN
-              CALL W3FLDH (J, NDST, NDSEN, NX, NY, NX, NY,    &
+              CALL W3FLDH (J, NDST, NDSEN, NXWND, NY, NXWND, NY,    &
                    TIME0, TIMEN, NH(J), NHMAX, THO, HA, HD, HS,&
                    TW0, WX0, WY0, DT0, TWN, WXN, WYN, DTN, IERR)
               !
@@ -2355,19 +2480,23 @@ PROGRAM W3SHEL
               IF (.NOT.FLAGSC(J)) ID_OASIS_TIME = -1
 #endif
               CALL W3FLDG ('READ', IDSTR(J), NDSF(J),         &
-                   NDST, NDSEN, NX, NY, NX, NY, TIME0, TIMEN, &
+                   NDST, NDSEN, NXWND, NY, NXWND, NY, TIME0, TIMEN, &
                    TW0, WX0, WY0, DT0, TWN, WXN, WYN, DTN,    &
                    IERR, FLAGSC(J)                            &
 #ifdef W3_OASACM
                    , MPICOMM                                  &
 #endif
+                   , flqa=FLQA, new_qt=NEW_QT,                &
+                   qtree=QTREE(IQGA0:IQGAN) 
                    )
             END IF
 
             ! ICE : ice conc.
           ELSE IF ( J .EQ. 4 ) THEN
+            NXICE = NX
+            IF ( FLQA ) NXICE = NCMXQ(IQGIN)
             IF ( FLH(J) ) THEN
-              CALL W3FLDH (J, NDST, NDSEN, NX, NY, NX, NY,    &
+              CALL W3FLDH (J, NDST, NDSEN, NXICE, NY, NXICE, NY,    &
                    TIME0, TIMEN, NH(J), NHMAX, THO, HA, HD, HS,&
                    TTT, XXX, XXX, XXX, TIN, XXX, BERGI, ICEI, IERR)
             ELSE
@@ -2382,6 +2511,8 @@ PROGRAM W3SHEL
 #ifdef W3_OASICM
                    , MPICOMM                                     &
 #endif
+                   , flqa=FLQA, new_qt=NEW_QT,                &
+                   qtree=QTREE(IQGI0:IQGIN) 
                    )
               IF ( IERR .LT. 0 ) FLLSTI = .TRUE.
               !could be:      IF ( IERR .LT. 0 ) FLLST_ALL(J) = .TRUE.
@@ -2389,9 +2520,11 @@ PROGRAM W3SHEL
 
             ! TAU : atmospheric momentum
           ELSE IF ( J .EQ. 5 ) THEN
+            NXWND = NX
+            IF ( FLQA ) NXWND = NCMXQ(IQGAN)
             IF ( FLH(J) ) THEN
-              CALL W3FLDH (J, NDST, NDSEN, NX, NY, NX, NY,    &
-                   TIME0, TIMEN, NH(J), NHMAX, THO, HA, HD, HS,&
+              CALL W3FLDH (J, NDST, NDSEN, NXWND, NY, NXWND, NY, &
+                   TIME0, TIMEN, NH(J), NHMAX, THO, HA, HD, HS,  &
                    TU0, UX0, UY0, XXX, TUN, UXN, UYN, XXX, IERR)
               !
 #ifdef W3_SMC
@@ -2408,17 +2541,21 @@ PROGRAM W3SHEL
               IF (.NOT.FLAGSC(J)) ID_OASIS_TIME = -1
 #endif
               CALL W3FLDG ('READ', IDSTR(J), NDSF(J),         &
-                   NDST, NDSEN, NX, NY, NX, NY, TIME0, TIMEN, &
+                   NDST, NDSEN, NXWND, NY, NXWND, NY, TIME0, TIMEN, &
                    TU0, UX0, UY0, XXX, TUN, UXN, UYN, XXX,    &
                    IERR, FLAGSC(J)                            &
 #ifdef W3_OASACM
                    , MPICOMM                                  &
 #endif
+                   , flqa=FLQA, new_qt=NEW_QT,                &
+                   qtree=QTREE(IQGA0:IQGAN) 
                    )
             END IF
 
             ! RHO : air density
           ELSE IF ( J .EQ. 6 ) THEN
+            NXWND = NX
+            IF ( FLQA ) NXWND = NCMXQ(IQGAN)
             IF ( FLH(J) ) THEN
               CALL W3FLDH (J, NDST, NDSEN, NX, NY, NX, NY,    &
                    TIME0, TIMEN, NH(J), NHMAX, THO, HA, HD, HS,&
@@ -2443,6 +2580,8 @@ PROGRAM W3SHEL
 #ifdef W3_OASACM
                    , MPICOMM                                  &
 #endif
+                   , flqa=FLQA, new_qt=NEW_QT,                &
+                   qtree=QTREE(IQGA0:IQGAN) 
                    )
               IF ( IERR .LT. 0 ) FLLSTR = .TRUE.
             END IF
@@ -2688,6 +2827,14 @@ PROGRAM W3SHEL
 6945 FORMAT ( '            IX first,last,inc :',3I5/                 &
        '            IY first,last,inc :',3I5/                 &
        '            Formatted file    :    ',A)
+4900 FORMAT (/'  User wave quadtree parameters:'/                    &
+              '       Target No. of cells (user)        :',I8/       &
+              '       Diagnostic variable type          :',I4/       &
+              '               i.e. ',A40/                            &
+              '       Max./Min. diagnostic var. ratio   :',E12.4/    &
+              '       Min. value of diagnostic variable :',E12.4/    &
+              '       Max. value of diagnostic variable :',E12.4/    &
+              ' --------------------------------------------------')
 8945 FORMAT ( '            output dates out of run dates : ', A,     &
        ' deactivated')
   !
@@ -2702,6 +2849,12 @@ PROGRAM W3SHEL
 955 FORMAT ( '            ',A,': file OK')
 956 FORMAT ( '            ',A,': file OK, recl =',I3,               &
        '  undef = ',E10.3)
+957 FORMAT ( '  Revised quadtree array sizes:'/                     &
+             '             NX : ',I6/                               &
+             '             NY : ',I6/                               &
+             '           NSEA : ',I6/                               &
+             '          NQUAD : ',I6/                               &
+             ' --------------------------------------------------'/)
   !
 960 FORMAT (/'  Running model without input fields'/                &
        ' --------------------------------------------------'/)
@@ -2754,6 +2907,9 @@ PROGRAM W3SHEL
        '     IT WILL BE OVERRIDEN TO DEFAULT VALUE'/          &
        '     FROM ',I6, ' TO ',I6/)
 #endif
+1011 FORMAT (/' *** WAVEWATCH III ERROR IN W3SHEL : '/               &
+              '     ERROR IN READING QUADTREE DATA FROM INPUT FILE'/ &
+              '     IOSTAT =',I5,' J =',I2/)
   !
 1054 FORMAT (/' *** WAVEWATCH III ERROR IN W3SHEL : *** '/           &
        '     POINT OUTPUT ACTIVATED BUT NO POINTS DEFINED'/)

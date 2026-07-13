@@ -446,6 +446,7 @@ CONTAINS
     !/    10-Dec-2014 : Add checks for allocate status      ( version 5.04 )
     !/    21-Jun-2018 : Add FSWND input for SMC grid. JGLi  ( version 6.04 )
     !/    22-Mar-2021 : Momentum and air density support    ( version 7.13 )
+    !/    08-Jul-2026 : Allow for quadtree input dims.      ( version X.XX )
     !/
     !  1. Purpose :
     !
@@ -496,6 +497,8 @@ CONTAINS
     !
     !/ ------------------------------------------------------------------- /
     USE W3GDATMD,  ONLY: NGRIDS, NAUXGR, IGRID, W3SETG, NX, NY
+    USE W3GDATMD, ONLY: GTYPE, QAGTYPE, NCMXQ, IQGLN, IQGC0, IQGCN, &
+                        IQGA0, IQGAN, IQGIN
 #ifdef W3_SMC
     USE W3GDATMD,  ONLY: FSWND, NSEA
 #endif
@@ -519,6 +522,7 @@ CONTAINS
 #ifdef W3_TIDE
     LOGICAL                 :: FLAGSTIDE(4)=.FALSE.
 #endif
+    INTEGER                 :: NXL, NXC0, NXCN, NXA0, NXAN, NXI
 #ifdef W3_S
     INTEGER, SAVE           :: IENT = 0
     CALL STRACE (IENT, 'W3DIMI')
@@ -557,6 +561,21 @@ CONTAINS
       FLAGSTIDE(:) = FLAGSTIDEIN(:)
     END IF
 #endif
+    IF ( GTYPE.EQ.QAGTYPE ) THEN
+      NXL = NCMXQ(IQGLN)
+      NXC0 = NCMXQ(IQGC0)
+      NXCN = NCMXQ(IQGCN)
+      NXA0 = NCMXQ(IQGA0)
+      NXAN = NCMXQ(IQGAN)
+      NXI = NCMXQ(IQGIN)
+    ELSE
+      NXL = NX
+      NXC0 = NX
+      NXCN = NX
+      NXA0 = NX
+      NXAN = NX
+      NXI = NX
+    END IF
 
     FLIC1  => INPUTS(IMOD)%INFLAGS1(-7)
     FLIC2  => INPUTS(IMOD)%INFLAGS1(-6)
@@ -591,23 +610,23 @@ CONTAINS
     !     "all or nothing" rather than 5 individual flags
 
     IF ( FLIC1  ) THEN
-      ALLOCATE ( INPUTS(IMOD)%ICEP1(NX,NY), STAT=ISTAT )
+      ALLOCATE ( INPUTS(IMOD)%ICEP1(NXI,NY), STAT=ISTAT )
       CHECK_ALLOC_STATUS ( ISTAT )
     END IF
     IF ( FLIC2  ) THEN
-      ALLOCATE ( INPUTS(IMOD)%ICEP2(NX,NY), STAT=ISTAT )
+      ALLOCATE ( INPUTS(IMOD)%ICEP2(NXI,NY), STAT=ISTAT )
       CHECK_ALLOC_STATUS ( ISTAT )
     END IF
     IF ( FLIC3  ) THEN
-      ALLOCATE ( INPUTS(IMOD)%ICEP3(NX,NY), STAT=ISTAT )
+      ALLOCATE ( INPUTS(IMOD)%ICEP3(NXI,NY), STAT=ISTAT )
       CHECK_ALLOC_STATUS ( ISTAT )
     END IF
     IF ( FLIC4  ) THEN
-      ALLOCATE ( INPUTS(IMOD)%ICEP4(NX,NY), STAT=ISTAT )
+      ALLOCATE ( INPUTS(IMOD)%ICEP4(NXI,NY), STAT=ISTAT )
       CHECK_ALLOC_STATUS ( ISTAT )
     END IF
     IF ( FLIC5  ) THEN
-      ALLOCATE ( INPUTS(IMOD)%ICEP5(NX,NY), STAT=ISTAT )
+      ALLOCATE ( INPUTS(IMOD)%ICEP5(NXI,NY), STAT=ISTAT )
       CHECK_ALLOC_STATUS ( ISTAT )
     END IF
     !
@@ -625,7 +644,7 @@ CONTAINS
     END IF
     !
     IF ( FLLEV  ) THEN
-      ALLOCATE ( INPUTS(IMOD)%WLEV(NX,NY), STAT=ISTAT )
+      ALLOCATE ( INPUTS(IMOD)%WLEV(NXL,NY), STAT=ISTAT )
       CHECK_ALLOC_STATUS ( ISTAT )
     END IF
     !
@@ -638,10 +657,10 @@ CONTAINS
              INPUTS(IMOD)%CYN(NSEA,1) , STAT=ISTAT )
       ELSE
 #endif
-        ALLOCATE ( INPUTS(IMOD)%CX0(NX,NY) ,              &
-             INPUTS(IMOD)%CY0(NX,NY) ,              &
-             INPUTS(IMOD)%CXN(NX,NY) ,              &
-             INPUTS(IMOD)%CYN(NX,NY) , STAT=ISTAT )
+        ALLOCATE ( INPUTS(IMOD)%CX0(NXC0,NY) ,              &
+             INPUTS(IMOD)%CY0(NXC0,NY) ,              &
+             INPUTS(IMOD)%CXN(NXCN,NY) ,              &
+             INPUTS(IMOD)%CYN(NXCN,NY) , STAT=ISTAT )
 #ifdef W3_SMC
       ENDIF
 #endif
@@ -650,13 +669,13 @@ CONTAINS
     !
 #ifdef W3_TIDE
     IF ( FLLEVTIDE  ) THEN
-      ALLOCATE ( INPUTS(IMOD)%WLTIDE(NX,NY,NTIDE,2), STAT=ISTAT )
+      ALLOCATE ( INPUTS(IMOD)%WLTIDE(NXL,NY,NTIDE,2), STAT=ISTAT )
       CHECK_ALLOC_STATUS ( ISTAT )
     END IF
     !
     IF ( FLCURTIDE  ) THEN
-      ALLOCATE ( INPUTS(IMOD)%CXTIDE(NX,NY,NTIDE,2),  &
-           INPUTS(IMOD)%CYTIDE(NX,NY,NTIDE,2), STAT=ISTAT )
+      ALLOCATE ( INPUTS(IMOD)%CXTIDE(NXCN,NY,NTIDE,2),  &
+           INPUTS(IMOD)%CYTIDE(NXCN,NY,NTIDE,2), STAT=ISTAT )
       CHECK_ALLOC_STATUS ( ISTAT )
     END IF
 #endif
@@ -681,12 +700,12 @@ CONTAINS
              INPUTS(IMOD)%DTN(NSEA,1) , STAT=ISTAT )
       ELSE
 #endif
-        ALLOCATE ( INPUTS(IMOD)%WX0(NX,NY) ,              &
-             INPUTS(IMOD)%WY0(NX,NY) ,              &
-             INPUTS(IMOD)%DT0(NX,NY) ,              &
-             INPUTS(IMOD)%WXN(NX,NY) ,              &
-             INPUTS(IMOD)%WYN(NX,NY) ,              &
-             INPUTS(IMOD)%DTN(NX,NY) , STAT=ISTAT )
+        ALLOCATE ( INPUTS(IMOD)%WX0(NXA0,NY) ,              &
+             INPUTS(IMOD)%WY0(NXA0,NY) ,              &
+             INPUTS(IMOD)%DT0(NXA0,NY) ,              &
+             INPUTS(IMOD)%WXN(NXAN,NY) ,              &
+             INPUTS(IMOD)%WYN(NXAN,NY) ,              &
+             INPUTS(IMOD)%DTN(NXAN,NY) , STAT=ISTAT )
 #ifdef W3_SMC
       ENDIF
 #endif
@@ -696,8 +715,8 @@ CONTAINS
     END IF
     !
     IF ( FLICE  ) THEN
-      ALLOCATE ( INPUTS(IMOD)%ICEI(NX,NY),              &
-           INPUTS(IMOD)%BERGI(NX,NY), STAT=ISTAT )
+      ALLOCATE ( INPUTS(IMOD)%ICEI(NXI,NY),              &
+           INPUTS(IMOD)%BERGI(NXI,NY), STAT=ISTAT )
       CHECK_ALLOC_STATUS ( ISTAT )
       INPUTS(IMOD)%BERGI = 0.
     END IF
@@ -711,10 +730,10 @@ CONTAINS
              INPUTS(IMOD)%UYN(NSEA,1) , STAT=ISTAT )
       ELSE
 #endif
-        ALLOCATE ( INPUTS(IMOD)%UX0(NX,NY) ,              &
-             INPUTS(IMOD)%UY0(NX,NY) ,              &
-             INPUTS(IMOD)%UXN(NX,NY) ,              &
-             INPUTS(IMOD)%UYN(NX,NY) , STAT=ISTAT )
+        ALLOCATE ( INPUTS(IMOD)%UX0(NXA0,NY) ,              &
+             INPUTS(IMOD)%UY0(NXA0,NY) ,              &
+             INPUTS(IMOD)%UXN(NXAN,NY) ,              &
+             INPUTS(IMOD)%UYN(NXAN,NY) , STAT=ISTAT )
 #ifdef W3_SMC
       ENDIF
 #endif
@@ -728,8 +747,8 @@ CONTAINS
              INPUTS(IMOD)%RHN(NSEA,1) , STAT=ISTAT )
       ELSE
 #endif
-        ALLOCATE ( INPUTS(IMOD)%RH0(NX,NY) ,              &
-             INPUTS(IMOD)%RHN(NX,NY) , STAT=ISTAT )
+        ALLOCATE ( INPUTS(IMOD)%RH0(NXA0,NY) ,              &
+             INPUTS(IMOD)%RHN(NXAN,NY) , STAT=ISTAT )
 #ifdef W3_SMC
       ENDIF
 #endif

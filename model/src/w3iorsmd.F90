@@ -153,6 +153,8 @@ CONTAINS
     !/    22-Mar-2021 : Add new coupling fields in restart  ( version 7.13 )
     !/    18-May-2021 : Read by default all extra restart   ( version 7.13 )
     !/    04-Jul-2025 : Remove labelled statements          ( version X.XX )
+    !/    25-Jun-2026 : Quadtree data, 'GRID' option        ( version X.XX )
+    !/                  (R. Gorman, NIWA)
     !/
     !/    Copyright 2009-2013 National Weather Service (NWS),
     !/       National Oceanic and Atmospheric Administration.  All rights
@@ -196,6 +198,7 @@ CONTAINS
     !                          'WIND' Initialize fields using first wind
     !                                 field.
     !                          'CALM' Starting from calm conditions.
+    !                          'GRID' Read only the grid sizes (for quadtree).
     !       NDSR    Int.  I/O  File unit number.
     !       DUMFPI  Real   I   Dummy values for FPIS for cold start.
     !       RSTYPE  Int.   O   Type of input field,
@@ -303,7 +306,7 @@ CONTAINS
          WNMEAN
     !/
     USE W3GDATMD, ONLY: NX, NY, NSEA, NSPEC, MAPSTA, MAPST2, &
-         GNAME, FILEXT, GTYPE, UNGTYPE
+         GNAME, FILEXT, GTYPE, UNGTYPE, QAGTYPE, IQGW, NQUAD, QTREE
     USE W3TRIAMD, ONLY: SET_UG_IOBP
     USE W3WDATMD, only : DINIT, VA, TIME, TLEV, TICE, TRHO, ICE, UST
     USE W3WDATMD, only : USTDIR, ASF, FPIS, ICEF, TIC1, TIC5, WLV
@@ -341,6 +344,7 @@ CONTAINS
 #ifdef W3_S
     USE W3SERVMD, ONLY: STRACE
 #endif
+    USE QA_UTILS
     !
     IMPLICIT NONE
     !
@@ -394,7 +398,7 @@ CONTAINS
 
     ! DEFINED A LOCAL FNMPRE TO AVOID CHANGE THE GLOBAL VALUE
     CHARACTER(LEN=256)       :: FNMPRE_LOCAL
-
+    INTEGER                 :: NSEAL, NDSEN
     !/
     !/ ------------------------------------------------------------------- /
     !/
@@ -593,7 +597,14 @@ CONTAINS
             ENDDO
           ENDDO
         ENDIF
-        !
+    !
+    !   Bail out if INXOUT.EQ.'GRID' 
+    !
+        IF ( INXOUT.EQ.'GRID' ) THEN
+          CLOSE ( NDSR )
+          RETURN
+        END IF
+    !
       END IF
     ELSE
 #ifdef W3_LN0
@@ -616,6 +627,75 @@ CONTAINS
     WRITE (NDST,9002) IDSTR, VERINI, GNAME, TYPE,                &
          NSEA, NSEAL, NSPEC
 #endif
+    !
+    ! Quadtree information
+    !
+    IF ( GTYPE.EQ.QAGTYPE ) THEN
+#ifdef W3_SHRD
+      NSEAL  = NSEA
+#endif
+#ifdef W3_DIST
+      IF ( IAPROC .LE. NAPROC ) THEN
+        NSEAL  = 1 + (NSEA-IAPROC)/NAPROC
+      ELSE
+        NSEAL  = 0
+      END IF
+#endif
+      IF ( WRITE ) THEN
+        IF ( IAPROC .EQ. NAPRST ) THEN 
+          CALL QA_IOQT( NDSR, QTREE(IQGW), 6, ierr=IERR,      &
+                        ndse=NDSEN, nrec=NREC, nsize=NSIZE )
+          IF ( IERR.NE.0 ) THEN
+            IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,995) IERR, NREC
+            CALL EXTCDE ( 34 )
+          END IF
+        END IF
+      ELSE
+        CALL QA_IOQT( NDSR, QTREE(IQGW), -6, ierr=IERR,         &
+                      ndse=NDSEN, nrec=NREC, nsize=NSIZE )
+        IF ( IERR.NE.0 ) THEN
+          IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,994) IERR, NREC
+          CALL EXTCDE ( 33 )
+        END IF
+      END IF
+    !
+#ifdef W3_T
+      WRITE (NDST,9009) IQGW, NQUAD, NSEA,                        &
+                    QTREE(IQGW)%NQUAD,                            &
+                    QTREE(IQGW)%NCELL,                            &
+                    QTREE(IQGW)%NCELL_DEF,                        &
+                    QTREE(IQGW)%LVLREF,                           &
+                    QTREE(IQGW)%LVLMAX,                           &
+                    QTREE(IQGW)%LVLHI,                            &
+                    QTREE(IQGW)%NX0,                              &
+                    QTREE(IQGW)%NY0,                              &
+                    QTREE(IQGW)%UNDEF_TYPE,                       &
+                    QTREE(IQGW)%KEEP_REF,                         &
+                    QTREE(IQGW)%DYNAMIC,                          &
+                    QTREE(IQGW)%IWTORDER
+
+      J = LEN_TRIM(FNMPRE)
+      IF ( IFILE.EQ.1 ) THEN
+        FNAME  = 'Wquad.txt'
+      ELSE
+        FNAME  = 'WquadNNN.txt'
+        WRITE (FNAME(6:8),'(I3.3)') IFILE-1
+      END IF
+      OPEN (91,FILE=FNMPRE(:J)//FNAME,FORM='FORMATTED')
+      CALL QA_IOQT( 91, QTREE(IQGW), 3, ierr=IERR, ndse=NDSEN )
+      CLOSE (91)
+    !
+      IF ( IFILE.EQ.1 ) THEN
+          FNAME  = 'Wcell.txt'
+        ELSE
+          FNAME  = 'WcellNNN.txt'
+          WRITE (FNAME(6:8),'(I3.3)') IFILE-1
+        END IF
+      OPEN (91,FILE=FNMPRE(:J)//FNAME,FORM='FORMATTED')
+      CALL QA_IOQT( 91, QTREE(IQGW), 4, ierr=IERR, ndse=NDSEN )
+      CLOSE (91)
+#endif
+    END IF
     !
     ! TIME if required --------------------------------------------------- *
     !
@@ -1561,6 +1641,12 @@ CONTAINS
          '     NO READABLE RESTART FILE, ',                     &
          'INITIALIZE WITH ''',A,''' INSTEAD'/              &
          '     IOSTAT =',I5/)
+994 FORMAT (/' *** WAVEWATCH III ERROR IN QA_IOQT FROM W3IORS : '/  &
+             '     ERROR IN READING FROM FILE'/                     &
+             '     IOSTAT =',I5,', NREC =',I11 /)
+995 FORMAT (/' *** WAVEWATCH III ERROR IN QA_IOQT FROM W3IORS : '/  &
+             '     ERROR IN WRITING TO FILE'/                       &
+             '     IOSTAT =',I5,', NREC =',I11 /)
 1000 FORMAT (/' *** WAVEWATCH III WARNING IN W3IORS : '/             &
          '     REQUESTED EXTRA RESTART GROUP',I2,' FIELD',I2, / &
          '     IS NOT PRESENT IN THE RESTART FILE.'/            &

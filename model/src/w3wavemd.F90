@@ -99,6 +99,7 @@ MODULE W3WAVEMD
   !/    13-Sep-2022 : Add OMP for W3NMIN loops. Hide
   !/                  W3NMIN in W3_DEBUGRUN for scaling.  ( version 7.xx )
   !/    04-Jul-2025 : Remove labelled statements          ( version X.XX )
+  !/    07-Jul-2026 : Implement adaptive quadtree option  ( version X.XX )
   !/
   !/    Copyright 2009-2014 National Weather Service (NWS),
   !/       National Oceanic and Atmospheric Administration.  All rights
@@ -305,6 +306,7 @@ CONTAINS
     !/    25-Sep-2020 : Oasis coupling at T+0               ( version 7.10 )
     !/    22-Mar-2021 : Update TAUA, RHOA                   ( version 7.13 )
     !/    06-May-2021 : Use ARCTC and SMCTYPE options. JGLi ( version 7.13 )
+    !/    07-Jul-2026 : Implement adaptive quadtree option  ( version X.XX )
     !/
     !  1. Purpose :
     !
@@ -410,7 +412,7 @@ CONTAINS
                           SRCE_IMP_POST, SRCE_IMP_PRE, TPIINV
     !/
     USE W3GDATMD,  ONLY : IGRID, NSEAL, NSPEC, NX, NY, NK,                 &
-                          GTYPE, UNGTYPE, SMCTYPE, RSTYPE,                 &
+                          GTYPE, UNGTYPE, SMCTYPE, QAGTYPE, RSTYPE,        &
                           MAPSF, MAPFS, MAPSTA, IOBP, CTHG0S,              &
                           FLCTH, FSREFRACTION, FLCK, FSFREQSHIFT, FLAGLL,  &
                           FLDRY, FSTOTALIMP, FLCX, FLCY, FLSOU, FLAGST,    &
@@ -472,10 +474,10 @@ CONTAINS
     USE W3GDATMD, ONLY : SED_D50, SED_PSIC
 #endif
 #ifdef W3_PR1
-    USE W3PRO1MD, ONLY : W3MAP1, W3XYP1, W3KTP1
+    USE W3PRO1MD, ONLY : W3MAP1, W3XYP1, W3KTP1, W3MPQ1, W3XYQ1
 #endif
 #ifdef W3_PR2
-    USE W3PRO2MD, ONLY : W3XYP2, W3MAP2, W3KTP2
+    USE W3PRO2MD, ONLY : W3XYP2, W3MAP2, W3KTP2, W3XYQ2
 #endif
 #ifdef W3_PR3
     USE W3PRO3MD, ONLY : W3MAPT, W3XYP3, W3CFLXY, W3MAP3, W3KTP3
@@ -530,6 +532,11 @@ CONTAINS
 #ifdef W3_UOST
     USE W3UOSTMD, ONLY: UOST_SETGRID
 #endif
+    USE W3ADGRMD, ONLY : W3ADGR, W3QTGR
+    USE W3GDATMD, ONLY : NMOD_QA, NFROM_QA, IFROM_QA, WFROM_QA, ITO_QA, &
+                         LVRANGE_QA, DVTYPE_QA, NAUX_QA, IAUX_QA,       &
+                         QTREE, IQGW, NCMXQ
+    USE QA_UTILS, ONLY : QA_ADVAR
     USE W3PARALL, ONLY : INIT_GET_ISEA
 #ifdef W3_SETUP
     USE W3WAVSET, only : WAVE_SETUP_COMPUTATION
@@ -661,6 +668,10 @@ CONTAINS
     CHARACTER(LEN=21)       :: IDACT
     CHARACTER(LEN=16)       :: OUTID
     CHARACTER(LEN=23)       :: IDTIME
+    INTEGER                 :: NDSEN
+    INTEGER                 :: ITER_QA, NITER_QA
+    LOGICAL                 :: ADAPT_VARS(3)= .TRUE.
+    LOGICAL                 :: FLFRSTSAV, NEW_QT
 #ifdef W3_PDLIB
     REAL                    :: DTGpre
     INTEGER                 :: IP
@@ -731,6 +742,8 @@ CONTAINS
     CALL STRACE (IENT, 'W3WAVE')
 #endif
     !
+    NDSEN = 0
+    IF ( IAPROC .EQ. NAPERR ) NDSEN = NDSE
     !
     ! 0.c Local parameter initialization
     !
@@ -753,12 +766,16 @@ CONTAINS
       FCUT  = SIG(NK) * TPIINV
     END IF
     !
+    NEW_QT = GTYPE.EQ.QAGTYPE        
+    !
     IF( GTYPE .EQ. SMCTYPE ) THEN
       J = 1
 #ifdef W3_SMC
       !!Li   Use sea point only field for SMC grid.
       ALLOCATE ( FIELD(NCel) )
 #endif
+    ELSE IF ( GTYPE.EQ.QAGTYPE ) THEN
+      ALLOCATE ( FIELD(0:NCMXQ(IQGW)+2) )
     ELSE
       ALLOCATE ( FIELD(1-NY:NY*(NX+2)) )
     ENDIF
@@ -1175,112 +1192,166 @@ CONTAINS
 #ifdef W3_T
         WRITE (NDST,9021) ITIME, IT, TIME, FLMAP, FLDDIR, VGX, VGY, DTG, DTRES
 #endif
-        !
-        ! 3.1 Interpolate winds, currents, and momentum.
-        !     (Initialize wave fields with winds)
-        !
+        !      Iterations for grid adaptation
+        NITER_QA = 1
+        IF ( GTYPE.EQ.QAGTYPE ) THEN
+          IF ( DVTYPE_QA.GT.0 .AND. .NOT.FLIWND ) NITER_QA = 2
+        END IF
+        DO ITER_QA=1, NITER_QA
+          !
+          ! 3.1 Interpolate winds, currents, and momentum.
+          !     (Initialize wave fields with winds)
+          !
 #ifdef W3_DEBUGDCXDX
-        WRITE(740+IAPROC,*) 'Debug DCXDX FLCUR=', FLCUR
+          WRITE(740+IAPROC,*) 'Debug DCXDX FLCUR=', FLCUR
 #endif
-        call print_memcheck(memunit, 'memcheck_____:'//' WW3_WAVE TIME LOOP 3a')
+          call print_memcheck(memunit, 'memcheck_____:'//' WW3_WAVE TIME LOOP 3a')
 
-        IF ( FLCUR  ) THEN
+          IF ( FLCUR  ) THEN
 #ifdef W3_DEBUGCOH
-          CALL ALL_VA_INTEGRAL_PRINT(IMOD, "Before UCUR", 1)
+            CALL ALL_VA_INTEGRAL_PRINT(IMOD, "Before UCUR", 1)
 #endif
 #ifdef W3_TIMINGS
-          CALL PRINT_MY_TIME("W3WAVE, step 6.4.1")
+            CALL PRINT_MY_TIME("W3WAVE, step 6.4.1")
 #endif
-          CALL W3UCUR ( FLFRST )
+            CALL W3UCUR ( FLFRST )
 
-          call print_memcheck(memunit, 'memcheck_____:'//' WW3_WAVE TIME LOOP 3b')
+            call print_memcheck(memunit, 'memcheck_____:'//' WW3_WAVE TIME LOOP 3b')
 
-          IF (GTYPE .EQ. SMCTYPE) THEN
-            IX = 1
+            IF (GTYPE .EQ. SMCTYPE) THEN
+              IX = 1
 #ifdef W3_SMC
-            !!Li  Use new sub for DCXDX/Y and DCYDX/Y assignment.
-            CALL SMCDCXY
+              !!Li  Use new sub for DCXDX/Y and DCYDX/Y assignment.
+              CALL SMCDCXY
 #endif
-          ELSE IF (GTYPE .EQ. UNGTYPE) THEN
+            ELSE IF (GTYPE .EQ. UNGTYPE) THEN
 #ifdef W3_DEBUGDCXDX
-            WRITE(740+IAPROC,*) 'Before call to UG_GRADIENT for assigning DCXDX/DCXDY array'
+              WRITE(740+IAPROC,*) 'Before call to UG_GRADIENT for assigning DCXDX/DCXDY array'
 #endif
-            CALL UG_GRADIENTS(CX, DCXDX, DCXDY)
-            CALL UG_GRADIENTS(CY, DCYDX, DCYDY)
+              CALL UG_GRADIENTS(CX, DCXDX, DCXDY)
+              CALL UG_GRADIENTS(CY, DCYDX, DCYDY)
+              UGDTUPDATE=.TRUE.
+              CFLXYMAX = 0.
+            ELSE IF (GTYPE .EQ. QAGTYPE) THEN       
+              CALL W3QTGR(CX(1:UBOUND(CX,1)), DCXDX, DCXDY, NDSEN)
+              CALL W3QTGR(CY(1:UBOUND(CX,1)), DCYDX, DCYDY, NDSEN)
+            ELSE
+              CALL W3DZXY(CX(1:UBOUND(CX,1)),'m/s',DCXDX, DCXDY) !CX GRADIENT
+              CALL W3DZXY(CY(1:UBOUND(CY,1)),'m/s',DCYDX, DCYDY) !CY GRADIENT
+            ENDIF  !! End GTYPE
+            !
+            call print_memcheck(memunit, 'memcheck_____:'//' WW3_WAVE TIME LOOP 4')
+            !
+          ELSE IF ( FLFRST ) THEN
             UGDTUPDATE=.TRUE.
             CFLXYMAX = 0.
-          ELSE
-            CALL W3DZXY(CX(1:UBOUND(CX,1)),'m/s',DCXDX, DCXDY) !CX GRADIENT
-            CALL W3DZXY(CY(1:UBOUND(CY,1)),'m/s',DCYDX, DCYDY) !CY GRADIENT
-          ENDIF  !! End GTYPE
-          !
-          call print_memcheck(memunit, 'memcheck_____:'//' WW3_WAVE TIME LOOP 4')
-          !
-        ELSE IF ( FLFRST ) THEN
-          UGDTUPDATE=.TRUE.
-          CFLXYMAX = 0.
-          CX = 0.
-          CY = 0.
-        END IF ! FLCUR
+            CX = 0.
+            CY = 0.
+          END IF ! FLCUR
 #ifdef W3_TIMINGS
-        CALL PRINT_MY_TIME("After CX/CY assignation")
+          CALL PRINT_MY_TIME("After CX/CY assignation")
 #endif
-        !
-        call print_memcheck(memunit, 'memcheck_____:'//' WW3_WAVE TIME LOOP 5')
+          !
+          call print_memcheck(memunit, 'memcheck_____:'//' WW3_WAVE TIME LOOP 5')
 
-        IF ( FLWIND ) THEN
-          IF ( FLFRST ) ASF = 1.
-          CALL W3UWND ( FLFRST, VGX, VGY )
-        ELSE IF ( FLFRST ) THEN
-          U10    = 0.01
-          U10D   = 0.
-          UST    = 0.05
-          USTDIR = 0.05
-        END IF
+          IF ( FLWIND ) THEN
+            IF ( FLFRST ) ASF = 1.
+            CALL W3UWND ( FLFRST, VGX, VGY )
+          ELSE IF ( FLFRST ) THEN
+            U10    = 0.01
+            U10D   = 0.
+            UST    = 0.05
+            USTDIR = 0.05
+          END IF
 
 #ifdef W3_DEBUGRUN
-        DO JSEA = 1, NSEAL
-          DO IS = 1, NSPEC
-            IF (VA(IS, JSEA) .LT. 0.) THEN
-              WRITE(740+IAPROC,*) 'TEST W3WAVE 5', VA(IS,JSEA)
-              CALL FLUSH(740+IAPROC)
-            ENDIF
+          DO JSEA = 1, NSEAL
+            DO IS = 1, NSPEC
+              IF (VA(IS, JSEA) .LT. 0.) THEN
+                WRITE(740+IAPROC,*) 'TEST W3WAVE 5', VA(IS,JSEA)
+                CALL FLUSH(740+IAPROC)
+              ENDIF
+            ENDDO
           ENDDO
-        ENDDO
-        IF (SUM(VA) .NE. SUM(VA)) THEN
-          WRITE(740+IAPROC,*) 'NAN in ACTION 5', IX, IY, SUM(VA)
-          CALL FLUSH(740+IAPROC)
-          STOP
-        ENDIF
+          IF (SUM(VA) .NE. SUM(VA)) THEN
+            WRITE(740+IAPROC,*) 'NAN in ACTION 5', IX, IY, SUM(VA)
+            CALL FLUSH(740+IAPROC)
+            STOP
+          ENDIF
 #endif
-        call print_memcheck(memunit, 'memcheck_____:'//' WW3_WAVE TIME LOOP 6')
+          call print_memcheck(memunit, 'memcheck_____:'//' WW3_WAVE TIME LOOP 6')
 
 #ifdef W3_TIMINGS
-        CALL PRINT_MY_TIME("After U10, etc. assignation")
+          CALL PRINT_MY_TIME("After U10, etc. assignation")
 #endif
-        !
+          !
 #ifdef W3_DEBUGCOH
-        CALL ALL_VA_INTEGRAL_PRINT(IMOD, "Before call to W3UINI", 1)
+          CALL ALL_VA_INTEGRAL_PRINT(IMOD, "Before call to W3UINI", 1)
 #endif
 #ifdef W3_TIMINGS
-        CALL PRINT_MY_TIME("Before call W3UINI")
+          CALL PRINT_MY_TIME("Before call W3UINI")
 #endif
-        IF ( FLIWND .AND. LOCAL ) CALL W3UINI ( VA )
-        !
-        IF ( FLTAUA ) THEN
-          CALL W3UTAU ( FLFRST )
-        ELSE IF ( FLFRST ) THEN
-          TAUA    = 0.01
-          TAUADIR = 0.
-        END IF
-        !
-        IF ( FLRHOA ) THEN
-          CALL W3URHO ( FLFRST )
-        ELSE IF ( FLFRST ) THEN
-          RHOAIR = DAIR
-        END IF
-        !
-        ! 3.2 Update boundary conditions if boundary flag is true (FLBPI)
+          IF ( FLIWND .AND. LOCAL ) CALL W3UINI ( VA )
+          !
+          IF ( FLTAUA ) THEN
+            CALL W3UTAU ( FLFRST )
+          ELSE IF ( FLFRST ) THEN
+            TAUA    = 0.01
+            TAUADIR = 0.
+          END IF
+          !
+          IF ( FLRHOA ) THEN
+            CALL W3URHO ( FLFRST )
+          ELSE IF ( FLFRST ) THEN
+            RHOAIR = DAIR
+          END IF
+          !
+          ! For the quadtree case, adapt the grid         
+          !
+          IF ( GTYPE.EQ.QAGTYPE ) THEN
+            IF ( ITER_QA.LT.NITER_QA ) THEN
+            ! Adapt the grid, geographic arrays, and CG and WN
+              CALL W3ADGR ( DVTYPE_QA, ADAPT_VARS, NDSEN )  
+#ifdef W3_T              
+              WRITE(NDST,*) 'TEST W3WAVE: AFTER W3ADGR'
+              WRITE(NDST,*) '             NMOD_QA = ', NMOD_QA
+              WRITE(NDST,*) ' IMOD   ITO_QA   NFROM_QA, IFROM_QA'
+              DO IX=1,NMOD_QA
+                WRITE(NDST,*) IX, ITO_QA(IX), NFROM_QA(IX),    &
+                              IFROM_QA(IX,:)
+              END DO
+              WRITE(NDST,*) 'TEST W3WAVE: AFTER W3ADGR'
+              WRITE(NDST,*) '             NAUX_QA = ', NAUX_QA
+              WRITE(NDST,*) ' ISEA   CELL_TYPE, X, Y, IAUX_QA'
+              DO ISEA=1,NSEA
+                WRITE(NDST,*) ISEA, QTREE(IQGW)%CELL_TYPE(ISEA), &
+                              QTREE(IQGW)%XYVAL(ISEA,:),         &
+                              IAUX_QA(ISEA,1:NAUX_QA)
+              END DO
+#endif
+              IF ( NMOD_QA.EQ.0 ) EXIT
+              ! Adapt the spectra: with MPI it is easier to do it here 
+              ! than in W3ADGR
+              DO ISPEC=1, NSPEC
+                IF ( IAPPRO(ISPEC) .EQ. IAPROC ) THEN
+                  CALL W3GATH ( ISPEC, FIELD )
+                  CALL QA_ADVAR ( NMOD_QA, NFROM_QA, IFROM_QA,  &
+                                  WFROM_QA, ITO_QA, FIELD )
+                  CALL W3SCAT ( ISPEC, MAPSTA, FIELD )
+                END IF
+              END DO
+#ifdef W3_PR1              
+              ! Recompute level ranges for propagation
+              CALL W3MPQ1 ( MAPSTA, LVRANGE_QA )
+#endif
+              FLFRSTSAV = FLFRST
+              FLFRST = .TRUE.
+            ELSE
+              FLFRST = FLFRSTSAV
+            END IF
+          END IF ! GTYPE.EQ.QAGTYPE
+          !
+        END DO ! ITER_QA=1,NITER_QA
         !
 #ifdef W3_DEBUGCOH
         CALL ALL_VA_INTEGRAL_PRINT(IMOD, "Before boundary update", 1)
@@ -1464,7 +1535,7 @@ CONTAINS
 #endif
             CALL W3UTRN ( TRNX, TRNY )
 #ifdef W3_PR3
-            CALL W3MAPT
+            IF ( GTYPE.NE.QAGTYPE ) CALL W3MAPT
 #endif
           END IF  !! GTYPE
 
@@ -1487,6 +1558,8 @@ CONTAINS
 #endif
           ELSE IF (GTYPE .EQ. UNGTYPE) THEN
             CALL UG_GRADIENTS(DW, DDDX, DDDY)
+          ELSE IF (GTYPE .EQ. QAGTYPE) THEN  
+            CALL W3QTGR(DW(1:UBOUND(DW,1)), DDDX, DDDY, NDSEN)
           ELSE
             CALL W3DZXY(DW(1:UBOUND(DW,1)),'m',DDDX,DDDY)
           END IF
@@ -1501,15 +1574,19 @@ CONTAINS
 #ifdef W3_REFRX
         CIK  = 0.
         !
-        IF (GTYPE .NE. UNGTYPE) THEN
+        IF (GTYPE .EQ. UNGTYPE) THEN
+          WRITE (NDSE,1040)
+          CALL EXTCDE(2)
+          ! CALL UG_GRADIENTS(CMN, DCDX, DCDY) !/ Stefan, to be confirmed!
+        ELSE IF (GTYPE .EQ. QAGTYPE) THEN
+          ! Refraction not yet implemented for quadtrees. TO BE DONE!?
+          WRITE (NDSE,1040)
+          CALL EXTCDE(2)
+        ELSE
           DO IK=0,NK+1
             CIK = SIG(IK) / WN(IK,1:NSEA)
             CALL W3DZXY(CIK,'m/s',DCDX(IK,:,:),DCDY(IK,:,:))
           END DO
-        ELSE
-          WRITE (NDSE,1040)
-          CALL EXTCDE(2)
-          ! CALL UG_GRADIENTS(CMN, DCDX, DCDY) !/ Stefan, to be confirmed!
         END IF
 #endif
         !
@@ -1718,7 +1795,7 @@ CONTAINS
 #endif
 #ifdef W3_PR3
                   END IF
-                ELSE
+                ELSE IF (GTYPE .NE. QAGTYPE) THEN
                   CALL W3CFLXY ( ISEA, DTG, MAPSTA, MAPFS, CFLXYMAX(JSEA), VGX, VGY )
                 END IF
 #endif
@@ -1979,6 +2056,15 @@ CONTAINS
                       END IF
 #endif
                       !
+                    ELSE IF (GTYPE .EQ. QAGTYPE) THEN
+                      IX = 1
+#ifdef W3_PR1
+                      CALL W3XYQ1 ( ISPEC, DTG, MAPSTA, FIELD, VGX, VGY,     &
+                                    LVRANGE_QA )
+#endif
+#ifdef W3_PR2
+                      CALL W3XYQ2 ( ISPEC, DTG, FIELD, VGX, VGY )
+#endif
                     ELSE
                       IX = 1
 #ifdef W3_PR1
@@ -2653,7 +2739,7 @@ CONTAINS
 #ifdef W3_SBS
                   IF ( J .EQ. 1 ) THEN
 #endif
-                    CALL W3IOGO( 'WRITE', NDS(7), ITEST, IMOD &
+                    CALL W3IOGO( 'WRITE', NDS(7), ITEST, IMOD, NEW_QT &
 #ifdef W3_ASCII
                             ,NDS(14)                          &
 #endif
