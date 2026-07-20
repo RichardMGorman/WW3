@@ -2739,6 +2739,8 @@ CONTAINS
                                 !!Li        , NCel, NUFc, NVFc, NRLv, NBSMC  &
                                 !!Li        , NARC, NBAC, NSPEC              &
              , 1, 1, 1, 1, 1, 1, 1, 1         &
+#elif defined W3_UNO
+             , 1, 1, 1                        &
 #endif
              )
         CALL MPI_BCAST ( HQFAC, NX*NY, MPI_REAL, 0,          &
@@ -5823,6 +5825,8 @@ CONTAINS
                                 !!Li        , NCel, NUFc, NVFc, NRLv, NBSMC  &
                                 !!Li        , NARC, NBAC, NSPEC              &
              , 1, 1, 1, 1, 1, 1, 1, 1         &
+#elif defined W3_UNO
+             , 1, 1, 1                        &
 #endif
              )
         CALL MPI_BCAST ( HQFAC, NX*NY, MPI_REAL, 0,          &

@@ -1854,7 +1854,7 @@ CONTAINS
     REAL                    :: TRAT, TSUBFAC
     REAL                    :: DX0, DY0, DFRR, DNN, FMR
     REAL                    :: TRANS1, TRANS2, FUTRN, FVTRN
-    INTEGER                 :: UNDEF
+    INTEGER                 :: IUNDEF
     !/
     !/ Automatic work arrays
     !/
@@ -1874,7 +1874,7 @@ CONTAINS
     ! 1.  Preparations --------------------------------------------------- *
     ! 1.a Set constants
     !
-    UNDEF = QTREE(IQGW)%UNDEF_TYPE
+    IUNDEF = QTREE(IQGW)%UNDEF_TYPE
     !
     ITH    = 1 + MOD(ISP-1,NTH)
     IK     = 1 + (ISP-1)/NTH
@@ -1985,7 +1985,7 @@ CONTAINS
 #endif
     !     Propagation velocity components (relative to water):
     DO ISEA=1, NSEA
-      IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. UNDEF ) CYCLE
+      IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. IUNDEF ) CYCLE
       CQ(ISEA) = FIELD(ISEA) / CG(IK,ISEA) * CLATS(ISEA)
       CXTOT(ISEA) = ECOS(ITH) * CG(IK,ISEA) / CLATS(ISEA)
       CYTOT(ISEA) = ESIN(ITH) * CG(IK,ISEA)
@@ -2002,7 +2002,7 @@ CONTAINS
     !     Propagation velocity components (adjusted for currents):
     IF ( FLCUR ) THEN
       DO ISEA=1, NSEA
-        IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. UNDEF ) CYCLE
+        IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. IUNDEF ) CYCLE
         IF ( FLCX ) CXTOT(ISEA) = CXTOT(ISEA) + CX(ISEA)/CLATS(ISEA)
         IF ( FLCY ) CYTOT(ISEA) = CYTOT(ISEA) + CY(ISEA)
       END DO
@@ -2015,7 +2015,7 @@ CONTAINS
     !     Multiply y- component by dT(s)/dY(m)          
     !     Multiply diffusion coefficient by dT/dX^2, dT/dY^2
     DO ISEA=1, NSEA
-      IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. UNDEF ) CYCLE
+      IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. IUNDEF ) CYCLE
       UCFL(ISEA) = CXTOT(ISEA)*DTRAD/(DX0*CLATS(ISEA))
       VCFL(ISEA) = CYTOT(ISEA)*DTRAD/DY0
       IF ( DTME .GT. 0. ) THEN
@@ -2110,7 +2110,7 @@ CONTAINS
     !
     !  Store conservative update and advective update
         DO ISEA=1,NSEA
-          IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. UNDEF ) CYCLE
+          IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. IUNDEF ) CYCLE
           LVL = QTREE(IQGW)%INDLVL(ISEA)
           ! Inverse ratio squared of cell DX and DY to those at the 
           ! finest reference level
@@ -2154,7 +2154,7 @@ CONTAINS
           !           BCNt(M), BCNt(N)
         END DO
         DO ISEA=1,NSEA
-          IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. UNDEF ) CYCLE
+          IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. IUNDEF ) CYCLE
           LVL = QTREE(IQGW)%INDLVL(ISEA)
           ! Inverse ratio squared of cell DX and DY to those at the 
           ! finest reference level
@@ -2197,7 +2197,7 @@ CONTAINS
     ! Rescale FIELD
     !
     DO ISEA=1,NSEA
-      IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. UNDEF ) CYCLE
+      IF ( QTREE(IQGW)%CELL_TYPE(ISEA) .EQ. IUNDEF ) CYCLE
       FIELD(ISEA) = CG(IK,ISEA) / CLATS(ISEA) * CQ(ISEA)
     END DO
     !

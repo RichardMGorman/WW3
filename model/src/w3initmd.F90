@@ -396,6 +396,9 @@ CONTAINS
          NCTARGET_QA, GTYPE, QAGTYPE, NQUAD,         &
          IAUX_QA, EXAUX_QA, LVRANGE_QA, WTS1_QA,     &
          MAPML_QA
+#ifdef W3_UNO
+    USE W3GDATMD, ONLY: NRLv, NUFc, NVFc
+#endif
 #ifdef W3_PDLIB
     USE W3GDATMD, ONLY : FLCTH, B_JGS_BLOCK_GAUSS_SEIDEL, B_JGS_USE_JACOBI
 #endif
@@ -825,7 +828,7 @@ CONTAINS
       NQMXQ(IQGW) = MAX(NQUAD, NQMXQ(IQGW))
       NX = NSEA
       NY = 1
-#ifdef W3_PR2        
+#ifdef W3_UNO        
       NUFc = 2*NCMXQ(IQGW)          
       NVFc = NUFc          
       NRLv = 1 + QTREE(IQGW)%LVLMAX          
@@ -838,7 +841,10 @@ CONTAINS
     !   ... and reallocate:
       IF ( NCMXQ(IQGW).NE.NCMXQ(IQGB) ) CALL W3DIMX( IMOD,        &
                          NCMXQ(IQGW), NY, NCMXQ(IQGW)             &
-#ifdef W3_PR2        
+#ifdef W3_SMC
+                         , 1, NUFc, NVFc, NRLv, 1    &
+                         , 1, 1, 1                &
+#elif defined W3_UNO
                          , NUFc, NVFc, NRLv                       &
 #endif
                          , NDSEN, NDST )

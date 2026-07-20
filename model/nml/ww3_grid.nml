@@ -153,6 +153,7 @@
 ! -------------------------------------------------------------------- !
 ! Define the rectilinear grid type via RECT_NML namelist
 ! - only for RECT grids -
+! - also for QUAD grids, to specify the reference grid
 !
 ! * The minimum grid size is 3x3.
 !
@@ -397,11 +398,23 @@
   SMC%AJSID%FILENAME       = 'S6125AJSid.dat'
 /
 
-
-
+! -------------------------------------------------------------------- !
+! Define the bathymetry quadtree structure via QUAD_NML namelist
+! - only for QUAD grids -
+!
+! * namelist must be terminated with /
+! * definitions & defaults:
+!     QUAD%QAFILEC       = 'unset'  ! Quadtree structure cell filename
+!     QUAD%QAFILEQ       = 'unset'  ! Quadtree structure quad filename
+!     QUAD%IDF           = 20       ! Unit number for reading the above
+!
+&QUAD_NML
+  QUAD%QAFILEC       = 'NIWA_bathy_cell_7.txt'  
+  QUAD%QAFILEQ       = 'NIWA_bathy_quad_7.txt''  
+/
 ! -------------------------------------------------------------------- !
 ! Define the depth to preprocess via DEPTH_NML namelist
-! - for RECT and CURV grids -
+! - for RECT, CURV and QUAD grids -
 !
 ! * if no obstruction subgrid, need to set &MISC FLAGTR = 0
 !
@@ -422,6 +435,10 @@
 !               '(....)'  : auto detected  (default)
 !               '(f10.6)' : float type
 !
+! * IDLA, IDFM and FORMAT are ignored for quadtree grids, in which case
+!   the file (as produced by ww3_prnq) contains columns of data:
+!   cell index, X/lon, Y/lat, bed elevation, and (optionally), X and Y obstruction
+!
 ! * Example :
 !      IDF  SF     IDLA  IDFM   FORMAT    FILENAME
 !      50   0.001  1     1     '(....)'  'GLOB-30M.bot'
@@ -439,6 +456,7 @@
   DEPTH%SF             = 0.001
   DEPTH%FILENAME       = 'GLOB-30M.bot'
 /
+!
 
 
 
@@ -633,7 +651,7 @@
 ! -------------------------------------------------------------------- !
 ! Define the input boundary points via INBND_COUNT_NML and
 !                                      INBND_POINT_NML namelist
-! - for RECT, CURV and UNST grids -
+! - for RECT, CURV, UNST and QUAD grids -
 !
 ! * If no mask defined, INBOUND can be used
 !
@@ -649,6 +667,8 @@
 !     connect flag. If this flag is true, and the present and previous
 !     point are on a grid line or diagonal, all intermediate points
 !     are also defined as boundary points.
+!     For QUAD grids, the index counters refer to the reference grid 
+!     specified by the RECT_NML namelist.
 !
 ! * Included point :
 !     grid points from segment data
@@ -735,7 +755,7 @@
 ! -------------------------------------------------------------------- !
 ! Define the output boundary points via OUTBND_COUNT_NML and
 !                                       OUTBND_LINE_NML namelist
-! - only for RECT and CURV grids -
+! - only for RECT, CURV and QUAD grids -
 !
 ! * It will creates a nest file with output boundaries for a inner grid.
 !   The prefered way to do it is to use ww3_bounc program.

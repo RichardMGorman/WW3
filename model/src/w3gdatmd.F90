@@ -702,7 +702,12 @@ MODULE W3GDATMD
     INTEGER, POINTER :: IJKCel3(:), IJKCel4(:), &
          IJKVFc5(:), IJKVFc6(:), &
          IJKUFc5(:), IJKUFc6(:)
-#endif
+#elif defined W3_UNO
+    !RMG     Also used for 2nd order quadtree propagation
+    INTEGER          :: NUFc, NVFc, NRLv
+    INTEGER, POINTER :: NLvUFc(:), NLvVFc(:)
+    INTEGER, POINTER :: IJKCel(:,:), IJKUFc(:,:), IJKVFc(:,:)
+#endif    
     !
     REAL             :: SX, SY, X0, Y0, DTCFL, DTCFLI, DTMAX,      &
          DTMIN, DMIN, CTMAX, FICE0, FICEN, FICEL,   &
@@ -1260,6 +1265,10 @@ MODULE W3GDATMD
        IJKVFc5(:), IJKVFc6(:), &
        IJKUFc5(:), IJKUFc6(:)
   !/
+#elif defined W3_UNO
+  INTEGER, POINTER      :: NRLv, NUFc, NVFc
+  INTEGER, POINTER      :: NLvUFc(:), NLvVFc(:)
+  INTEGER, POINTER      :: IJKCel(:,:), IJKUFc(:,:), IJKVFc(:,:)
 #endif
   !
 #ifdef W3_SEC1
@@ -1669,6 +1678,8 @@ CONTAINS
 #ifdef W3_SMC
        , MCel, MUFc, MVFc, MRLv, MBSMC    &
        , MARC, MBAC, MSPEC                &
+#elif defined W3_UNO
+       , MUFc, MVFc, MRLv                 &
 #endif
        )
     !/
@@ -1761,6 +1772,8 @@ CONTAINS
 #ifdef W3_SMC
     INTEGER, INTENT(IN)     :: MCel, MUFc, MVFc, MRLv, MBSMC
     INTEGER, INTENT(IN)     :: MARC, MBAC, MSPEC
+#elif defined W3_UNO
+    INTEGER, INTENT(IN)     :: MUFc, MVFc, MRLv 
 #endif
     !/
     !/ ------------------------------------------------------------------- /
@@ -1894,6 +1907,14 @@ CONTAINS
     GRIDS(IMOD)%CTRNY(:)  = 0.0
     GRIDS(IMOD)%CLATF(:)  = 0.0
     GRIDS(IMOD)%ANGARC(:) = 0.0
+#elif defined W3_UNO
+    ALLOCATE ( GRIDS(IMOD)%NLvUFc(0:MRLv),     &
+               GRIDS(IMOD)%NLvVFc(0:MRLv),     &
+               GRIDS(IMOD)%IJKCel(5, -9:MSEA), &
+               GRIDS(IMOD)%IJKUFc(7,MUFc),     &
+               GRIDS(IMOD)%IJKVFc(8,MVFc),     &
+               STAT=ISTAT                      )
+    CHECK_ALLOC_STATUS ( ISTAT )
 #endif
     !
     GRIDS(IMOD)%FLAGST = .TRUE.
@@ -2312,7 +2333,9 @@ CONTAINS
   !
   !/ ------------------------------------------------------------------- /
       USE W3SERVMD, ONLY: EXTCDE
-  !/S      USE W3SERVMD, ONLY: STRACE
+#ifdef W3_S      
+      USE W3SERVMD, ONLY: STRACE
+#endif  
   !
       IMPLICIT NONE
   !
@@ -2327,9 +2350,10 @@ CONTAINS
   !/ Local parameters
   !/
       INTEGER                 :: NS
-  !/S      INTEGER, SAVE           :: IENT = 0
-  !/
-  !/S      CALL STRACE (IENT, 'W3DIMQ')
+#ifdef W3_S      
+      INTEGER, SAVE           :: IENT = 0
+      CALL STRACE (IENT, 'W3DIMQ')
+#endif
   !
   ! -------------------------------------------------------------------- /
   ! 1.  Test input and module status
@@ -2397,7 +2421,9 @@ CONTAINS
       NS = MIN(MSEAB,SIZE(TRNY,2))
       DATB_QA(1:NS,3) = TRNY(1,1:NS)
   !
-  !/T      WRITE (NDST,9004)
+#ifdef W3_T  
+      WRITE (NDST,9004)
+#endif  
   !
   ! 5. Deallocate arrays that had been used for the bathymetry grid,
   !    ready to be reallocated for the wave grid
@@ -2408,7 +2434,9 @@ CONTAINS
                    GRIDS(IMOD)%MAPFS,                                 &
                    GRIDS(IMOD)%MAPSF,                                 &
                    GRIDS(IMOD)%FLAGST,                                &
-  !/RTD                   GRIDS(IMOD)%AnglD,                                 &
+#ifdef W3_RTD
+                   GRIDS(IMOD)%AnglD,                                 &
+#endif  
                    GRIDS(IMOD)%ZB,                                    &
                    GRIDS(IMOD)%CLATS,                                 &
                    GRIDS(IMOD)%CLATIS,                                &
@@ -2428,35 +2456,47 @@ CONTAINS
                    GRIDS(IMOD)%GSQRT,                                 &
                    GRIDS(IMOD)%HPFAC,                                 &
                    GRIDS(IMOD)%HQFAC    )
-  !/BT4      DEALLOCATE ( GRIDS(IMOD)%SED_D50,                               &
-  !/BT4                   GRIDS(IMOD)%SED_PSIC )
+#ifdef W3_BT4
+      DEALLOCATE ( GRIDS(IMOD)%SED_D50,                               &
+                     GRIDS(IMOD)%SED_PSIC )
+#endif
   !
-  !/SMC      DEALLOCATE ( GRIDS(IMOD)%NLvCel,                                &
-  !/SMC                 GRIDS(IMOD)%NLvUFc,                                  &
-  !/SMC                 GRIDS(IMOD)%NLvVFc,                                  &
-  !/SMC                 GRIDS(IMOD)%IJKCel,                                  &
-  !/SMC                 GRIDS(IMOD)%IJKUFc,                                  &
-  !/SMC                 GRIDS(IMOD)%IJKVFc,                                  &
-  !/SMC                 GRIDS(IMOD)%CTRNX,                                   &  
-  !/SMC                 GRIDS(IMOD)%CTRNY,                                   &
-  !/SMC                 GRIDS(IMOD)%CLATF ) 
+#ifdef W3_SMC  
+      DEALLOCATE ( GRIDS(IMOD)%NLvCel,                                &
+                 GRIDS(IMOD)%NLvUFc,                                  &
+                 GRIDS(IMOD)%NLvVFc,                                  &
+                 GRIDS(IMOD)%IJKCel,                                  &
+                 GRIDS(IMOD)%IJKUFc,                                  &
+                 GRIDS(IMOD)%IJKVFc,                                  &
+                 GRIDS(IMOD)%CTRNX,                                   &  
+                 GRIDS(IMOD)%CTRNY,                                   &
+                 GRIDS(IMOD)%CLATF ) 
+#elif defined W3_UNO  
+      DEALLOCATE ( GRIDS(IMOD)%NLvUFc,                                &
+                 GRIDS(IMOD)%NLvVFc,                                  &
+                 GRIDS(IMOD)%IJKCel,                                  &
+                 GRIDS(IMOD)%IJKUFc,                                  &
+                 GRIDS(IMOD)%IJKVFc )
+#endif
   !
-  !/PR2      DEALLOCATE ( GRIDS(IMOD)%NLvUFc,                                &
-  !/PR2                 GRIDS(IMOD)%NLvVFc,                                  &
-  !/PR2                 GRIDS(IMOD)%IJKCel,                                  &
-  !/PR2                 GRIDS(IMOD)%IJKUFc,                                  &
-  !/PR2                 GRIDS(IMOD)%IJKVFc )
+#ifdef W3_ARC
+      DEALLOCATE ( GRIDS(IMOD)%ICLBAC,                                &
+                 GRIDS(IMOD)%ANGARC,                                  &
+                 GRIDS(IMOD)%SPCBAC ) 
+#endif
+#ifdef W3_REF1  
+      DEALLOCATE ( GRIDS(IMOD)%RREF  )
+      DEALLOCATE ( GRIDS(IMOD)%REFPARS )
+      DEALLOCATE ( GRIDS(IMOD)%REFLC )
+      DEALLOCATE ( GRIDS(IMOD)%REFLD )
+#endif  
+#ifdef W3_IG1
+      DEALLOCATE ( GRIDS(IMOD)%IGPARS )
+#endif
   !
-  !/ARC      DEALLOCATE ( GRIDS(IMOD)%ICLBAC,                                &
-  !/ARC                 GRIDS(IMOD)%ANGARC,                                  &
-  !/ARC                 GRIDS(IMOD)%SPCBAC ) 
-  !/REF1     DEALLOCATE ( GRIDS(IMOD)%RREF  )
-  !/REF1      DEALLOCATE ( GRIDS(IMOD)%REFPARS )
-  !/REF1      DEALLOCATE ( GRIDS(IMOD)%REFLC )
-  !/REF1      DEALLOCATE ( GRIDS(IMOD)%REFLD )
-  !/IG1       DEALLOCATE ( GRIDS(IMOD)%IGPARS )
-  !
-  !/T      WRITE (NDST,9005)
+#ifdef W3_T
+      WRITE (NDST,9005)
+#endif
       GRIDS(IMOD)%GINIT = .FALSE.
       RETURN
   !
@@ -2472,13 +2512,14 @@ CONTAINS
                '                    INPUT = ',3I10 /)
  1004 FORMAT (/' *** ERROR W3DIMQ : ARRAY(S) ALREADY ALLOCATED *** ')
   !
-  !/T 9000 FORMAT (' TEST W3DIMQ : MODEL ',I4,' DIM. AT ',3I8)
-  !/T 9001 FORMAT (' TEST W3DIMQ : ARRAYS ALLOCATED')
-  !/T 9002 FORMAT (' TEST W3DIMQ : DIMENSIONS STORED')  !
-
-  !/T 9003 FORMAT (' TEST W3DIMQ : POINTERS RESET')
-  !/T 9004 FORMAT (' TEST W3DIMQ : BATHY DATA COPIED')
-  !/T 9005 FORMAT (' TEST W3DIMQ : ARRAYS DEALLOCATED')
+#ifdef W3_T  
+9000 FORMAT (' TEST W3DIMQ : MODEL ',I4,' DIM. AT ',3I8)
+9001 FORMAT (' TEST W3DIMQ : ARRAYS ALLOCATED')
+9002 FORMAT (' TEST W3DIMQ : DIMENSIONS STORED')  !
+9003 FORMAT (' TEST W3DIMQ : POINTERS RESET')
+9004 FORMAT (' TEST W3DIMQ : BATHY DATA COPIED')
+9005 FORMAT (' TEST W3DIMQ : ARRAYS DEALLOCATED')
+#endif
   !/
   !/ End of W3DIMQ ----------------------------------------------------- /
   !/
@@ -2636,6 +2677,10 @@ CONTAINS
     NBGL   => GRIDS(IMOD)%NBGL
     NBAC   => GRIDS(IMOD)%NBAC
     NBSMC  => GRIDS(IMOD)%NBSMC
+#elif defined W3_UNO
+    NUFc   => GRIDS(IMOD)%NUFc
+    NVFc   => GRIDS(IMOD)%NVFc
+    NRLv   => GRIDS(IMOD)%NRLv
 #endif
     !
     E3DF   => GRIDS(IMOD)%E3DF
@@ -2862,6 +2907,12 @@ CONTAINS
       ICLBAC => GRIDS(IMOD)%ICLBAC
       ANGARC => GRIDS(IMOD)%ANGARC
       SPCBAC => GRIDS(IMOD)%SPCBAC
+#elif defined W3_UNO
+      NLvUFc => GRIDS(IMOD)%NLvUFc
+      NLvVFc => GRIDS(IMOD)%NLvVFc
+      IJKCel => GRIDS(IMOD)%IJKCel
+      IJKUFc => GRIDS(IMOD)%IJKUFc
+      IJKVFc => GRIDS(IMOD)%IJKVFc
 #endif
       !
       GSU  => GRIDS(IMOD)%GSU

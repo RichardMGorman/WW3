@@ -573,19 +573,21 @@ $                       : j=NY+1. In other words, (NX+1,J<=NY) => (1,J)
 $                       : and (I,NY+1) => (NX-I+1,NY). Tripole
 $                       : grid closure requires that NX be even. A grid
 $                       : with tripole closure must be curvilinear.
-$  2 NX, NY. As the outer grid lines are always defined as land
-$    points, the minimum size is 3x3.
 $
 $ Branch here based on grid type
 $
 $ IF ( RECTILINEAR GRID ) THEN
 $
+$  2 NX, NY. As the outer grid lines are always defined as land
+$    points, the minimum size is 3x3.
 $  3 Grid increments SX, SY (degr.or m) and scaling (division) factor.
 $    If CSTRG='SMPL', then SX is set to 360/NX.
 $  4 Coordinates of (1,1) (degr.) and scaling (division) factor.
 $
 $ ELSE IF ( CURVILINEAR GRID ) THEN
 $
+$  2 NX, NY. As the outer grid lines are always defined as land
+$    points, the minimum size is 3x3.
 $  3 Unit number of file with x-coordinate.
 $    Scale factor and add offset: x <= scale_fac * x_read + add_offset.
 $    IDLA, IDFM, format for formatted read, FROM and filename.
@@ -628,6 +630,20 @@ $    allowed within the y-coord input.
 $
 $ ELSE IF ( UNSTRUCTURED GRID ) THEN
 $   Nothing to declare: all the data will be read from the GMESH file
+$ ELSE IF ( QUADTREE GRID ) THEN
+$   
+$  As for rectangular grid, but specifying the reference grid used, e.g,
+$  for boundary conditions:
+$  2 NX, NY. As the outer grid lines are always defined as land
+$    points, the minimum size is 3x3.
+$  3 Grid increments SX, SY (degr.or m) and scaling (division) factor.
+$    If CSTRG='SMPL', then SX is set to 360/NX.
+$  4 Coordinates of (1,1) (degr.) and scaling (division) factor.
+$  Additionally:
+$  5 Name of quadtree structure cell file
+$  6 Name of quadtree structure quad file
+$  7 Unit number for reading the above files
+$
 $ END IF ( CURVILINEAR GRID )
 $
 $  5 Limiting bottom depth (m) to discriminate between land and sea
@@ -649,8 +665,13 @@ $               'NAME' : open file by name and assign to unit.
 $
 $    If the above unit number equals 10, then the bottom depths are read from
 $    this file.  The depths must follow the above record.  No comment lines are
-$    allowed within the depth input. In the case of unstructured grids, the file
+$    allowed within the depth input. 
+$    In the case of unstructured grids, the file
 $    is expected to be a GMESH grid file containing node and element lists.
+$    In the case of quadtree grids, the file is expected to be a bathymetry data
+$    file as written by ww3_prnq, with columns containing:
+$        1) cell index, 2) X/lon coordinate, 3) Y,lat coordinate, 4) bed elevation
+$    and, optionally, 5) X obstruction, 6) Y obstruction factors
 $
 $ ------------------------------------------------------------------------
 $ Example for rectilinear grid with spherical (lon/lat) coordinate system.
@@ -756,6 +777,27 @@ $    Boundary cell id list file (unit 35) is only required if boundary
 $    cell number entered above is non-zero.  The cell id number should be
 $    the sequential number in the cell array (unit 32) S625MCels.dat.
 $
+$ ------------------------------------------------------------------------
+$
+$ Example for quadtree grids: reference grid definitions:
+$ [NX, NY]
+$ 180  210
+$ [SX, SY, VSC]
+$ 15.  10.  32.
+$ [X0, Y0, VSC0]
+$ 120.  -70.0  1.
+$ [QAFILEC] Quadtree cell file:
+$  'NIWA_bathy_cell_7.txt'
+$ [QAFILEQ] Quadtree quad file:
+$  'NIWA_bathy_quad_7.txt'
+$ [NDSG] Unit number for reading the above:
+$  25
+$ Normal depth input line is used
+$ though IDLA, IDFM, format and FROM (fields 5-8) are ignored:
+$  -0.1  10.0  30   -1. 1 1 '(....)' 'NAME' 'NIWA_bathy_data_7.txt'
+$
+$ ------------------------------------------------------------------------
+$ (not for SMC, quadtree grids)
 $ If sub-grid information is available as indicated by FLAGTR above,
 $ additional input to define this is needed below. In such cases a
 $ field of fractional obstructions at or between grid points needs to

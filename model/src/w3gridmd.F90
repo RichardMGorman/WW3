@@ -961,6 +961,9 @@ MODULE W3GRIDMD
   ! Poles of the output nested grids. May be a mix of rotated and standard
   REAL, DIMENSION(9)      :: BPLAT, BPLON
 #endif
+
+  INTEGER                 :: NXREF, NYREF, ICELLB, LVBC, ISB, IQB, ISTAT_QAB(2)
+  REAL                    :: XBC, YBC
   !
 #ifdef W3_FLD1
   NAMELIST /FLD1/ TAILTYPE, TAILLEV, TAILT1, TAILT2
@@ -3652,7 +3655,7 @@ CONTAINS
     IF (FLGNML) THEN
       SELECT CASE ( GTYPE )
         !!Li  SMCTYPE shares domain info with RLGTYPE.  JGLi12Oct2020
-      CASE ( RLGTYPE, SMCTYPE )
+      CASE ( RLGTYPE, SMCTYPE, QAGTYPE )
         NX = NML_RECT%NX
         NY = NML_RECT%NY
         NX = MAX ( 3 , NX )
@@ -3666,25 +3669,11 @@ CONTAINS
         WRITE (NDSO,3003) NX, NY
       CASE ( UNGTYPE )
         NY=1
-      CASE ( QAGTYPE )
-        QAFILEC = NML_QUAD%QAFILEC
-        QAFILEQ = NML_QUAD%QAFILEQ
-        NDSG    = NML_QUAD%IDF
       END SELECT
     ELSE
       IF ( GTYPE.EQ.UNGTYPE) THEN
         NY =1
-      ELSE IF ( GTYPE.EQ.QAGTYPE) THEN
-        CALL NEXTLN ( COMSTR , NDSI , NDSE )
-        READ (NDSI,*,IOSTAT=IERR) QAFILEC
-        IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3GRID','INPUT',61)
-        CALL NEXTLN ( COMSTR , NDSI , NDSE )
-        READ (NDSI,*,IOSTAT=IERR) QAFILEQ
-        IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3GRID','INPUT',61)
-        CALL NEXTLN ( COMSTR , NDSI , NDSE )
-        READ (NDSI,*,IOSTAT=IERR) NDSG
-        IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3GRID','INPUT',61)
-      ELSE
+     ELSE
         CALL NEXTLN ( COMSTR , NDSI , NDSE )
         READ (NDSI,*,IOSTAT=IERR) NX, NY
         IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3GRID','INPUT',61)
@@ -3693,35 +3682,11 @@ CONTAINS
         WRITE (NDSO,3003) NX, NY
       END IF
     END IF
-    IF ( GTYPE.EQ.QAGTYPE) THEN
-      WRITE (NDSO,3010) QAFILEC, QAFILEQ, NDSG
     !
-    ! Read the header of the quadtree cell file      
-
-      OPEN (NDSG,FILE=TRIM(FNMPRE)//TRIM(QAFILEC),     &
-                 STATUS='OLD',IOSTAT=IERR)
-      IF (IERR.NE.0) CALL EXTOPN(NDSE,IERR,'W3GRID','INPUT',60)
-      READ(NDSG,*) IDUM     ! NHEAD
-      READ(NDSG,*) IDUM     ! NCOL
-      READ(NDSG,*) NQUAD    ! NQUAD
-      READ(NDSG,*) NCELL    ! NCELL
-      NX = NCELL
-      NY = 1
-      ! Allocate a structure QTREE(IQGB) for the bathymetry quadtree
-      IQGB = 1
-      CALL W3QALL( IQGB, NCELL, NQUAD, 0, 0 )
-      ! Read the cell data into the bathymetry quadtree 
-      REWIND(NDSG)
-      CALL QA_IOQT(NDSG,QTREE(IQGB),-4,IERR,NDSE)
-      IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3GRID','INPUT',61)
-      ! Read the quadtree quad data
-      OPEN (NDSG,FILE=TRIM(FNMPRE)//TRIM(QAFILEQ),     &
-                 STATUS='OLD',IOSTAT=IERR)
-      IF (IERR.NE.0) CALL EXTOPN(NDSE,IERR,'W3GRID','INPUT',60)
-      CALL QA_IOQT(NDSG,QTREE(IQGB),-3,IERR,NDSE)
-      IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3GRID','INPUT',61)
- 
-    END IF
+    ! Preserve reference grid sizes (NX, NY will be updated for quadtrees)
+    !
+    NXREF = NX
+    NYREF = NY
     !
     ! Propagation specific to unstructured grids
     !
@@ -3820,7 +3785,8 @@ CONTAINS
       ! 7.c.1 Rectilinear grid
       !
       !!Li  SMC grid shares domain info with RLGTYPE.   JGLi12Oct2020
-    CASE ( RLGTYPE, SMCTYPE )
+      !     As does the reference grid for quadtrees.
+    CASE ( RLGTYPE, SMCTYPE, QAGTYPE )
       !
       IF (FLGNML) THEN
         SX = NML_RECT%SX
@@ -3859,12 +3825,14 @@ CONTAINS
              FACTOR*Y0, FACTOR*(Y0+REAL(NY-1)*SY)
       END IF
       !
-      DO IY=1, NY
-        DO IX=1, NX
-          XGRDIN(IX,IY) = X0 + REAL(IX-1)*SX
-          YGRDIN(IX,IY) = Y0 + REAL(IY-1)*SY
+      IF ( GTYPE.NE.QAGTYPE) THEN
+        DO IY=1, NY
+          DO IX=1, NX
+            XGRDIN(IX,IY) = X0 + REAL(IX-1)*SX
+            YGRDIN(IX,IY) = Y0 + REAL(IY-1)*SY
+          END DO
         END DO
-      END DO
+      END IF
       !
       ! 7.c.2 Curvilinear grid
       !
@@ -4032,6 +4000,53 @@ CONTAINS
       END IF
     END SELECT !GTYPE
     !
+    IF ( GTYPE.EQ.QAGTYPE) THEN
+      IF (FLGNML) THEN
+        QAFILEC = NML_QUAD%QAFILEC
+        QAFILEQ = NML_QUAD%QAFILEQ
+        NDSG    = NML_QUAD%IDF
+      ELSE
+        CALL NEXTLN ( COMSTR , NDSI , NDSE )
+        READ (NDSI,*,IOSTAT=IERR) QAFILEC
+        IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3GRID','INPUT',61)
+        CALL NEXTLN ( COMSTR , NDSI , NDSE )
+        READ (NDSI,*,IOSTAT=IERR) QAFILEQ
+        IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3GRID','INPUT',61)
+        CALL NEXTLN ( COMSTR , NDSI , NDSE )
+        READ (NDSI,*,IOSTAT=IERR) NDSG
+        IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3GRID','INPUT',61)
+      END IF
+      WRITE (NDSO,3010) QAFILEC, QAFILEQ, NDSG
+    !
+    ! Read the header of the quadtree cell file      
+    !
+      OPEN (NDSG,FILE=TRIM(FNMPRE)//TRIM(QAFILEC),     &
+                 STATUS='OLD',IOSTAT=IERR)
+      IF (IERR.NE.0) CALL EXTOPN(NDSE,IERR,'W3GRID','INPUT',60)
+      READ(NDSG,*) IDUM     ! NHEAD
+      READ(NDSG,*) IDUM     ! NCOL
+      READ(NDSG,*) NQUAD    ! NQUAD
+      READ(NDSG,*) NCELL    ! NCELL
+      NX = NCELL
+      NY = 1
+      ! Allocate a structure QTREE(IQGB) for the bathymetry quadtree
+      IQGB = 1
+      CALL W3QALL( IQGB, NCELL, NQUAD, 0, 0 )
+      ! Read the cell data into the bathymetry quadtree 
+      REWIND(NDSG)
+      CALL QA_IOQT(NDSG,QTREE(IQGB),-4,IERR,NDSE)
+      IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3GRID','INPUT',61)
+      CLOSE(NDSG)
+      ! Read the quadtree quad data
+      OPEN (NDSG,FILE=TRIM(FNMPRE)//TRIM(QAFILEQ),     &
+                 STATUS='OLD',IOSTAT=IERR)
+      IF (IERR.NE.0) CALL EXTOPN(NDSE,IERR,'W3GRID','INPUT',60)
+      CALL QA_IOQT(NDSG,QTREE(IQGB),-3,IERR,NDSE)
+      IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3GRID','INPUT',61)
+      CLOSE(NDSG)
+ 
+    END IF
+    !
     ! 7.d Depth information for grid
     !
     IF (FLGNML) THEN
@@ -4172,8 +4187,15 @@ CONTAINS
     ELSE
       DO IY=1, NY
         DO IX=1, NX
-          IF ( ZBIN(IX,IY) .LE. ZLIM ) TMPSTA(IY,IX) = 1
-          IF ( GTYPE.EQ.QAGTYPE ) TMPSTA(IY,IX) = QTREE(IQGB)%CELL_TYPE(IX)
+          IF ( GTYPE.EQ.QAGTYPE ) THEN
+            ! For quadtrees, status has already been set in CELL_TYPE, 
+            !  except for bed elevation between zero and ZLIM
+            TMPSTA(IY,IX) = QTREE(IQGB)%CELL_TYPE(IX)
+            IF ( ZBIN(IX,IY) .LT. 0.001 .AND. ZBIN(IX,IY) .GT. ZLIM ) &
+               TMPSTA(IY,IX) = 0
+          ELSE
+            IF ( ZBIN(IX,IY) .LE. ZLIM ) TMPSTA(IY,IX) = 1
+          END IF
         END DO
       END DO
     ENDIF
@@ -4603,84 +4625,197 @@ CONTAINS
     !
     !--- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
     ! 8.  Finalize status maps
-    !     Already done for quadtree grid
-    IF (GTYPE.NE.QAGTYPE) THEN
-      ! 8.a Defines open boundary conditions for UNST grids
+    !     
+    ! 8.a Defines open boundary conditions for UNST grids
+    !
+    J = LEN_TRIM(UGOBCFILE)
+    IF (GTYPE.EQ.UNGTYPE.AND.UGOBCFILE(:J).NE.'unset')  &
+         CALL READMSHOBC(NDSG,UGOBCFILE,TMPSTA,UGOBCOK)
+    IF ((GTYPE.EQ.UNGTYPE).AND.UGOBCAUTO.AND.(.NOT.UGOBCOK))  &
+         CALL UG_GETOPENBOUNDARY(TMPSTA,ZBIN,UGOBCDEPTH)
+    !
+    ! 8.b Determine where to get the data
+    !
+    IF (FLGNML) THEN
+      NDSTR = NML_MASK%IDF
+      IDLA = NML_MASK%IDLA
+      IDFT = NML_MASK%IDFM
+      RFORM = TRIM(NML_MASK%FORMAT)
+      FROM = TRIM(NML_MASK%FROM)
+      TNAME = TRIM(NML_MASK%FILENAME)
+      IF (TNAME.EQ.'unset' .OR. TNAME.EQ.'UNSET') FROM='PART'
+    ELSE
+      CALL NEXTLN ( COMSTR , NDSI , NDSE )
+      READ (NDSI,*,IOSTAT=IERR) NDSTR, IDLA, IDFT, RFORM,     &
+           FROM, TNAME
+      IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3GRID','INPUT',61)
+    END IF
+    !
+    ! ... Data to be read in parts
+    !
+    IF ( FROM .EQ. 'PART' ) THEN
       !
-      J = LEN_TRIM(UGOBCFILE)
-      IF (GTYPE.EQ.UNGTYPE.AND.UGOBCFILE(:J).NE.'unset')  &
-           CALL READMSHOBC(NDSG,UGOBCFILE,TMPSTA,UGOBCOK)
-      IF ((GTYPE.EQ.UNGTYPE).AND.UGOBCAUTO.AND.(.NOT.UGOBCOK))  &
-           CALL UG_GETOPENBOUNDARY(TMPSTA,ZBIN,UGOBCDEPTH)
+      ! 8.b Update TMPSTA with input boundary data (ILOOP=1)
+      !                        and excluded points (ILOOP=2)
       !
-      ! 8.b Determine where to get the data
-      !
-      IF (FLGNML) THEN
-        NDSTR = NML_MASK%IDF
-        IDLA = NML_MASK%IDLA
-        IDFT = NML_MASK%IDFM
-        RFORM = TRIM(NML_MASK%FORMAT)
-        FROM = TRIM(NML_MASK%FROM)
-        TNAME = TRIM(NML_MASK%FILENAME)
-        IF (TNAME.EQ.'unset' .OR. TNAME.EQ.'UNSET') FROM='PART'
-      ELSE
-        CALL NEXTLN ( COMSTR , NDSI , NDSE )
-        READ (NDSI,*,IOSTAT=IERR) NDSTR, IDLA, IDFT, RFORM,     &
-             FROM, TNAME
-        IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3GRID','INPUT',61)
+      IF ( ICLOSE .EQ. ICLOSE_TRPL ) THEN
+        WRITE(NDSE,*)'PROGRAM W3GRID STATUS MAP CALCULATION IS '//   &
+             'NOT TESTED FOR TRIPOLE GRIDS FOR CASE WHERE USER OPTS '//   &
+             'TO READ DATA IN PARTS. STOPPING NOW (107).'
+        CALL EXTCDE ( 107 )
       END IF
-      !
-      ! ... Data to be read in parts
-      !
-      IF ( FROM .EQ. 'PART' ) THEN
+      DO ILOOP=1, 2
         !
-        ! 8.b Update TMPSTA with input boundary data (ILOOP=1)
-        !                        and excluded points (ILOOP=2)
-        !
-        IF ( ICLOSE .EQ. ICLOSE_TRPL ) THEN
-          WRITE(NDSE,*)'PROGRAM W3GRID STATUS MAP CALCULATION IS '//   &
-               'NOT TESTED FOR TRIPOLE GRIDS FOR CASE WHERE USER OPTS '//   &
-               'TO READ DATA IN PARTS. STOPPING NOW (107).'
-          CALL EXTCDE ( 107 )
+        I = 1
+        IF ( ILOOP .EQ. 1 ) THEN
+          WRITE (NDSO,979) 'boundary points'
+          NSTAT  = 2
+        ELSE
+          WRITE (NDSO,979) 'excluded points'
+          NSTAT  = -1
         END IF
-        DO ILOOP=1, 2
+        FIRST  = .TRUE.
+        !
+        DO
+          IF (FLGNML) THEN
+            ! inbound points
+            IF (ILOOP.EQ.1) THEN
+              IF (NML_INBND_COUNT%N_POINT.GT.0 .AND. I.LE.NML_INBND_COUNT%N_POINT) THEN
+                IX = NML_INBND_POINT(I)%X_INDEX
+                IY = NML_INBND_POINT(I)%Y_INDEX
+                CONNCT = NML_INBND_POINT(I)%CONNECT
+                I=I+1
+              ELSE
+                EXIT
+              END IF
+              ! excluded points
+            ELSE IF (ILOOP.EQ.2) THEN
+              IF (NML_EXCL_COUNT%N_POINT.GT.0 .AND. I.LE.NML_EXCL_COUNT%N_POINT) THEN
+                IX = NML_EXCL_POINT(I)%X_INDEX
+                IY = NML_EXCL_POINT(I)%Y_INDEX
+                CONNCT = NML_EXCL_POINT(I)%CONNECT
+                I=I+1
+              ELSE
+                EXIT
+              END IF
+            END IF
+          ELSE
+            CALL NEXTLN ( COMSTR , NDSI , NDSE )
+            READ (NDSI,*,IOSTAT=IERR) IX, IY, CONNCT
+            IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3GRID','INPUT',61)
+          END IF
+          !
+          ! ... Check if last point reached.
+          !
+          IF (IX.EQ.0 .AND. IY.EQ.0) EXIT
+          !
+          IF (GTYPE.EQ.UNGTYPE.AND.(UGOBCAUTO.OR.UGOBCOK)) CYCLE
+          !
+          ! ... Quadtree grid: read but don't process excluded point specifications.
+          !
+          IF (GTYPE.EQ.QAGTYPE.AND.ILOOP.EQ.2) CYCLE
+          !
+          ! ... Check if point in grid.
+          !
+          IF (IX.LT.1 .OR. IX.GT.NXREF .OR.  IY.LT.1 .OR. IY.GT.NYREF) THEN
+            WRITE (NDSO,981)
+            WRITE (NDSO,*) '       ', IX, IY
+            CYCLE
+          END IF
+          !
+          ! ... Check if intermediate points are to be added.
+          !
+          IF ( CONNCT .AND. .NOT.FIRST ) THEN
+            IDX    = IX - IXO
+            IDY    = IY - IYO
+            IF ( IDX.EQ.0 .OR. IDY.EQ.0 .OR.                      &
+                 ABS(IDX).EQ.ABS(IDY) ) THEN
+              NBA    = MAX ( MAX(ABS(IDX),ABS(IDY))-1 , 0 )
+              IF (IDX.NE.0) IDX = SIGN(1,IDX)
+              IF (IDY.NE.0) IDY = SIGN(1,IDY)
+              IX     = IXO
+              IY     = IYO
+              DO IBA=1, NBA
+                IX     = IX + IDX
+                IY     = IY + IDY
+                IF ( GTYPE.EQ.QAGTYPE ) THEN
+                  CALL QA_XY2CELL(QTREE(IQGB),REAL(IX),REAL(IY), &
+                     ICELLB, XBC, YBC, LVBC, IQB, ISB, ISTAT_QAB )
+                  IF ( ALL(ISTAT_QAB.EQ.0) ) THEN
+                    TMPSTA(1,ICELLB) = NSTAT
+                    ! Also set the status in QTREE structure so that
+                    ! this boundary cell will not be adapted:
+                    QTREE(IQGB)%CELL_TYPE(ICELLB) = NSTAT
+                  ELSE
+                    WRITE(NDSO,*) 'WARNING: REFERENCE GRID POINT (',  &
+                         IX,',',IY,') CANNOT BE GIVEN THE STATUS ',NSTAT
+                  END IF
+                ELSE
+                  IF ( TMPSTA(IY,IX).EQ.1 .OR. J.EQ.2 ) THEN
+                    TMPSTA(IY,IX) = NSTAT
+                  ELSE
+                    WRITE(NDSO,*) 'WARNING: POINT (',IX,',',IY,  &
+                         ') CANNOT BE GIVEN THE STATUS ',NSTAT
+                  END IF
+                END IF
+              END DO
+              IX     = IX + IDX
+              IY     = IY + IDY
+            ELSE
+              WRITE (NDSO,982)
+              WRITE (NDSO,*) '       ', IX , IY
+              WRITE (NDSO,*) '       ', IXO, IYO
+            END IF
+          END IF
+          !
+          ! ... Check if point itself is to be added
+          !
+          IF ( GTYPE.EQ.QAGTYPE ) THEN
+            CALL QA_XY2CELL(QTREE(IQGB),REAL(IX),REAL(IY), &
+                 ICELLB, XBC, YBC, LVBC, IQB, ISB, ISTAT_QAB )
+            IF ( ALL(ISTAT_QAB.EQ.0) ) THEN
+              TMPSTA(1,ICELLB) = NSTAT
+              ! Also set the status in QTREE structure so that
+              ! this boundary cell will not be adapted:
+              QTREE(IQGB)%CELL_TYPE(ICELLB) = NSTAT
+            ELSE
+              WRITE(NDSO,*) 'WARNING: REFERENCE GRID POINT ('  &
+                   ,IX,',',IY,') CANNOT BE GIVEN THE STATUS ',NSTAT
+            END IF
+          ELSE
+            IF ( TMPSTA(IY,IX).EQ.1 .OR. J.EQ.2 ) THEN
+              TMPSTA(IY,IX) = NSTAT
+            END IF
+          END IF
+          !
+          ! ... Save data of previous point
+          !
+          IXO    = IX
+          IYO    = IY
+          FIRST  = .FALSE.
+          !
+          ! ... Branch back to read.
+          !
+        END DO
+        !
+        ! 8.c Final processing excluded points
+        !
+        IF ( ILOOP .EQ. 2 ) THEN
           !
           I = 1
-          IF ( ILOOP .EQ. 1 ) THEN
-            WRITE (NDSO,979) 'boundary points'
-            NSTAT  = 2
-          ELSE
-            WRITE (NDSO,979) 'excluded points'
-            NSTAT  = -1
-          END IF
-          FIRST  = .TRUE.
-          !
           DO
             IF (FLGNML) THEN
-              ! inbound points
-              IF (ILOOP.EQ.1) THEN
-                IF (NML_INBND_COUNT%N_POINT.GT.0 .AND. I.LE.NML_INBND_COUNT%N_POINT) THEN
-                  IX = NML_INBND_POINT(I)%X_INDEX
-                  IY = NML_INBND_POINT(I)%Y_INDEX
-                  CONNCT = NML_INBND_POINT(I)%CONNECT
-                  I=I+1
-                ELSE
-                  EXIT
-                END IF
-                ! excluded points
-              ELSE IF (ILOOP.EQ.2) THEN
-                IF (NML_EXCL_COUNT%N_POINT.GT.0 .AND. I.LE.NML_EXCL_COUNT%N_POINT) THEN
-                  IX = NML_EXCL_POINT(I)%X_INDEX
-                  IY = NML_EXCL_POINT(I)%Y_INDEX
-                  CONNCT = NML_EXCL_POINT(I)%CONNECT
-                  I=I+1
-                ELSE
-                  EXIT
-                END IF
+              ! excluded bodies
+              IF (NML_EXCL_COUNT%N_BODY.GT.0 .AND. I.LE.NML_EXCL_COUNT%N_BODY) THEN
+                IX = NML_EXCL_BODY(I)%X_INDEX
+                IY = NML_EXCL_BODY(I)%Y_INDEX
+                I=I+1
+              ELSE
+                EXIT
               END IF
             ELSE
               CALL NEXTLN ( COMSTR , NDSI , NDSE )
-              READ (NDSI,*,IOSTAT=IERR) IX, IY, CONNCT
+              READ (NDSI,*,IOSTAT=IERR) IX, IY
               IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3GRID','INPUT',61)
             END IF
             !
@@ -4688,259 +4823,178 @@ CONTAINS
             !
             IF (IX.EQ.0 .AND. IY.EQ.0) EXIT
             !
+            ! Ignore excluded point processing for quadtrees:
+            !
+            IF (GTYPE.EQ.QAGTYPE) CYCLE
+            !
             ! ... Check if point in grid.
             !
-            IF (GTYPE.EQ.UNGTYPE.AND.(UGOBCAUTO.OR.UGOBCOK)) CYCLE
-            IF (IX.LT.1 .OR. IX.GT.NX .OR.  IY.LT.1 .OR. IY.GT.NY) THEN
+            IF (IX.LT.1 .OR. IX.GT.NX .OR. IY.LT.1 .OR. IY.GT.NY) THEN
               WRITE (NDSO,981)
               WRITE (NDSO,*) '       ', IX, IY
               CYCLE
             END IF
             !
-            ! ... Check if intermediate points are to be added.
+            ! ... Check if point already excluded
             !
-            IF ( CONNCT .AND. .NOT.FIRST ) THEN
-              IDX    = IX - IXO
-              IDY    = IY - IYO
-              IF ( IDX.EQ.0 .OR. IDY.EQ.0 .OR.                      &
-                   ABS(IDX).EQ.ABS(IDY) ) THEN
-                NBA    = MAX ( MAX(ABS(IDX),ABS(IDY))-1 , 0 )
-                IF (IDX.NE.0) IDX = SIGN(1,IDX)
-                IF (IDY.NE.0) IDY = SIGN(1,IDY)
-                IX     = IXO
-                IY     = IYO
-                DO IBA=1, NBA
-                  IX     = IX + IDX
-                  IY     = IY + IDY
-                  IF ( TMPSTA(IY,IX).EQ.1 .OR. J.EQ.2 ) THEN
-                    TMPSTA(IY,IX) = NSTAT
-                  ELSE
-                    WRITE(NDSO,*) 'WARNING: POINT (',IX,',',IY,  &
-                         ') CANNOT BE GIVEN THE STATUS ',NSTAT
+            IF ( TMPSTA(IY,IX) .EQ. NSTAT ) THEN
+              WRITE (NDSO,1981)
+              WRITE (NDSO,*) '       ', IX, IY
+              CYCLE
+            END IF
+            !
+            ! ... Search for points to exclude
+            !
+            TMPMAP = TMPSTA
+            J      = 1
+            IX1    = IX
+            IY1    = IY
+            !
+            JJ     = TMPSTA(IY,IX)
+            TMPSTA(IY,IX) = NSTAT
+            DO
+              NBT    = 0
+              DO IX=MAX(1,IX1-J), MIN(IX1+J,NX)
+                DO IY=MAX(1,IY1-J), MIN(IY1+J,NY)
+                  IF ( TMPSTA(IY,IX) .EQ. JJ ) THEN
+                    IF (IX.GT.1) THEN
+                      IF (TMPSTA(IY  ,IX-1).EQ.NSTAT           &
+                           .AND. TMPMAP(IY  ,IX-1).EQ.JJ ) THEN
+                        TMPSTA(IY,IX) = NSTAT
+                      END IF
+                    END IF
+                    IF (IX.LT.NX) THEN
+                      IF (TMPSTA(IY  ,IX+1).EQ.NSTAT           &
+                           .AND. TMPMAP(IY  ,IX+1).EQ.JJ ) THEN
+                        TMPSTA(IY,IX) = NSTAT
+                      END IF
+                    END IF
+                    IF (IY.LT.NY) THEN
+                      IF (TMPSTA(IY+1,IX  ).EQ.NSTAT           &
+                           .AND. TMPMAP(IY+1,IX  ).EQ.JJ ) THEN
+                        TMPSTA(IY,IX) = NSTAT
+                      END IF
+                    END IF
+                    IF (IY.GT.1) THEN
+                      IF (TMPSTA(IY-1,IX  ).EQ.NSTAT           &
+                           .AND. TMPMAP(IY-1,IX  ).EQ.JJ ) THEN
+                        TMPSTA(IY,IX) = NSTAT
+                      END IF
+                    END IF
+                    IF (TMPSTA(IY,IX).EQ.NSTAT) NBT = NBT + 1
                   END IF
                 END DO
-                IX     = IX + IDX
-                IY     = IY + IDY
+              END DO
+              !
+              IF ( NBT .NE. 0 ) THEN
+                J = J + 1
               ELSE
-                WRITE (NDSO,982)
-                WRITE (NDSO,*) '       ', IX , IY
-                WRITE (NDSO,*) '       ', IXO, IYO
+                EXIT
               END IF
-            END IF
-            !
-            ! ... Check if point itself is to be added
-            !
-            IF ( TMPSTA(IY,IX).EQ.1 .OR. J.EQ.2 ) THEN
-              TMPSTA(IY,IX) = NSTAT
-            END IF
-            !
-            ! ... Save data of previous point
-            !
-            IXO    = IX
-            IYO    = IY
-            FIRST  = .FALSE.
-            !
-            ! ... Branch back to read.
-            !
+            END DO
           END DO
           !
-          ! 8.c Final processing excluded points
+          ! ... Outer boundary excluded points
           !
-          IF ( ILOOP .EQ. 2 ) THEN
-            !
-            I = 1
-            DO
-              IF (FLGNML) THEN
-                ! excluded bodies
-                IF (NML_EXCL_COUNT%N_BODY.GT.0 .AND. I.LE.NML_EXCL_COUNT%N_BODY) THEN
-                  IX = NML_EXCL_BODY(I)%X_INDEX
-                  IY = NML_EXCL_BODY(I)%Y_INDEX
-                  I=I+1
-                ELSE
-                  EXIT
-                END IF
-              ELSE
-                CALL NEXTLN ( COMSTR , NDSI , NDSE )
-                READ (NDSI,*,IOSTAT=IERR) IX, IY
-                IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3GRID','INPUT',61)
-              END IF
-              !
-              ! ... Check if last point reached.
-              !
-              IF (IX.EQ.0 .AND. IY.EQ.0) EXIT
-              !
-              ! ... Check if point in grid.
-              !
-              IF (IX.LT.1 .OR. IX.GT.NX .OR. IY.LT.1 .OR. IY.GT.NY) THEN
-                WRITE (NDSO,981)
-                WRITE (NDSO,*) '       ', IX, IY
-                CYCLE
-              END IF
-              !
-              ! ... Check if point already excluded
-              !
-              IF ( TMPSTA(IY,IX) .EQ. NSTAT ) THEN
-                WRITE (NDSO,1981)
-                WRITE (NDSO,*) '       ', IX, IY
-                CYCLE
-              END IF
-              !
-              ! ... Search for points to exclude
-              !
-              TMPMAP = TMPSTA
-              J      = 1
-              IX1    = IX
-              IY1    = IY
-              !
-              JJ     = TMPSTA(IY,IX)
-              TMPSTA(IY,IX) = NSTAT
-              DO
-                NBT    = 0
-                DO IX=MAX(1,IX1-J), MIN(IX1+J,NX)
-                  DO IY=MAX(1,IY1-J), MIN(IY1+J,NY)
-                    IF ( TMPSTA(IY,IX) .EQ. JJ ) THEN
-                      IF (IX.GT.1) THEN
-                        IF (TMPSTA(IY  ,IX-1).EQ.NSTAT           &
-                             .AND. TMPMAP(IY  ,IX-1).EQ.JJ ) THEN
-                          TMPSTA(IY,IX) = NSTAT
-                        END IF
-                      END IF
-                      IF (IX.LT.NX) THEN
-                        IF (TMPSTA(IY  ,IX+1).EQ.NSTAT           &
-                             .AND. TMPMAP(IY  ,IX+1).EQ.JJ ) THEN
-                          TMPSTA(IY,IX) = NSTAT
-                        END IF
-                      END IF
-                      IF (IY.LT.NY) THEN
-                        IF (TMPSTA(IY+1,IX  ).EQ.NSTAT           &
-                             .AND. TMPMAP(IY+1,IX  ).EQ.JJ ) THEN
-                          TMPSTA(IY,IX) = NSTAT
-                        END IF
-                      END IF
-                      IF (IY.GT.1) THEN
-                        IF (TMPSTA(IY-1,IX  ).EQ.NSTAT           &
-                             .AND. TMPMAP(IY-1,IX  ).EQ.JJ ) THEN
-                          TMPSTA(IY,IX) = NSTAT
-                        END IF
-                      END IF
-                      IF (TMPSTA(IY,IX).EQ.NSTAT) NBT = NBT + 1
-                    END IF
-                  END DO
-                END DO
-                !
-                IF ( NBT .NE. 0 ) THEN
-                  J = J + 1
-                ELSE
-                  EXIT
-                END IF
-              END DO
+          IF ( GTYPE.NE.UNGTYPE .AND. GTYPE.NE.QAGTYPE ) THEN
+            DO IX=1, NX
+              IF ( TMPSTA( 1,IX) .EQ. 1 ) TMPSTA( 1,IX) = NSTAT
+              IF ( TMPSTA(NY,IX) .EQ. 1 ) TMPSTA(NY,IX) = NSTAT
             END DO
             !
-            ! ... Outer boundary excluded points
-            !
-            IF ( GTYPE.NE.UNGTYPE ) THEN
-
-              DO IX=1, NX
-                IF ( TMPSTA( 1,IX) .EQ. 1 ) TMPSTA( 1,IX) = NSTAT
-                IF ( TMPSTA(NY,IX) .EQ. 1 ) TMPSTA(NY,IX) = NSTAT
+            IF ( ICLOSE.EQ.ICLOSE_NONE ) THEN
+              DO IY=2, NY-1
+                IF ( TMPSTA(IY, 1) .EQ. 1 ) TMPSTA(IY, 1) = NSTAT
+                IF ( TMPSTA(IY,NX) .EQ. 1 ) TMPSTA(IY,NX) = NSTAT
               END DO
-              !
-              IF ( ICLOSE.EQ.ICLOSE_NONE ) THEN
-                DO IY=2, NY-1
-                  IF ( TMPSTA(IY, 1) .EQ. 1 ) TMPSTA(IY, 1) = NSTAT
-                  IF ( TMPSTA(IY,NX) .EQ. 1 ) TMPSTA(IY,NX) = NSTAT
-                END DO
-              END IF
-
-            END IF ! GTYPE
-            !
-          END IF ! ILOOP .EQ. 2
+            END IF
+          END IF ! GTYPE
           !
-          ! ... Branch back input / excluded points ( ILOOP in 8.b )
-          !
-        END DO
+        END IF ! ILOOP .EQ. 2
         !
-      ELSE ! FROM .EQ. PART
+        ! ... Branch back input / excluded points ( ILOOP in 8.b )
         !
-        ! 8.d Read the map from file instead
-        !
-        NSTAT  = -1
-        IF (IDLA.LT.1 .OR. IDLA.GT.4) IDLA   = 1
-        IF (IDFT.LT.1 .OR. IDFT.GT.3) IDFT   = 1
-
-        !!Li  Suspended for SMC grid though the file input line in  ww3_grid.inp
-        !!Li  is kept to divert the program into this block.  JGLi15Oct2014
+      END DO
+      !
+    ELSE ! FROM .EQ. PART
+      !
+      ! 8.d Read the map from file instead
+      !
+      NSTAT  = -1
+      IF (IDLA.LT.1 .OR. IDLA.GT.4) IDLA   = 1
+      IF (IDFT.LT.1 .OR. IDFT.GT.3) IDFT   = 1
+      !!Li  Suspended for SMC grid though the file input line in  ww3_grid.inp
+      !!Li  is kept to divert the program into this block.  JGLi15Oct2014
+      !!Li
+      IF( GTYPE .NE. SMCTYPE .AND. GTYPE.NE.QAGTYPE ) THEN
         !!Li
-        IF( GTYPE .NE. SMCTYPE ) THEN
-          !!Li
-          !
-          WRITE (NDSO,978) NDSTR, IDLA, IDFT
-          IF (IDFT.EQ.2) WRITE (NDSO,973) RFORM
-          IF (FROM.EQ.'NAME') WRITE (NDSO,974) TNAME
-          !
-          IF ( NDSTR .EQ. NDSI ) THEN
-            IF ( IDFT .EQ. 3 ) THEN
-              WRITE (NDSE,1004) NDSTR
-              CALL EXTCDE (23)
+        !
+        WRITE (NDSO,978) NDSTR, IDLA, IDFT
+        IF (IDFT.EQ.2) WRITE (NDSO,973) RFORM
+        IF (FROM.EQ.'NAME') WRITE (NDSO,974) TNAME
+        !
+        IF ( NDSTR .EQ. NDSI ) THEN
+          IF ( IDFT .EQ. 3 ) THEN
+            WRITE (NDSE,1004) NDSTR
+            CALL EXTCDE (23)
+          ELSE
+            CALL NEXTLN ( COMSTR , NDSI , NDSE )
+          END IF
+        ELSE
+          IF ( IDFT .EQ. 3 ) THEN
+            IF (FROM.EQ.'NAME') THEN
+              OPEN (NDSTR,FILE=TRIM(FNMPRE)//TNAME,             &
+                   form='UNFORMATTED', convert=file_endian,STATUS='OLD', &
+                   IOSTAT=IERR)
             ELSE
-              CALL NEXTLN ( COMSTR , NDSI , NDSE )
+              OPEN (NDSTR,           form='UNFORMATTED', convert=file_endian,      &
+                   STATUS='OLD',IOSTAT=IERR)
             END IF
           ELSE
-            IF ( IDFT .EQ. 3 ) THEN
-              IF (FROM.EQ.'NAME') THEN
-                OPEN (NDSTR,FILE=TRIM(FNMPRE)//TNAME,             &
-                     form='UNFORMATTED', convert=file_endian,STATUS='OLD', &
-                     IOSTAT=IERR)
-              ELSE
-                OPEN (NDSTR,           form='UNFORMATTED', convert=file_endian,      &
-                     STATUS='OLD',IOSTAT=IERR)
-              END IF
+            IF (FROM.EQ.'NAME') THEN
+              OPEN (NDSTR,FILE=TRIM(FNMPRE)//TNAME,             &
+                   STATUS='OLD',IOSTAT=IERR)
             ELSE
-              IF (FROM.EQ.'NAME') THEN
-                OPEN (NDSTR,FILE=TRIM(FNMPRE)//TNAME,             &
-                     STATUS='OLD',IOSTAT=IERR)
-              ELSE
-                OPEN (NDSTR,                                    &
-                     STATUS='OLD',IOSTAT=IERR)
-              END IF
+              OPEN (NDSTR,                                    &
+                   STATUS='OLD',IOSTAT=IERR)
             END IF
-            IF (IERR.NE.0) CALL EXTOPN(NDSE,IERR,'W3GRID','INPUT',60)
           END IF
-          !
-          ALLOCATE ( READMP(NX,NY) )
-          CALL INA2I ( READMP, NX, NY, 1, NX, 1, NY, NDSTR, NDST,    &
-               NDSE, IDFT, RFORM, IDLA, 1, 0 )
-          !
-          IF ( ICLOSE.EQ.ICLOSE_NONE ) THEN
-            DO IY=2, NY-1
-              IF ( READMP( 1,IY) .EQ. 1 ) READMP( 1,IY) = 3
-              IF ( READMP(NX,IY) .EQ. 1 ) READMP(NX,IY) = 3
-            END DO
-          END IF
-          !
-          DO IX=1, NX
-            IF ( READMP(IX, 1) .EQ. 1 ) READMP(IX, 1) = 3
-            IF ( READMP(IX,NY) .EQ. 1 .AND. ICLOSE .NE. ICLOSE_TRPL)   &
-                 READMP(IX,NY) = 3
-          END DO
-          !
-          DO IY=1, NY
-            DO IX=1, NX
-              IF ( READMP(IX,IY) .EQ. 3 ) THEN
-                TMPSTA(IY,IX) = NSTAT
-              ELSE
-                TMPSTA(IY,IX) = READMP(IX,IY)
-                ! force to dry the sea points over zlim
-                IF ( ZBIN(IX,IY) .GT. ZLIM ) TMPSTA(IY,IX) = 0
-              END IF
-            END DO
-          END DO
-          DEALLOCATE ( READMP )
-          !!Li
-        ENDIF   !! GTYPE .NE. SMCTYPE
+          IF (IERR.NE.0) CALL EXTOPN(NDSE,IERR,'W3GRID','INPUT',60)
+        END IF
         !
-      END IF !FROM .NE. 'PART'
-    END IF ! GTYPE.NE.QAGTYPE
+        ALLOCATE ( READMP(NX,NY) )
+        CALL INA2I ( READMP, NX, NY, 1, NX, 1, NY, NDSTR, NDST,    &
+             NDSE, IDFT, RFORM, IDLA, 1, 0 )
+        !
+        IF ( ICLOSE.EQ.ICLOSE_NONE ) THEN
+          DO IY=2, NY-1
+            IF ( READMP( 1,IY) .EQ. 1 ) READMP( 1,IY) = 3
+            IF ( READMP(NX,IY) .EQ. 1 ) READMP(NX,IY) = 3
+          END DO
+        END IF
+        !
+        DO IX=1, NX
+          IF ( READMP(IX, 1) .EQ. 1 ) READMP(IX, 1) = 3
+          IF ( READMP(IX,NY) .EQ. 1 .AND. ICLOSE .NE. ICLOSE_TRPL)   &
+               READMP(IX,NY) = 3
+        END DO
+        !
+        DO IY=1, NY
+          DO IX=1, NX
+            IF ( READMP(IX,IY) .EQ. 3 ) THEN
+              TMPSTA(IY,IX) = NSTAT
+            ELSE
+              TMPSTA(IY,IX) = READMP(IX,IY)
+              ! force to dry the sea points over zlim
+              IF ( ZBIN(IX,IY) .GT. ZLIM ) TMPSTA(IY,IX) = 0
+            END IF
+          END DO
+        END DO
+        DEALLOCATE ( READMP )
+        !!Li
+      ENDIF   !! GTYPE .NE. SMCTYPE .AND. GTYPE.NE.QAGTYPE
+      !
+    END IF !FROM .NE. 'PART'
     !
     ! 8.e Get NSEA and other counters
     !
@@ -5019,6 +5073,8 @@ CONTAINS
 #ifdef W3_SMC
          , NCel, NUFc, NVFc, NRLv, NBSMC  &
          , NARC, NBAC, NSPEC              &
+#elif defined W3_UNO
+         , NUFc, NVFc, NRLv                 &
 #endif
          )
 #ifdef W3_SMC
@@ -6007,17 +6063,30 @@ CONTAINS
             YO = BDYLAT(IP)
           END IF
 #endif
+          IF ( GTYPE.EQ.QAGTYPE ) THEN
+            !
+            ! Assign weights for nearest-neighbour interpolation: 
+            ! these may need to be recomputed on the fly
+            CALL QA_XY2CELL(QTREE(IQGB), 1.+(XO-X0)/SX, 1.+(YO-Y0)/SY, &
+                 ICELLB, XBC, YBC, LVBC, IQB, ISB, ISTAT_QAB )
+            INGRID = ALL(ISTAT_QAB.EQ.0)
+            IXR = ICELLB
+            IYR = 1
+            RD = 0.
+            RD(1) = 1.
+          ELSE
+            !
+            ! ... Compute bilinear remapping weights
+            !
+            INGRID = W3GRMP( GSU, XO, YO, IXR, IYR, RD )
+            !
+            !           Change cell-corners from counter-clockwise to column-major order
+            IX     = IXR(3);  IY     = IYR(3);  X     = RD(3);
+            IXR(3) = IXR(4);  IYR(3) = IYR(4);  RD(3) = RD(4);
+            IXR(4) = IX    ;  IYR(4) = IY    ;  RD(4) = X    ;
+          END IF
           !
-          ! ... Compute bilinear remapping weights
-          !
-          INGRID = W3GRMP( GSU, XO, YO, IXR, IYR, RD )
-          !
-          !           Change cell-corners from counter-clockwise to column-major order
-          IX     = IXR(3);  IY     = IYR(3);  X     = RD(3);
-          IXR(3) = IXR(4);  IYR(3) = IYR(4);  RD(3) = RD(4);
-          IXR(4) = IX    ;  IYR(4) = IY    ;  RD(4) = X    ;
-          !
-#ifdef W3_T
+#ifdef W3_T  
           WRITE (NDST,9091) FACTOR*XO, FACTOR*YO,                   &
                (IXR(J), IYR(J), RD(J), J=1,4)
 #endif

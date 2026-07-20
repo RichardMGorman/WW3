@@ -91,7 +91,7 @@ CONTAINS
                       IAUX_QA, EXAUX_QA, DATB_QA, NSPEC,       &
                       QTREE, WTS1_QA, NK, DMIN, MAPML_QA,      &
                       NCMXQ
-#ifdef W3_PR2                      
+#ifdef W3_UNO                      
   USE W3GDATMD, ONLY: NUFc, NVFc, NRLv, IJKCel, IJKUFc, IJKVFc,    &
                       NLvUFc, NLvVFc   
 #endif
@@ -100,10 +100,6 @@ CONTAINS
   USE W3SERVMD, ONLY: EXTCDE
   !USE W3DISPMD, ONLY: WAVNU1
   USE W3ODATMD, ONLY: IAPROC, NAPERR
-#ifdef W3_PR2                      
-  USE W3ADATMD, ONLY: IAPPRO
-  USE W3WAVEMD, ONLY: W3GATH, W3SCAT
-#endif
 #ifdef W3_S
   USE W3SERVMD, ONLY: STRACE
 #endif
@@ -262,7 +258,7 @@ CONTAINS
      END IF
      NSEA = QTREE(IQGW)%NCELL
   !
-#ifdef W3_PR2  
+#ifdef W3_UNO  
   !  Recompute maps for propagation
      CALL QA_QT2SMC ( QTREE(IQGW), -9, IJKCel, IJKUFc, IJKVFc,     &
                       NLvUFc, NLvVFc, ierr=IERR, ndse=IUN )

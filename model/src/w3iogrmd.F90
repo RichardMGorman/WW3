@@ -992,11 +992,13 @@ CONTAINS
 #ifdef W3_SMC
            , NCel, NUFc, NVFc, NRLv, NBSMC                         &
            , NARC, NBAC, NSPEC                                     &
+#elif defined W3_UNO
+           , NUFc, NVFc, NRLv                 &
 #endif
            )
       !
       ! Reads different kind of information depending on grid type
-      !
+      ! 
       SELECT CASE ( GTYPE )
         !!Li  SMCTYPE shares info with RLGTYPE.   JGLi12Oct2020
       CASE ( RLGTYPE, SMCTYPE )
