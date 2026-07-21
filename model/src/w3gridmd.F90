@@ -3779,7 +3779,7 @@ CONTAINS
     !
     ! 7.c Grid coordinates (branch here based on grid type)
     !
-    IF ( GTYPE.NE.UNGTYPE) ALLOCATE ( XGRDIN(NX,NY), YGRDIN(NX,NY) )
+    IF ( GTYPE.NE.UNGTYPE .AND. GTYPE.NE.QAGTYPE) ALLOCATE ( XGRDIN(NX,NY), YGRDIN(NX,NY) )
     SELECT CASE ( GTYPE )
       !
       ! 7.c.1 Rectilinear grid
@@ -4016,7 +4016,7 @@ CONTAINS
         READ (NDSI,*,IOSTAT=IERR) NDSG
         IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3GRID','INPUT',61)
       END IF
-      WRITE (NDSO,3010) QAFILEC, QAFILEQ, NDSG
+      WRITE (NDSO,3010) TRIM(QAFILEC), TRIM(QAFILEQ), NDSG
     !
     ! Read the header of the quadtree cell file      
     !
@@ -4027,9 +4027,12 @@ CONTAINS
       READ(NDSG,*) IDUM     ! NCOL
       READ(NDSG,*) NQUAD    ! NQUAD
       READ(NDSG,*) NCELL    ! NCELL
+      WRITE(NDSO,3011) NCELL, NQUAD
       NX = NCELL
       NY = 1
+      ALLOCATE ( XGRDIN(NX,NY), YGRDIN(NX,NY) )
       ! Allocate a structure QTREE(IQGB) for the bathymetry quadtree
+      ALLOCATE(QTREE(1))
       IQGB = 1
       CALL W3QALL( IQGB, NCELL, NQUAD, 0, 0 )
       ! Read the cell data into the bathymetry quadtree 
@@ -4139,7 +4142,7 @@ CONTAINS
           READ(NDSG,*) NHEAD
           READ(NDSG,*) NCOL
           DO ILIN=3,NHEAD
-            READ(NDSG,*)
+            READ(NDSG,*) LINE
           END DO
           DO IX=1,NX
             IF (NCOL.GE.6) THEN
@@ -5108,7 +5111,7 @@ CONTAINS
         END DO
       END DO
       DEALLOCATE ( XGRDIN, YGRDIN )
-      CALL W3GNTX ( 1, 6, 6 )
+      IF (GTYPE.NE.QAGTYPE) CALL W3GNTX ( 1, 6, 6 )
     ELSE
     END IF   ! GTYPE
     !
@@ -5655,7 +5658,7 @@ CONTAINS
       IF (IDFT.EQ.2) WRITE (NDSO,973) RFORM
       IF (FROM.EQ.'NAME' .AND. NDSG.NE.NDSTR) WRITE (NDSO,974) TNAME
       !
-      ! 9;c  Open file and check if necessary
+      ! 9;c  Open file and check if necessaryXGRD
       !
       IF ( NDSTR .EQ. NDSI ) THEN
         IF ( IDFT .EQ. 3 ) THEN
@@ -6066,7 +6069,9 @@ CONTAINS
           IF ( GTYPE.EQ.QAGTYPE ) THEN
             !
             ! Assign weights for nearest-neighbour interpolation: 
-            ! these may need to be recomputed on the fly
+            ! these may need to be recomputed on the fly in an adaptive
+            ! simulation
+            !
             CALL QA_XY2CELL(QTREE(IQGB), 1.+(XO-X0)/SX, 1.+(YO-Y0)/SY, &
                  ICELLB, XBC, YBC, LVBC, IQB, ISB, ISTAT_QAB )
             INGRID = ALL(ISTAT_QAB.EQ.0)
@@ -7100,6 +7105,8 @@ CONTAINS
 3010 FORMAT ( '       Quadtree cell file name     : ',A/        &
          '       Quadtree quad file name     : ',A/        &
          '       Quadtree file unit          : ',I6)
+3011 FORMAT ( '       Bathymetry quadtree NCELL   : ',I8/        &
+         '       Bathymetry quadtree NQUAD   : ',I8)
 #ifdef W3_SMC
 4001 FORMAT ( '       SMC refined levels NRLv   = ',I8)
 4002 FORMAT ( '       SMC Equator j shift no.   = ',I8)

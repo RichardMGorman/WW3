@@ -1821,9 +1821,9 @@ CONTAINS
     !
     IF (GTYPE .NE. UNGTYPE) THEN
       ALLOCATE ( GRIDS(IMOD)%ZB(MSEA),  &
-           GRIDS(IMOD)%XGRD(MY,MX),    &
-           GRIDS(IMOD)%YGRD(MY,MX),    &
-           STAT=ISTAT                  )
+               GRIDS(IMOD)%XGRD(MY,MX), &
+               GRIDS(IMOD)%YGRD(MY,MX), &
+               STAT=ISTAT             )
       CHECK_ALLOC_STATUS ( ISTAT )
     ENDIF
 
@@ -3423,6 +3423,7 @@ CONTAINS
     CASE ( RLGTYPE )
     CASE ( CLGTYPE )
     CASE ( SMCTYPE )
+    CASE ( QAGTYPE )
     CASE DEFAULT
       WRITE (NDSE,1003) GRIDS(IMOD)%GTYPE
       CALL EXTCDE (3)
@@ -3981,7 +3982,7 @@ CONTAINS
            
   !/ ------------------------------------------------------------------- /
   !
-  SUBROUTINE W3QALL ( IQ, MCELL, MQUAD, UNDEF, IORD )
+  SUBROUTINE W3QALL ( IQ, MCELL, MQUAD, UNDEF_VAL, IORD )
   !/
   !/       Richard Gorman, NIWA
   !/         June, 2014:      Adapted from QA_ALLOC
@@ -4001,7 +4002,7 @@ CONTAINS
   !       IQ         Int.   I  Index of Quadtree structure
   !       MCELL      Int.   I  Allocated max. number of cells
   !       MQUAD      Int.   I  Allocated max. number of quads
-  !       UNDEF      Int.   I  Value of flag for unused cell indices
+  !       UNDEF_VAL  Int.   I  Value of flag for unused cell indices
   !       IORD       Int.   I  Type of interpolation weights used: 
   !                             0=none,1=1st order,2=2nd order 
   !     ----------------------------------------------------------------
@@ -4040,7 +4041,7 @@ CONTAINS
       INTEGER, INTENT(IN)         :: IQ
       INTEGER, INTENT(IN)         :: MCELL
       INTEGER, INTENT(IN)         :: MQUAD
-      INTEGER, INTENT(IN)         :: UNDEF
+      INTEGER, INTENT(IN)         :: UNDEF_VAL
       INTEGER, INTENT(IN)         :: IORD
   !/
   !/ ------------------------------------------------------------------- /    
@@ -4064,7 +4065,7 @@ CONTAINS
       QTREE(IQ)%LVLHI = 0
       QTREE(IQ)%KEEP_REF = .FALSE.
       QTREE(IQ)%DYNAMIC = .TRUE.
-      QTREE(IQ)%UNDEF_TYPE = UNDEF
+      QTREE(IQ)%UNDEF_TYPE = UNDEF_VAL
       QTREE(IQ)%IWTORDER = IORD
   !
   !  QTREE QUAD allocatable arrays:
@@ -4167,7 +4168,7 @@ CONTAINS
           QTREE(IQ)%INDSUB = 0
           QTREE(IQ)%INDLVL = 0
           QTREE(IQ)%NGBR = 0
-          QTREE(IQ)%CELL_TYPE = UNDEF
+          QTREE(IQ)%CELL_TYPE = UNDEF_VAL
           QTREE(IQ)%INDML = 0
           QTREE(IQ)%XYVAL = 0.
   !

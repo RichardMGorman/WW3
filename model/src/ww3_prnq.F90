@@ -1347,7 +1347,7 @@ PROGRAM W3PRNQ
     OPEN( UNIT=NDSA, FILE=OUTFILE, FORM='FORMATTED' )
     FMT = '(I10,1X,XXE13.5)'
     WRITE(FMT(9:10),'(I2)') NVAR+2
-    WRITE(NDSA,5100) NVAR+7, 'No. of lines in the header'
+    WRITE(NDSA,5100) NVAR+6, 'No. of lines in the header'
     WRITE(NDSA,5100) NVAR+3, 'No. of columns in the file'
     WRITE(NDSA,5200) 1, 'Cell number'
     IF ( FLAGLL ) THEN
