@@ -1458,72 +1458,72 @@ PROGRAM W3PRNC
           END DO
         END DO
       END IF ! NFCOMP .EQ. 2
-    !
-    ELSE IF ( ITYPE.EQ.7 ) THEN
-      ! 'AX' TYPE: point data to be mapped to nearest model
-      !            grid point
-      !
-      ! Initialise interpolation arrays
-      IX21 = 0
-      IX22 = 0
-      IY21 = 1
-      IY22 = 1
-      RD11 = 1.
-      RD12 = 0.
-      RD21 = 0.
-      RD22 = 0.
-      IF ( GTYPE.EQ.QAGTYPE ) THEN
-        NX = 0
-        DO I=1,NXI
-          ! Input point in reference grid coordinates
-          XTARG = (ALO(I,1) - X0)/SX + 1.
-          YTARG = (ALA(I,1) - Y0)/SY + 1.
-          ! Locate the nearest cell in the bathymetry quadtree
-          CALL QA_XY2CELL ( QTREE(IQGB), XTARG, YTARG, ISEA,       &
-                   XCELL, YCELL, LVCELL, IQUAD, ISUB, ISTAT )
-          ! If a valid cell is located within the reference grid
-          ! assign the corresponding interpolation indices and weights
-          IF ( ISTAT(1).EQ.0 .AND. ISEA.GT.0 .AND. ISEA.LE.MX ) THEN
-            IF ( IX21(ISEA,1).EQ.0 ) THEN
-              IX21(ISEA,1) = I
-              NX = NX + 1
-            END IF
-          END IF
-        END DO
-        ! Copy the bathymetry quadtree structure to a new quadtree 
-        ! for the input fields, which first needs to be (re)allocated
-        CALL W3QALL( IQGI, NX, QTREE(IQGB)%NQUAD, 0, 0 )
-        CALL QA_CPQT(QTREE(IQGB), QTREE(IQGI) )
-        ! Mark any cells not matched as undefined
-        DO ISEA=1,NX
-          IF ( IX21(ISEA,1).EQ.0 ) THEN
-            QTREE(IQGI)%CELL_TYPE(ISEA) = QTREE(IQGI)%UNDEF_TYPE
-          END IF
-        END DO
-        ! Remove undefined cells from the input quadtree structure
-        CALL QA_REMUNDEF( QTREE(IQGI), NEWCELL, IERR, NDSE )
-        ! Remove undefined cells from the index map
-        IF ( .NOT.ALLOCATED(NEWCELL) ) ALLOCATE ( NEWCELL(MX) )
-        DO ISEA=1,NX
-           IF ( NEWCELL(ISEA).EQ.0 ) CYCLE
-           IX22(NEWCELL(ISEA),1) = IX21(ISEA,1)
-        END DO
-        IX21 = IX22
-        ! Copy to the second set of interpolation arrays
-        JX21 = IX21
-        JX22 = IX22
-        JY21 = 1
-        JY22 = 1
-        XD11 = RD11
-        XD12 = RD12
-        XD21 = RD21
-        XD22 = RD22
-      ELSE
-        WRITE (NDSE,1066) 
-        CALL EXTCDE ( 9 )
-      END IF
-      !
     END IF ! ITYPE.EQ.2
+    !
+  ELSE IF ( ITYPE.EQ.7 ) THEN
+    ! 'AX' TYPE: point data to be mapped to nearest model
+    !            grid point
+    !
+    ! Initialise interpolation arrays
+    IX21 = 0
+    IX22 = 0
+    IY21 = 1
+    IY22 = 1
+    RD11 = 1.
+    RD12 = 0.
+    RD21 = 0.
+    RD22 = 0.
+    IF ( GTYPE.EQ.QAGTYPE ) THEN
+      NX = 0
+      DO I=1,NXI
+        ! Input point in reference grid coordinates
+        XTARG = (ALO(I,1) - X0)/SX + 1.
+        YTARG = (ALA(I,1) - Y0)/SY + 1.
+        ! Locate the nearest cell in the bathymetry quadtree
+        CALL QA_XY2CELL ( QTREE(IQGB), XTARG, YTARG, ISEA,       &
+                 XCELL, YCELL, LVCELL, IQUAD, ISUB, ISTAT )
+        ! If a valid cell is located within the reference grid
+        ! assign the corresponding interpolation indices and weights
+        IF ( ISTAT(1).EQ.0 .AND. ISEA.GT.0 .AND. ISEA.LE.MX ) THEN
+          IF ( IX21(ISEA,1).EQ.0 ) THEN
+            IX21(ISEA,1) = I
+            NX = NX + 1
+          END IF
+        END IF
+      END DO
+      ! Copy the bathymetry quadtree structure to a new quadtree 
+      ! for the input fields, which first needs to be (re)allocated
+      CALL W3QALL( IQGI, NX, QTREE(IQGB)%NQUAD, 0, 0 )
+      CALL QA_CPQT(QTREE(IQGB), QTREE(IQGI) )
+      ! Mark any cells not matched as undefined
+      DO ISEA=1,NX
+        IF ( IX21(ISEA,1).EQ.0 ) THEN
+          QTREE(IQGI)%CELL_TYPE(ISEA) = QTREE(IQGI)%UNDEF_TYPE
+        END IF
+      END DO
+      ! Remove undefined cells from the input quadtree structure
+      CALL QA_REMUNDEF( QTREE(IQGI), NEWCELL, IERR, NDSE )
+      ! Remove undefined cells from the index map
+      IF ( .NOT.ALLOCATED(NEWCELL) ) ALLOCATE ( NEWCELL(MX) )
+      DO ISEA=1,NX
+        IF ( NEWCELL(ISEA).EQ.0 ) CYCLE
+        IX22(NEWCELL(ISEA),1) = IX21(ISEA,1)
+      END DO
+      IX21 = IX22
+      ! Copy to the second set of interpolation arrays
+      JX21 = IX21
+      JX22 = IX22
+      JY21 = 1
+      JY22 = 1
+      XD11 = RD11
+      XD12 = RD12
+      XD21 = RD21
+      XD22 = RD22
+    ELSE
+      WRITE (NDSE,1066) 
+      CALL EXTCDE ( 9 )
+    END IF
+    !
   END IF ! ITYPE.NE.1 .AND. ITYPE.NE.5 .AND. ITYPE.NE.6 .AND. ITYPE.NE.7
   !
   ! 6.c Input location and format
