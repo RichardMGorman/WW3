@@ -62,8 +62,12 @@ MODULE W3NMLPRNCMD
   ! file structure
   TYPE NML_FILE_T
     CHARACTER(256)              :: FILENAME
+    CHARACTER(100)              :: TIME_DIM
     CHARACTER(100)              :: LONGITUDE
     CHARACTER(100)              :: LATITUDE
+    CHARACTER(100)              :: TIME_VAR
+    CHARACTER(100)              :: LON_VAR
+    CHARACTER(100)              :: LAT_VAR
     CHARACTER(100)              :: VAR(3)
     CHARACTER(15)               :: TIMESHIFT
   END TYPE NML_FILE_T
@@ -348,6 +352,9 @@ CONTAINS
     !/                  | Last update :         04-Jan-2018 |
     !/                  +-----------------------------------+
     !/
+    !/    22-Jul-2026 : Allow for arbitrary time/spatial    ( version X.XX )
+    !/                  dim & var names (R. Gorman)
+    !/
     !  1. Purpose :
     !
     !
@@ -419,8 +426,12 @@ CONTAINS
 
     ! set default values for file structure
     FILE%FILENAME  = 'unset'
+    FILE%TIME_DIM  = 'time'
     FILE%LONGITUDE = 'unset'
     FILE%LATITUDE  = 'unset'
+    FILE%TIME_VAR  = 'time'
+    FILE%LON_VAR   = 'longitude'
+    FILE%LAT_VAR   = 'latitude'
     FILE%VAR(1)    = 'unset'
     FILE%VAR(2)    = 'unset'
     FILE%VAR(3)    = 'unset'
@@ -572,6 +583,8 @@ CONTAINS
     !/                  | Last update :         04-Jan-2018 |
     !/                  +-----------------------------------+
     !/
+    !/    22-Jul-2026 : Allow for arbitrary time/spatial    ( version X.XX )
+    !/                  dim & var names (R. Gorman)
     !/
     !  1. Purpose :
     !
@@ -635,8 +648,12 @@ CONTAINS
     WRITE (MSG,'(A)') 'FILE % '
     WRITE (NDSN,'(A)')
     WRITE (NDSN,10) TRIM(MSG),'FILENAME    = ', TRIM(NML_FILE%FILENAME)
+    WRITE (NDSN,10) TRIM(MSG),'TIME_DIM    = ', TRIM(NML_FILE%TIME_DIM)
     WRITE (NDSN,10) TRIM(MSG),'LONGITUDE   = ', TRIM(NML_FILE%LONGITUDE)
     WRITE (NDSN,10) TRIM(MSG),'LATITUDE    = ', TRIM(NML_FILE%LATITUDE)
+    WRITE (NDSN,10) TRIM(MSG),'TIME_VAR    = ', TRIM(NML_FILE%TIME_VAR)
+    WRITE (NDSN,10) TRIM(MSG),'LON_VAR     = ', TRIM(NML_FILE%LON_VAR)
+    WRITE (NDSN,10) TRIM(MSG),'LAT_VAR     = ', TRIM(NML_FILE%LAT_VAR)
     WRITE (NDSN,10) TRIM(MSG),'VAR(1)      = ', TRIM(NML_FILE%VAR(1))
     WRITE (NDSN,10) TRIM(MSG),'VAR(2)      = ', TRIM(NML_FILE%VAR(2))
     WRITE (NDSN,10) TRIM(MSG),'VAR(3)      = ', TRIM(NML_FILE%VAR(3))

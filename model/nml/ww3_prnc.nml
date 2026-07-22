@@ -65,8 +65,12 @@
 ! * namelist must be terminated with /
 ! * definitions & defaults:
 !     FILE%FILENAME      = 'unset'           ! relative path input file name
+!     FILE%TIME_DIM      = 'time'            ! time dimension name 
 !     FILE%LONGITUDE     = 'unset'           ! longitude/x dimension name
 !     FILE%LATITUDE      = 'unset'           ! latitude/y dimension name
+!     FILE%TIME_VAR      = 'time'            ! time variable name 
+!     FILE%LON_VAR       = 'longitude'       ! longitude/x variable name
+!     FILE%LAT_VAR       = 'latitude'        ! latitude/y variable name
 !     FILE%VAR(I)        = 'unset'           ! field component
 !     FILE%TIMESHIFT     = '00000000 000000' ! shift the time value to 'YYYYMMDD HHMMSS'
 ! -------------------------------------------------------------------- !

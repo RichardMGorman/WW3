@@ -22,6 +22,12 @@ $                         analysis on the time series (ITYPE 6)
 $                         When using AT, another line should be added
 $                         with the choice of tidal constituents:
 $                         FAST or VFAST or a list: e.g. 'M2 S2'
+$   Format types :  AX    As for AI, but with non-default spatial variable names, and 
+$                         time dimension and variable name,  
+$                         specified on extra lines after the spatial dimension names
+$                   LX    As for LL, but with non-default spatial variable names, and 
+$                         time dimension and variable name, 
+$                         specified on extra lines after the spatial dimension names
 $
 $        - Format type not used for field type 'DAT'.
 $
@@ -33,10 +39,20 @@ $
   'WND' 'LL' T T
 $
 $ Name of spatial dimensions------------------------------------------ $
-$ NB: time dimension is expected to be called 'time' and must respect
-$     Julian or Gregorian calendar with leap day.
+$ NB: by default, the time dimension and variable are expected to be called 'time' and
+$     must respect Julian or Gregorian calendar with leap day.
 $
  longitude latitude
+$
+$ For AX and LX format types:
+$
+$ Non-default names of spatial variables:
+$  (i.e. other than 'longitude latitude')
+$ lon1 lat1 
+$ Non-default time dimension name:
+$  time1
+$ Non-default time variable name:
+$  time1
 $
 $ Variables to use --------------------------------------------------- $
 $
