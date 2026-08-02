@@ -328,9 +328,7 @@ CONTAINS
     USE mpi_f08 
 #endif
     !/
-#if defined(W3_T) || defined(W3_MPI)
     USE W3GDATMD, ONLY: NSEAL
-#endif
     !/
     USE W3SERVMD, ONLY: EXTCDE, EXTIOF
     USE CONSTANTS, only: LPDLIB, file_endian
@@ -398,7 +396,7 @@ CONTAINS
 
     ! DEFINED A LOCAL FNMPRE TO AVOID CHANGE THE GLOBAL VALUE
     CHARACTER(LEN=256)       :: FNMPRE_LOCAL
-    INTEGER                 :: NSEAL, NDSEN
+    INTEGER                  :: NDSEN
     !/
     !/ ------------------------------------------------------------------- /
     !/
@@ -1677,6 +1675,19 @@ CONTAINS
 9007 FORMAT (' TEST W3IORS : WATER LEVELS ETC. PROCESSED ')
 9008 FORMAT (' TEST W3IORS : WATER LEVELS ETC. PROCESSED (DUMMY)')
     !
+9009 FORMAT (' TEST W3IORS : WAVE QUADTREE, IQGW = ',I4/              &
+             1X,I8,'  NQUAD      No. of quads'/                       &
+             1X,I8,'  NCELL      Max. No. of cells'/                  &
+             1X,I8,'  NCELL_DEF  No. of valid cells'/                 &
+             1X,I8,'  LVLREF     Reference level'/                    &
+             1X,I8,'  LVLMAX     Max. refinement level allowed'/      &
+             1X,I8,'  LVLHI      Max. refinement level reached'/      &
+             1X,I8,'  NX0        No. of X cells in level-0 grid'/     &
+             1X,I8,'  NY0        No. of Y cells in level-0 grid'/     &
+             1X,I8,'  UNDEF_TYPE Marker for non-valid cells'/         &
+             1X,L8,'  KEEP_REF   Retain refined cells?'/              &
+             1X,L8,'  DYNAMIC    Nonstationary grid?'/                &
+             1X,I8,'  IWTORDER   Order of weight tables included')
 9020 FORMAT (' TEST W3IORS : RSTYPE = ',A,', PERFORMED BY W3INIT')
 #endif
     !/

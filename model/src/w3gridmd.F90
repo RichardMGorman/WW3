@@ -530,7 +530,7 @@ MODULE W3GRIDMD
   USE W3GDATMD
   USE W3ODATMD, ONLY: NDSE, NDST, NDSO
   USE W3ODATMD, ONLY: NBI, NBI2, NFBPO, NBO, NBO2, FLBPI, FLBPO,  &
-       IPBPO, ISBPO, XBPO, YBPO, RDBPO, FNMPRE,    &
+       IPBPO, ISBPO, XBPO, YBPO, RDBPO, NWTBO, FNMPRE,    &
        IHMAX, HSPMIN, WSMULT, WSCUT, FLCOMB,       &
        NOSWLL, PTMETH, PTFCUT
   USE W3TIMEMD, ONLY: CALTYPE
@@ -592,7 +592,7 @@ MODULE W3GRIDMD
        IDLA, IDFM, IX0, IXN, IX, IY, ISEA,  &
        IDX, IXO, IDY, IYO, IBA, NBA, ILOOP, &
        IFL, NBOTOT, NPO, IP, IX1, IX2, IY1, &
-       IY2, J, JJ, IXR(4), IYR(4), ISEAI(4),&
+       IY2, J, JJ,                          &
        IST, NKI, NTHI, NRIC, NRIS, I, IDFT, &
        NSTAT, NBT, NLAND, NOSW, NMAPB, IMAPB
   INTEGER                 :: IDUM, ILIN, NCELL, NHEAD
@@ -638,9 +638,12 @@ MODULE W3GRIDMD
   REAL                    :: RXFR, RFR1, SIGMA, SXFR, FACHF,      &
        VSC, VSC0, VOF,                      &
        ZLIM, X, Y, XP,  XO0, YO0, DXO, DYO, &
-       XO, YO, RD(4), RDTOT,                &
+       XO, YO, RDTOT,                       &
        FACTOR, RTH0, FMICHE, RWNDC,         &
        WCOR1, WCOR2
+  INTEGER, ALLOCATABLE    :: IXR(:), IYR(:), ISEAI(:)
+  REAL, ALLOCATABLE       :: RD(:)
+  LOGICAL                 :: ANYWET
   !
   CHARACTER(LEN=4)        :: GSTRG, CSTRG
   !
@@ -5853,6 +5856,13 @@ CONTAINS
     !     ILOOP = 1 to count NFBPO and NBO
     !     ILOOP = 2 to fill data arrays
     !
+    ! Max. number of cells/weights for interpolation to output boundary locations
+    !
+    IF ( GTYPE.EQ. QAGTYPE ) THEN
+      NWTBO = 9
+    ELSE
+      NWTBO = 4
+    END IF
     WRITE (NDSO,990)
     IF ( .NOT. FLGNML ) &
          OPEN (NDSS,FILE=TRIM(FNMPRE)//'ww3_grid.scratch',FORM='FORMATTED')
@@ -5860,6 +5870,7 @@ CONTAINS
     DO ILOOP = 1, 2
       !
       IF ( ILOOP.EQ.2 ) CALL W3DMO5 ( 1, NDST, NDSE, 2 )
+      ALLOCATE ( IXR(NWTBO), IYR(NWTBO), ISEAI(NWTBO), RD(NWTBO) )
       !
       I = 1
       NBOTOT = 0
@@ -6068,17 +6079,15 @@ CONTAINS
 #endif
           IF ( GTYPE.EQ.QAGTYPE ) THEN
             !
-            ! Assign weights for nearest-neighbour interpolation: 
-            ! these may need to be recomputed on the fly in an adaptive
-            ! simulation
+            ! Assign weights for interpolation on the bathymetry quadtree: 
+            ! these will need to be recomputed on the fly in an adaptive
+            ! simulation using the wave quadtree.
+            ! This uses up to 9 cells/weights
             !
-            CALL QA_XY2CELL(QTREE(IQGB), 1.+(XO-X0)/SX, 1.+(YO-Y0)/SY, &
-                 ICELLB, XBC, YBC, LVBC, IQB, ISB, ISTAT_QAB )
-            INGRID = ALL(ISTAT_QAB.EQ.0)
-            IXR = ICELLB
+            CALL QA_INTERP1WT( QTREE(IQGB), 1.+(XO-X0)/SX, 1.+(YO-Y0)/SY, &
+                               WTS1_QA%DERWTC, IXR, RD, IERR, NDSE )
+            INGRID = IERR.EQ.0
             IYR = 1
-            RD = 0.
-            RD(1) = 1.
           ELSE
             !
             ! ... Compute bilinear remapping weights
@@ -6091,9 +6100,14 @@ CONTAINS
             IXR(4) = IX    ;  IYR(4) = IY    ;  RD(4) = X    ;
           END IF
           !
-#ifdef W3_T  
-          WRITE (NDST,9091) FACTOR*XO, FACTOR*YO,                   &
-               (IXR(J), IYR(J), RD(J), J=1,4)
+#ifdef W3_T
+          IF ( NWTBO.EQ.4 ) THEN  
+            WRITE (NDST,9091) FACTOR*XO, FACTOR*YO,                 &
+               (IXR(J), IYR(J), RD(J), J=1,NWTBO)
+          ELSEIF ( NWTBO.EQ.9 ) THEN
+            WRITE (NDST,9097) FACTOR*XO, FACTOR*YO,                 &
+               (IXR(J), IYR(J), RD(J), J=1,NWTBO)
+          END IF
 #endif
           !
           ! ... Check if point in grid
@@ -6102,14 +6116,14 @@ CONTAINS
             !
             ! ... Check if point not on land
             !
-            IF ( ( MAPSTA(IYR(1),IXR(1)).GT.0 .AND.                 &
-                 RD(1).GT.0.05 ) .OR.          &
-                 ( MAPSTA(IYR(2),IXR(2)).GT.0 .AND.                 &
-                 RD(2).GT.0.05 ) .OR.          &
-                 ( MAPSTA(IYR(3),IXR(3)).GT.0 .AND.                 &
-                 RD(3).GT.0.05 ) .OR.          &
-                 ( MAPSTA(IYR(4),IXR(4)).GT.0 .AND.                 &
-                 RD(4).GT.0.05 ) ) THEN
+            ANYWET = .FALSE.
+            DO J=1,NWTBO
+              IF ( MAPSTA(IYR(J),IXR(J)).GT.0 .AND. RD(J).GT.0.05 ) THEN
+                ANYWET = .TRUE.
+                EXIT
+              END IF 
+            END DO 
+            IF ( ANYWET ) THEN
               !
               ! ... Check storage and store coordinates
               !
@@ -6130,31 +6144,36 @@ CONTAINS
               ! ... Interpolation factors
               !
               RDTOT = 0.
-              DO J=1, 4
-                IF ( MAPSTA(IYR(J),IXR(J)).GT.0 .AND.               &
-                     RD(J).GT.0.05 ) THEN
-                  RDBPO(NBOTOT,J) = RD(J)
-                ELSE
-                  RDBPO(NBOTOT,J) = 0.
+              DO J=1, NWTBO
+                RDBPO(NBOTOT,J) = 0.
+                IF ( IYR(J).GT.0 .AND. IXR(J).GT.0 ) THEN
+                  IF ( MAPSTA(IYR(J),IXR(J)).GT.0 .AND.               &
+                       RD(J).GT.0.05 ) THEN
+                    RDBPO(NBOTOT,J) = RD(J)
+                  END IF
                 END IF
                 RDTOT = RDTOT + RDBPO(NBOTOT,J)
               END DO
               !
-              DO J=1, 4
+              DO J=1, NWTBO
                 RDBPO(NBOTOT,J) = RDBPO(NBOTOT,J) / RDTOT
               END DO
               !
 #ifdef W3_T
-              WRITE (NDST,9092) RDTOT, (RDBPO(NBOTOT,J),J=1,4)
+              WRITE (NDST,9098) RDTOT, (RDBPO(NBOTOT,J),J=1,NWTBO)
 #endif
               !
               ! ... Determine sea and interpolation point counters
               !
-              DO J=1, 4
-                ISEAI(J) = MAPFS(IYR(J),IXR(J))
+              DO J=1, NWTBO
+                IF ( IYR(J).GT.0 .AND. IXR(J).GT.0 ) THEN
+                  ISEAI(J) = MAPFS(IYR(J),IXR(J))
+                ELSE
+                  ISEAI(J) = 0
+                END IF
               END DO
               !
-              DO J=1, 4
+              DO J=1, NWTBO
                 IF ( ISEAI(J).EQ.0 .OR. RDBPO(NBOTOT,J).EQ. 0. ) THEN
                   IPBPO(NBOTOT,J) = 0
                 ELSE
@@ -6174,7 +6193,11 @@ CONTAINS
               END DO
               !
 #ifdef W3_T
-              WRITE (NDST,9093) ISEAI, (IPBPO(NBOTOT,J),J=1,4)
+              IF ( NWTBO.EQ.4 ) THEN
+                WRITE (NDST,9093) ISEAI, (IPBPO(NBOTOT,J),J=1,NWTBO)
+              ELSEIF ( NWTBO.EQ.9 ) THEN
+                WRITE (NDST,9099) ISEAI, (IPBPO(NBOTOT,J),J=1,NWTBO)
+              END IF  
 #endif
               !
               ! ... Error output
@@ -7397,6 +7420,10 @@ CONTAINS
 9092 FORMAT ( '                      ',F7.2,2X,4F7.2)
 9093 FORMAT ( '                            ',4I7/                 &
          '                            ',4I7)
+9097 FORMAT ( '             ',2F8.2,9(2I4,F7.2))
+9098 FORMAT ( '                      ',F7.2,2X,9F7.2)
+9099 FORMAT ( '                            ',9I7/                 &
+         '                            ',9I7)
 #endif
     !
 #ifdef W3_T0

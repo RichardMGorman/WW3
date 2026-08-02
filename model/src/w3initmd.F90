@@ -397,7 +397,8 @@ CONTAINS
          IAUX_QA, EXAUX_QA, LVRANGE_QA, WTS1_QA,     &
          MAPML_QA
 #ifdef W3_UNO
-    USE W3GDATMD, ONLY: NRLv, NUFc, NVFc
+    USE W3GDATMD, ONLY: IJKCel, IJKUFc, IJKVFc,      &
+         NLvUFc, NLvVFc, NRLv, NUFc, NVFc
 #endif
 #ifdef W3_PDLIB
     USE W3GDATMD, ONLY : FLCTH, B_JGS_BLOCK_GAUSS_SEIDEL, B_JGS_USE_JACOBI
@@ -1137,9 +1138,11 @@ CONTAINS
 #ifdef W3_PR1    
       CALL W3MPQ1 ( MAPSTA, LVRANGE_QA )
 #endif
-#ifdef W3_PR1    
+#ifdef W3_PR2    
+#ifdef W3_UNO    
       CALL QA_QT2SMC ( QTREE(IQGW), -9, IJKCel, IJKUFc, IJKVFc,    &
                            NLvUFc, NLvVFc, ierr=IERR, ndse=NDSE )
+#endif
 #endif
       ALLOCATE ( MAPTST(NY,NX) )
     ELSE
@@ -2322,8 +2325,8 @@ CONTAINS
          FLOGRD, NRQRS, IRQRS, NBLKRS,                        &
          RSBLKS, IRQRSS, VAAUX, NRQBP, NRQBP2,                &
          IRQBP1, IRQBP2, NFBPO, NBO2, ISBPO,                  &
-         ABPOS, NRQTR, IRQTR, IT0PNT, IT0TRK,                 &
-         IT0PRT, NOSWLL, NOEXTR, NDSE, IOSTYP, FLOGR2
+         ABPOS, NRQTR, IRQTR, IT0PNT, IT0TRK, IT0PRT,         &
+         IT0BPT, NOSWLL, NOEXTR, NDSE, IOSTYP, FLOGR2
     USE W3PARALL, ONLY : INIT_GET_JSEA_ISPROC
     USE CONSTANTS, ONLY: LPDLIB
 #endif
@@ -4668,7 +4671,7 @@ CONTAINS
           IT     = IT0 + 7
           CALL MPI_SEND_INIT (HS   (1), NSEALM, MPI_REAL,     &
                IROOT, IT, MPI_COMM_WAVE, IRQRS(IH), IERR)
-#ifdef W3_MPIT
+#ifdef W3_MPITW3IOBC
           WRITE (NDST,9021) IH, 'S HS', IROOT, IT, IRQRS(IH), IERR
 #endif
         END IF
@@ -5301,6 +5304,7 @@ CONTAINS
     NRQBP2 = 0
     IH     = 0
     IT     = IT0
+    IT0BPT = IT0
     IROOT  = NAPBPT - 1
     !
     IF ( FLOUT(5) ) THEN
@@ -5609,6 +5613,7 @@ CONTAINS
 #ifdef W3_S
     USE W3SERVMD, ONLY: STRACE
 #endif
+    USE W3GDATMD, ONLY: GTYPE, QAGTYPE
 #ifdef W3_MPI
     USE W3SERVMD, ONLY: EXTCDE
     !/
@@ -5636,10 +5641,11 @@ CONTAINS
     !/ ------------------------------------------------------------------- /
     !/ Local parameters
     !/
+    INTEGER                 :: NWTPO
 #ifdef W3_MPI
     INTEGER                 :: IH, IROOT, I, J, IT, IT0, JSEA, &
-         IERR, ITARG, IX(4), IY(4),      &
-         K, IS(4), IP(4)
+         IERR, ITARG, K
+    INTEGER, ALLOCATABLE    :: IX(:), IY(:), IS(:), IP(:)
 #endif
 #ifdef W3_S
     INTEGER, SAVE           :: IENT
@@ -5651,8 +5657,13 @@ CONTAINS
     CALL STRACE (IENT, 'W3MPIP')
 #endif
     !
+    IF ( GTYPE.EQ.QAGTYPE ) THEN
+      NWTPO = 9
+    ELSE
+      NWTPO = 4
+    END IF
 #ifdef W3_MPI
-    IF ( O2IRQI ) THEN
+    IF ( O2IRQI .AND. GTYPE.NE.QAGTYPE ) THEN
       WRITE (NDSE,1001)
       CALL EXTCDE (1)
     END IF
@@ -5665,11 +5676,14 @@ CONTAINS
     IT0    = IT0PNT
     IROOT  = NAPPNT - 1
     !
-    ALLOCATE ( OUTPTS(IMOD)%OUT2%IRQPO1(4*NOPTS),  &
-         OUTPTS(IMOD)%OUT2%IRQPO2(4*NOPTS) )
-    IRQPO1 => OUTPTS(IMOD)%OUT2%IRQPO1
-    IRQPO2 => OUTPTS(IMOD)%OUT2%IRQPO2
-    O2IRQI = .TRUE.
+    IF ( .NOT.O2IRQI ) THEN
+      ALLOCATE ( OUTPTS(IMOD)%OUT2%IRQPO1(NWTPO*NOPTS),  &
+         OUTPTS(IMOD)%OUT2%IRQPO2(NWTPO*NOPTS) )
+      IRQPO1 => OUTPTS(IMOD)%OUT2%IRQPO1
+      IRQPO2 => OUTPTS(IMOD)%OUT2%IRQPO2
+      O2IRQI = .TRUE.
+    END IF
+    ALLOCATE (IX(NWTPO), IY(NWTPO), IS(NWTPO), IP(NWTPO))
 #endif
     !
     ! 1.a Loop over output locations
@@ -5680,36 +5694,38 @@ CONTAINS
     !
 #ifdef W3_MPI
     DO I=1, NOPTS
-      DO K=1,4
+      DO K=1,NWTPO
         IX(K)=IPTINT(1,K,I)
         IY(K)=IPTINT(2,K,I)
       END DO
       ! 1.b Loop over corner points
       !
-      DO J=1, 4
+      DO J=1, NWTPO
         !
-        IT     = IT0 + (I-1)*4 + J
-        IS(J)  = MAPFS (IY(J),IX(J))
-        IF ( IS(J) .EQ. 0 ) THEN
-          JSEA   = 0
-          IP(J)  = NAPPNT
-        ELSE
-          CALL INIT_GET_JSEA_ISPROC(IS(J), JSEA, IP(J))
-        END IF
+        IF ( IX(J).GT.0 .AND. IY(J).GT.0 ) THEN
+          IT     = IT0 + (I-1)*NWTPO + J
+          IS(J)  = MAPFS (IY(J),IX(J))
+          IF ( IS(J) .EQ. 0 ) THEN
+            JSEA   = 0
+            IP(J)  = NAPPNT
+          ELSE
+            CALL INIT_GET_JSEA_ISPROC(IS(J), JSEA, IP(J))
+          END IF
 #endif
         !
         ! 1.c Send if point is stored here
         !
 #ifdef W3_MPI
-        IF ( IP(J) .EQ. IAPROC ) THEN
-          IH     = IH + 1
-          CALL MPI_SEND_INIT ( VA(1,JSEA), NSPEC, MPI_REAL, IROOT, IT, MPI_COMM_WAVE, &
+          IF ( IP(J) .EQ. IAPROC ) THEN
+            IH     = IH + 1
+            CALL MPI_SEND_INIT ( VA(1,JSEA), NSPEC, MPI_REAL, IROOT, IT, MPI_COMM_WAVE, &
                IRQPO1(IH), IERR )
 #endif
 #ifdef W3_MPIT
-          WRITE (NDST,9011) IH,I,J, IROOT,IT, IRQPO1(IH), IERR
+            WRITE (NDST,9011) IH,I,J, IROOT,IT, IRQPO1(IH), IERR
 #endif
 #ifdef W3_MPI
+          END IF
         END IF
         !
         ! ... End of loop 1.b
@@ -5744,45 +5760,47 @@ CONTAINS
       !
 #ifdef W3_MPI
       DO I=1, NOPTS
-        DO K=1,4
+        DO K=1,NWTPO
           IX(K)=IPTINT(1,K,I)
           IY(K)=IPTINT(2,K,I)
         END DO
         !
-        DO J=1, 4
+        DO J=1, NWTPO
           !
-          IT     = IT0 + (I-1)*4 + J
-          IS(J)  = MAPFS (IY(J),IX(J))
-          IF ( IS(J) .EQ. 0 ) THEN
-            JSEA   = 0
-            IP(J)  = NAPPNT
-          ELSE
-            CALL INIT_GET_JSEA_ISPROC(IS(J), JSEA, IP(J))
-          END IF
+          IF ( IX(J).GT.0 .AND. IY(J).GT.0 ) THEN
+            IT     = IT0 + (I-1)*NWTPO + J
+            IS(J)  = MAPFS (IY(J),IX(J))
+            IF ( IS(J) .EQ. 0 ) THEN
+              JSEA   = 0
+              IP(J)  = NAPPNT
+            ELSE
+              CALL INIT_GET_JSEA_ISPROC(IS(J), JSEA, IP(J))
+            END IF
 #endif
           !
           ! 1.g Receive in correct array
           !
 #ifdef W3_MPI
-          IH     = IH + 1
-          ITARG  = IP(J) - 1
-          CALL MPI_RECV_INIT ( SPPNT(1,1,J), NSPEC, MPI_REAL, ITARG, IT, MPI_COMM_WAVE, &
+            IH     = IH + 1
+            ITARG  = IP(J) - 1
+            CALL MPI_RECV_INIT ( SPPNT(1,1,J), NSPEC, MPI_REAL, ITARG, IT, MPI_COMM_WAVE, &
                IRQPO2(IH), IERR )
 #endif
 #ifdef W3_MPIT
-          WRITE (NDST,9011) IH,I,J, ITARG,IT, IRQPO2(IH), IERR
+            WRITE (NDST,9011) IH,I,J, ITARG,IT, IRQPO2(IH), IERR
 #endif
           !
           ! ... End of loop 1.f
           !
 #ifdef W3_MPI
+          END IF
         END DO
         !
         ! ... End of loop 1.e
         !
       END DO
       !
-      NRQPO2 = NOPTS*4
+      NRQPO2 = NOPTS*NWTPO
 #endif
       !
 #ifdef W3_MPIT
@@ -5796,7 +5814,7 @@ CONTAINS
     !
     !
 #ifdef W3_MPI
-    IT0    = IT0 + 8*NOPTS
+    IT0    = IT0 + 2*NWTPO*NOPTS
 #endif
     !
     ! 1.h Base tag number for track output

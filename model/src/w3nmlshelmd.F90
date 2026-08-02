@@ -163,6 +163,13 @@ MODULE W3NMLSHELMD
     REAL                        :: VALUE2
     REAL                        :: VALUE3
   END TYPE NML_HOMOG_INPUT_T
+  !
+  TYPE NML_QUAD_T
+    INTEGER                     :: NCTARGET_QA
+    INTEGER                     :: DVTYPE_QA
+    REAL                        :: DVTOLFAC_QA
+    REAL                        :: DVMAX_QA
+  END TYPE NML_QUAD_T
 
 
   ! miscellaneous
@@ -176,7 +183,7 @@ CONTAINS
   !/ ------------------------------------------------------------------- /
   SUBROUTINE W3NMLSHEL (MPICOMM, NDSI, INFILE, NML_DOMAIN,            &
        NML_INPUT, NML_OUTPUT_TYPE, NML_OUTPUT_DATE, NML_OUTPUT_PATH,   &
-       NML_HOMOG_COUNT, NML_HOMOG_INPUT, IERR)
+       NML_HOMOG_COUNT, NML_HOMOG_INPUT, NML_QUAD, IERR)
     !/
     !/                  +-----------------------------------+
     !/                  | WAVEWATCH III           NOAA/NCEP |
@@ -208,6 +215,7 @@ CONTAINS
     !      NML_OUTPUT_DATE
     !      NML_HOMOG_COUNT
     !      NML_HOMOG_INPUT
+    !      NML_QUAD
     !      IERR
     !     ----------------------------------------------------------------
     !
@@ -226,6 +234,8 @@ CONTAINS
     !      REPORT_OUTPUT_DATE_NML
     !      READ_HOMOGENEOUS_NML
     !      REPORT_HOMOGENEOUS_NML
+    !      READ_QUADTREE_NML
+    !      REPORT_QUADTREE_NML
     !     ----------------------------------------------------------------
     !
     !  5. Called by :
@@ -278,6 +288,7 @@ CONTAINS
     TYPE(NML_OUTPUT_PATH_T), INTENT(INOUT)    :: NML_OUTPUT_PATH       ! USER DEFINED PATH
     TYPE(NML_HOMOG_COUNT_T), INTENT(INOUT)   :: NML_HOMOG_COUNT
     TYPE(NML_HOMOG_INPUT_T), ALLOCATABLE, INTENT(INOUT)    :: NML_HOMOG_INPUT(:)
+    TYPE(NML_QUAD_T), INTENT(INOUT)           :: NML_QUAD
     INTEGER, INTENT(OUT)                      :: IERR
 
     ! locals
@@ -339,6 +350,10 @@ CONTAINS
     ! read homogeneous namelist
     CALL READ_HOMOGENEOUS_NML (NDSI, NML_HOMOG_COUNT, NML_HOMOG_INPUT)
     IF ( IMPROC .EQ. NMPLOG ) CALL REPORT_HOMOGENEOUS_NML (NML_HOMOG_COUNT, NML_HOMOG_INPUT)
+
+    ! read quadtree namelist
+    CALL READ_QUADTREE_NML (NDSI, NML_QUAD)
+    IF ( IMPROC .EQ. NMPLOG ) CALL REPORT_QUADTREE_NML (NML_QUAD)
 
     ! close namelist files
     CLOSE (NDSI)
@@ -1122,6 +1137,115 @@ CONTAINS
 
 
 
+  !/ ------------------------------------------------------------------- /
+
+  SUBROUTINE READ_QUADTREE_NML (NDSI, NML_QUAD)
+    !/
+    !/                  +-----------------------------------+
+    !/                  | WAVEWATCH III           NOAA/NCEP |
+    !/                  |           R.Gorman                |
+    !/                  |                                   |
+    !/                  |                        FORTRAN 90 |
+    !/                  | Last update :          2-Aug-2026 |
+    !/                  +-----------------------------------+
+    !/
+    !/
+    !  1. Purpose :
+    !
+    !
+    !  2. Method :
+    !
+    !     See source term routines.
+    !
+    !  3. Parameters :
+    !
+    !     Parameter list
+    !     ----------------------------------------------------------------
+    !      NDSI              Int.
+    !      NML_QUAD          Type.
+    !     ----------------------------------------------------------------
+    !
+    !  4. Subroutines used :
+    !
+    !      Name      Type  Module   Description
+    !     ----------------------------------------------------------------
+    !      STRACE    Subr. W3SERVMD SUBROUTINE tracing.
+    !     ----------------------------------------------------------------
+    !
+    !  5. Called by :
+    !
+    !      Name      Type  Module   Description
+    !     ----------------------------------------------------------------
+    !      W3NMLSHEL Subr.   N/A    Namelist configuration routine.
+    !     ----------------------------------------------------------------
+    !
+    !  6. Error messages :
+    !
+    !     None.
+    !
+    !  7. Remarks :
+    !
+    !  8. Structure :
+    !
+    !     See source code.
+    !
+    !  9. Switches :
+    !
+    !     !/MPI  Uses MPI communications
+    !
+    ! 10. Source code :
+    !
+    !/ ------------------------------------------------------------------- /
+
+    USE WMMDATMD, ONLY: MDSE
+    USE W3SERVMD, ONLY: EXTCDE
+#ifdef W3_S
+    USE W3SERVMD, ONLY: STRACE
+#endif
+
+    IMPLICIT NONE
+
+    INTEGER, INTENT(IN)                    :: NDSI
+    TYPE(NML_QUAD_T), INTENT(INOUT)        :: NML_QUAD
+
+    ! LOCALS
+    INTEGER                                :: IERR
+    TYPE(NML_QUAD_T) :: QUAD
+    NAMELIST /QUAD_NML/ QUAD
+#ifdef W3_S
+    INTEGER, SAVE                          :: IENT = 0
+#endif
+
+    IERR = 0
+#ifdef W3_S
+    CALL STRACE (IENT, 'READ_QUADTREE_NML')
+#endif
+
+    ! SET DEFAULT VALUES FOR QUADTREE VARIABLES
+    QUAD%NCTARGET_QA = 0
+    QUAD%DVTYPE_QA = 2
+    QUAD%DVTOLFAC_QA =  2.0
+    QUAD%DVMAX_QA = 9999.
+
+    ! READ QUADTREE NAMELIST
+    REWIND (NDSI)
+    READ (NDSI, nml=QUAD_NML, iostat=IERR, iomsg=MSG)
+    IF (IERR.GT.0) THEN
+      WRITE (MDSE,'(A,/A)') &
+           'ERROR: READ_QUADTREE_NML: namelist read error', &
+           'ERROR: '//TRIM(MSG)
+      CALL EXTCDE (8)
+    END IF
+
+    ! SAVE NAMELIST
+    NML_QUAD = QUAD
+
+  END SUBROUTINE READ_QUADTREE_NML
+
+  !/ ------------------------------------------------------------------- /
+
+
+
 
 
 
@@ -1766,6 +1890,98 @@ CONTAINS
 
   !/ ------------------------------------------------------------------- /
 
+
+
+
+  !/ ------------------------------------------------------------------- /
+
+  SUBROUTINE REPORT_QUADTREE_NML (NML_QUAD)
+    !/
+    !/                  +-----------------------------------+
+    !/                  | WAVEWATCH III           NOAA/NCEP |
+    !/                  |           R. Gorman               |
+    !/                  |                                   |
+    !/                  |                        FORTRAN 90 |
+    !/                  | Last update :          2-Aug-2026 |
+    !/                  +-----------------------------------+
+    !/
+    !/
+    !  1. Purpose :
+    !
+    !
+    !  2. Method :
+    !
+    !     See source term routines.
+    !
+    !  3. Parameters :
+    !
+    !     Parameter list
+    !     ----------------------------------------------------------------
+    !      NML_QUAD  Type.
+    !     ----------------------------------------------------------------
+    !
+    !  4. Subroutines used :
+    !
+    !      Name      Type  Module   Description
+    !     ----------------------------------------------------------------
+    !      STRACE    Subr. W3SERVMD SUBROUTINE tracing.
+    !     ----------------------------------------------------------------
+    !
+    !  5. Called by :
+    !
+    !      Name      Type  Module   Description
+    !     ----------------------------------------------------------------
+    !      W3NMLSHEL Subr.   N/A    Namelist configuration routine.
+    !     ----------------------------------------------------------------
+    !
+    !  6. Error messages :
+    !
+    !     None.
+    !
+    !  7. Remarks :
+    !
+    !  8. Structure :
+    !
+    !     See source code.
+    !
+    !  9. Switches :
+    !
+    !     !/MPI  Uses MPI communications
+    !
+    ! 10. Source code :
+    !
+    !/ ------------------------------------------------------------------- /
+
+#ifdef W3_S
+    USE W3SERVMD, ONLY: STRACE
+#endif
+
+    IMPLICIT NONE
+
+    TYPE(NML_QUAD_T), INTENT(IN) :: NML_QUAD
+
+    ! LOCALS
+#ifdef W3_S
+    INTEGER, SAVE                           :: IENT = 0
+#endif
+
+#ifdef W3_S
+    CALL STRACE (IENT, 'REPORT_OUTPUT_PATH_NML')
+#endif
+
+    WRITE (MSG,'(A)') 'QUAD % '
+    WRITE (NDSN,'(A)')
+    WRITE (NDSN,11) TRIM(MSG),'NCTARGET_QA     = ', NML_QUAD%NCTARGET_QA
+    WRITE (NDSN,11) TRIM(MSG),'DVTYPE_QA       = ', NML_QUAD%DVTYPE_QA
+    WRITE (NDSN,14) TRIM(MSG),'DVTOLFAC_QA     = ', NML_QUAD%DVTOLFAC_QA
+    WRITE (NDSN,14) TRIM(MSG),'DVMAX_QA        = ', NML_QUAD%DVMAX_QA
+
+11  FORMAT (A,2X,A,I8)
+14  FORMAT (A,2X,A,F8.2)
+
+  END SUBROUTINE REPORT_QUADTREE_NML
+
+  !/ ------------------------------------------------------------------- /
 
 
 

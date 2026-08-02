@@ -442,7 +442,8 @@ CONTAINS
                           NDS, NOGE, NAPLOG, NAPOUT, NDSO, NDSE, NDST,     &
                           NAPROC, NAPERR, SCREEN, IAPROC, IOUTP, NOTYPE,   &
                           NAPBPT, TOFRST, TONEXT, TBPIN, TBPI0, TOLAST,    &
-                          DTOUT, NAPFLD, NAPPNT, W3SETO
+                          DTOUT, NAPFLD, NAPPNT, W3SETO, PTLOC, PTNME,     &
+                          NOPTS, NAPRST
     !/
     USE W3UPDTMD,  ONLY : W3DZXY, W3UWND, W3UINI, W3UTAU, W3URHO, W3UBPT,  &
                           W3UICE, W3ULEV, W3UCUR, W3UIC1, W3UTRN
@@ -453,7 +454,7 @@ CONTAINS
     USE W3ODATMD,  ONLY : NRQGO, NRQGO2, IRQGO, IRQGO2, NRQPO, IRQPO1
     USE W3ODATMD,  ONLY : NRQRS, IRQRS, IRQPO1, NRQBP, IRQBP1, IRQBP2,     &
                           NRQBP2
-    USE W3ADATMD,  ONLY : NRQSG1, IRQSG1, NRQSG1
+    USE W3ADATMD,  ONLY : NRQSG1, IRQSG1, NRQSG1, MPI_COMM_WAVE
 #endif
 #if defined(W3_MPI) && defined(W3_SMC)
     USE W3ADATMD,  ONLY : MPI_COMM_WAVE
@@ -532,12 +533,13 @@ CONTAINS
 #ifdef W3_UOST
     USE W3UOSTMD, ONLY: UOST_SETGRID
 #endif
-    USE W3ADGRMD, ONLY : W3ADGR, W3QTGR
+    USE W3ADGRMD, ONLY : W3ADGR, W3QTGR, W3BCRESET
     USE W3GDATMD, ONLY : NMOD_QA, NFROM_QA, IFROM_QA, WFROM_QA, ITO_QA, &
                          LVRANGE_QA, DVTYPE_QA, NAUX_QA, IAUX_QA,       &
                          QTREE, IQGW, NCMXQ
     USE QA_UTILS, ONLY : QA_ADVAR
     USE W3PARALL, ONLY : INIT_GET_ISEA
+    USE W3IOPOMD, ONLY : W3IOPP
 #ifdef W3_SETUP
     USE W3WAVSET, only : WAVE_SETUP_COMPUTATION
 #endif
@@ -574,12 +576,17 @@ CONTAINS
 #if defined(W3_T) || defined(W3_SBS)
     USE W3GDATMD,  ONLY : FILEXT
 #endif
+#ifdef W3_T
+    USE W3GDATMD,  ONLY : XGRD, YGRD, ZB
+    USE W3SERVMD,  ONLY : SSORT1
+#endif
 #ifdef W3_PDLIB
     USE yowExchangeModule, only : PDLIB_exchange2Dreal_zero
 #endif
     !
 #ifdef W3_MPI 
     use mpi_f08
+    USE W3INITMD, ONLY : W3MPIP
 #endif
     !/
     !/ ------------------------------------------------------------------- /
@@ -2769,6 +2776,20 @@ CONTAINS
                 !
                 !   Point output
                 !
+                IF ( GTYPE.EQ.QAGTYPE ) THEN
+                  ! For a quadtree grid, we need to recompute interpolation cells and weights,
+                  ! 
+#ifdef W3_MPI
+                  CALL W3IOPP( NOPTS, PTLOC(1,1:NOPTS), PTLOC(2,1:NOPTS), PTNME(1:NOPTS), &
+                               IMOD, MPI_COMM_WAVE )
+#else
+                  CALL W3IOPP( NOPTS, PTLOC(1,1:NOPTS), PTLOC(2,1:NOPTS), PTNME(1:NOPTS), &
+                               IMOD, 1 )
+#endif
+#ifdef W3_MPI
+                  CALL W3MPIP(IMOD)
+#endif                  
+                END IF
                 IF ( IAPROC .EQ. NAPPNT ) THEN
                   !
                   !   Gets the necessary spectral data
@@ -2794,6 +2815,13 @@ CONTAINS
                 CALL W3IORS ('HOT', NDS(6), XXX, IMOD, FLOUT(8) )
                 ITEST = RSTYPE
               ELSE IF ( J .EQ. 5 ) THEN
+                IF ( GTYPE.EQ.QAGTYPE ) THEN
+                  !
+                  ! Recompute interpolation points/weights from the adapted quadtree grid
+                  ! to the boundary output locations.
+                  !
+                  CALL W3BCRESET ( NDST, NDSE )
+                END IF
                 IF ( IAPROC .EQ. NAPBPT ) THEN
 #ifdef W3_MPI
                   IF (NRQBP2.NE.0) CALL MPI_WAITALL ( NRQBP2, IRQBP2,STATIO, IERR_MPI )

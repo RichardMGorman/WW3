@@ -373,6 +373,20 @@ $
    'MOV' 19680606 013000    4.0    25.
    'STP'
 $
+$ Quadtree adaptive options --------------------------------------------- $
+$ For quadtree simulations, a line specifies the following 4 parameters:
+$  1. Target No. of cells (integer) [NCTARGET_QA]
+$  2. Diagnostic variable type (integer) [DVTYPE_QA] 
+$       =  0  no adaptivity
+$          1  depth-dependent CFL factor
+$          2  2nd derivative of wind speed
+$          3  2nd derivative of wave spectrum
+$         12  CFL factor x 2nd deriv. wind speed
+$         13  CFL factor x wind speed
+$  3. Max./Min. diagnostic var. ratio [DVTOLFAC_QA]
+$  4. Max. value of diagnostic variable [DVMAX_QA]
+$ 
+$ 10000  2  2.0  900.
 $ -------------------------------------------------------------------- $
 $ End of input file                                                    $
 $ -------------------------------------------------------------------- $

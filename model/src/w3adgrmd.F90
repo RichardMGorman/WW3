@@ -5,7 +5,6 @@
   !/
   !/ Required modules
   !/
-  USE W3GSRUMD
   USE QA_UTILS
   !/
   !/ Specify default accessibility
@@ -964,7 +963,7 @@ CONTAINS
   END DO
   !
   !      Adapt the wave quadtree down to the required limits
-  !      Only want to coarsen, so ensure upper upper tolerance is high:
+  !      Only want to coarsen, so ensure upper tolerance is high:
   DVTOLFAC_QA = 1.E9
   DVMAX_QA = 0.
   NCT_INIT = QTREE(IQGW)%NCELL_DEF
@@ -987,6 +986,295 @@ CONTAINS
   !/ End of W3STQT ----------------------------------------------------- /
   !/
   END SUBROUTINE W3STQT
+  !/
+  !/ ------------------------------------------------------------------- /
+  SUBROUTINE W3BCRESET ( NDST, NDSE )
+  !/
+  !/    Richard Gorman, July 2026
+  !/
+  !  1. Purpose :
+  !
+  !     Recompute interpolation points and indices for boundary outputs on
+  !     a quadtree grid
+  !
+  !  2. Method :
+  !
+  !
+  !  3. Parameters :
+  !
+  !     Parameter list
+  !     ----------------------------------------------------------------
+  !       NDST       Int.  I   Unit number for test output
+  !       NDSE       Int.  I   Unit number for error output
+  !     ----------------------------------------------------------------
+  !
+  !     Local data
+  !     ----------------------------------------------------------------
+  !     ----------------------------------------------------------------
+  !
+  !  4. Subroutines used :
+  !
+  !      Name      Type  Module   Description
+  !     ----------------------------------------------------------------
+  !      QA_INTERP1WT Subr. QA_UTILS  Compute interpolation weights
+  !     ----------------------------------------------------------------
+  !
+  !  5. Called by :
+  !
+  !      Name      Type  Module   Description
+  !     ----------------------------------------------------------------
+  !      W3WAVE    Prog. W3WAVE   Wave model
+  !     ----------------------------------------------------------------
+  !
+  !  6. Error messages :
+  !
+  !
+  !  7. Remarks :
+  !
+  !
+  !  8. Structure :
+  !
+  !     -------------------------------------------
+  !     -------------------------------------------
+  !
+  !  9. Switches :
+  !
+  !       !/S     Enable subroutine tracing.
+  !       !/T     Test output.
+  !
+  ! 10. Source code :
+  !
+  !/ ------------------------------------------------------------------- /
+  USE QA_UTILS, ONLY:  QA_INTERP1WT
+  USE W3GDATMD, ONLY:  IQGW, QTREE, WTS1_QA, SX, X0, SY, Y0, MAPSTA, MAPFS
+  USE W3ODATMD, ONLY:  NWTBO, NFBPO, NBO, NBO2, XBPO, YBPO, RDBPO,  &
+                       IPBPO, ISBPO
+#ifdef W3_MPI
+  USE W3GDATMD, ONLY:  NSPEC
+  USE W3WDATMD, ONLY:  VA
+  USE W3ADATMD, ONLY:  MPI_COMM_WAVE
+  USE W3ODATMD, ONLY:  IT0BPT, NRQBP, NRQBP2, IRQBP1, IRQBP2, NAPBPT, IAPROC, ABPOS
+  USE W3PARALL, ONLY:  INIT_GET_JSEA_ISPROC
+  USE MPI_F08
+#endif
+#ifdef W3_S
+  USE W3SERVMD, ONLY: STRACE
+#endif
+  !
+  IMPLICIT NONE
+  !/
+  !/ ------------------------------------------------------------------- /
+  !/ Parameter list
+  !/
+  INTEGER, INTENT(IN)     :: NDST
+  INTEGER, INTENT(IN)     :: NDSE
+  !/
+  !/ ------------------------------------------------------------------- /
+  !/ Local parameters
+  !/
+  INTEGER  :: IFIL, IPT, J, IST, IERR
+  INTEGER, ALLOCATABLE :: IXR(:), IYR(:), ISEAI(:)
+  REAL     :: XO, YO, RDTOT
+  REAL, ALLOCATABLE :: RD(:)
+  LOGICAL  :: FLNEW
+#ifdef W3_MPI
+  INTEGER  :: ISPROC, IH, IT, IT0, ISEA, JSEA, ITARG, IROOT
+#endif
+  !/
+  !/ ------------------------------------------------------------------- /
+  !/
+#ifdef W3_S  
+  CALL STRACE (IENT, 'W3BCRESET')
+#endif
+  !
+  ALLOCATE ( IXR(NWTBO), IYR(NWTBO), ISEAI(NWTBO), RD(NWTBO) )
+#ifdef W3_T
+  WRITE (NDST,9090)
+#endif
+  NBO2 = 0
+  DO IFIL=1,NFBPO
+    DO IPT=NBO(IFIL-1)+1,NBO(IFIL)
+      XO = XBPO(IPT)
+      YO = YBPO(IPT)
+      !
+      ! Assign weights for interpolation on the wave quadtree: 
+      ! This uses up to 9 cells/weights
+      !
+      CALL QA_INTERP1WT( QTREE(IQGW), 1.+(XO-X0)/SX, 1.+(YO-Y0)/SY, &
+                               WTS1_QA%DERWTC, IXR, RD, IERR, NDSE )
+      IYR = 1
+#ifdef W3_T
+      WRITE (NDST,9097) XO, YO,                       &
+               (IXR(J), IYR(J), RD(J), J=1,NWTBO)
+#endif
+      !
+      ! ... Interpolation factors
+      !
+      RDTOT = 0.
+      DO J=1, NWTBO
+        RDBPO(IPT,J) = 0.
+        ISEAI(J) = 0
+        IF ( IYR(J).GT.0 .AND. IXR(J).GT.0 ) THEN
+          IF ( MAPSTA(IYR(J),IXR(J)).GT.0 .AND.               &
+                       RD(J).GT.0.05 ) THEN
+            RDBPO(IPT,J) = RD(J)
+          END IF
+          ISEAI(J) = MAPFS(IYR(J),IXR(J))
+        END IF
+        RDTOT = RDTOT + RDBPO(IPT,J)
+      END DO
+      !
+      DO J=1, NWTBO
+        RDBPO(IPT,J) = RDBPO(IPT,J) / RDTOT
+      END DO
+              !
+#ifdef W3_T
+      WRITE (NDST,9098) RDTOT, (RDBPO(IPT,J),J=1,NWTBO)
+#endif
+      !
+      ! ... Determine sea and interpolation point counters
+      !
+      DO J=1, NWTBO
+        IF ( ISEAI(J).EQ.0 .OR. RDBPO(IPT,J).EQ. 0. ) THEN
+          IPBPO(IPT,J) = 0
+        ELSE
+          FLNEW   = .TRUE.
+          DO IST=NBO2(IFIL-1)+1, NBO2(IFIL)
+            IF ( ISEAI(J) .EQ. ISBPO(IST) ) THEN
+              FLNEW  = .FALSE.
+              IPBPO(IPT,J) = IST - NBO2(IFIL-1)
+            END IF
+          END DO
+          IF ( FLNEW ) THEN
+            NBO2(IFIL)        = NBO2(IFIL) + 1
+            IPBPO(IPT,J)      = NBO2(IFIL) - NBO2(IFIL-1)
+            ISBPO(NBO2(IFIL)) = ISEAI(J)
+          END IF
+        END IF
+      END DO
+      !
+#ifdef W3_T
+      WRITE (NDST,9099) ISEAI, (IPBPO(IPT,J),J=1,NWTBO)
+#endif
+    END DO
+  END DO
+  !
+#ifdef W3_MPI  
+  !
+  ! 3.  Set-up for W3IOBC ( SENDs ) ------------------------------------ /
+  !
+  NRQBP  = 0
+  NRQBP2 = 0
+  IH     = 0
+  IT     = IT0BPT
+  IROOT  = NAPBPT - 1
+  !
+#ifdef W3_MPIT
+  WRITE (NDST,9030) 'MPI_SEND_INIT'
+#endif
+  !
+  DO J=1, NFBPO
+    DO IPT=NBO2(J-1)+1, NBO2(J)
+      !
+      IT     = IT + 1
+      !
+      ! 3.b Residence processor of point
+      !
+      ISEA   = ISBPO(IPT)
+      CALL INIT_GET_JSEA_ISPROC(ISEA, JSEA, ISPROC)
+      !
+      ! 3.c If stored locally, send data
+      !
+      IF ( IAPROC .EQ. ISPROC ) THEN
+        IH     = IH + 1
+        CALL MPI_SEND_INIT (VA(1,JSEA),NSPEC,MPI_REAL, IROOT, IT, MPI_COMM_WAVE, &
+             IRQBP1(IH), IERR)
+#ifdef W3_MPIT
+        WRITE (NDST,9031) IH, IPT, J, IROOT, IT, IRQBP1(IH), IERR
+#endif
+      END IF
+      !
+    END DO
+  END DO
+  !
+  ! ... End of loops 4.a
+  !
+  NRQBP  = IH
+  !
+#ifdef W3_MPIT
+  WRITE (NDST,9032)
+  WRITE (NDST,9033) NRQBP
+#endif
+  !
+  ! 3.d Set-up for W3IOBC ( RECVs ) ------------------------------------ /
+  !
+  IF ( IAPROC .EQ. NAPBPT ) THEN
+    !
+    IH     = 0
+    IT     = IT0BPT
+    !
+    ! 3.e Loops over files and points
+    !
+#ifdef W3_MPIT
+    WRITE (NDST,9030) 'MPI_RECV_INIT'
+#endif
+    !
+    DO J=1, NFBPO
+      DO IPT=NBO2(J-1)+1, NBO2(J)
+        !
+        ! 3.f Residence processor of point
+        !
+        ISEA   = ISBPO(IPT)
+        CALL INIT_GET_JSEA_ISPROC(ISEA, JSEA, ISPROC)
+        !
+        ! 3.g Receive in correct array
+        !
+        IH     = IH + 1
+        IT     = IT + 1
+        ITARG  = ISPROC - 1
+        CALL MPI_RECV_INIT (ABPOS(1,IH),NSPEC,MPI_REAL, ITARG, IT, MPI_COMM_WAVE, &
+             IRQBP2(IH), IERR)
+#ifdef W3_MPIT
+        WRITE (NDST,9031) IH, IPT, J, ITARG, IT, IRQBP2(IH), IERR
+#endif
+        !
+      END DO
+    END DO
+    !
+    NRQBP2 = IH
+    !
+    ! ... End of loops 4.e
+    !
+#ifdef W3_MPIT
+    WRITE (NDST,9032)
+    WRITE (NDST,9033) NRQBP2
+#endif
+    !
+  END IF
+  !
+#endif    
+  !
+#ifdef W3_T
+9090 FORMAT ( ' TEST W3BCRESET : OUTPUT BOUND. POINT DATA LINE SEG.')
+9097 FORMAT ( '             ',2F8.2,9(2I4,F7.2))
+9098 FORMAT ( '                      ',F7.2,2X,9F7.2)
+9099 FORMAT ( '                            ',9I7/                   &
+         '                            ',9I7)
+#endif
+#ifdef W3_MPIT
+9030 FORMAT (/' TEST W3BCRESET : ',A,' CALLS FOR W3IOBC'/           &
+         ' +------+------+---+------+------+--------------+'/       &
+         ' |  IH  | IPT  | F | TARG |  TAG |   handle err |'/       &
+         ' +------+------+---+------+------+--------------+')
+9031 FORMAT ( ' |',2(I5,' |'),I2,' |',2(I5,' |'),I9,I4,' |')
+9032 FORMAT (                                                       &
+         ' +------+------+---+------+------+--------------+')
+9033 FORMAT ( ' TEST W3BCRESET : NRQBC :',I10)
+#endif
+  !/
+  !/ End of W3BCRESET -------------------------------------------------- /
+  !/
+  END SUBROUTINE W3BCRESET
   !/
   !/ End of module W3ADGRMD -------------------------------------------- /
   !/

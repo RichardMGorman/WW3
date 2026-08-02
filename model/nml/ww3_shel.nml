@@ -185,7 +185,7 @@
 !  F  F  6     7   [PR,TP]MS  P2S   Second-order sum pressure
 !  F  F  6     8   US3D       USF   Spectrum of surface Stokes drift
 !  F  F  6     9   P2SMS      P2L   Micro seism  source term
-!  F  F  6    10   TAUICE     TWI   Wave to sea ice stress
+!  F  F  6    10   TAUICE     TWI   Wave to sea ice streDVTOLFACss
 !  F  F  6    11   PHICE      FIC   Wave to sea ice energy flux
 !  F  F  6    12   USSP       USP   Partitioned surface Stokes drift
 !  F  F  6    13   TAUOC[X,Y] TOC   Total momentum to the ocean
@@ -408,8 +408,38 @@
   HOMOG_INPUT(3)%DATE       = '20100610 060000'
   HOMOG_INPUT(3)%VALUE1     = 5.
 /
-
-
+!
+! Quadtree adaptive options --------------------------------------------- $
+! For quadtree simulations, parameters controlling adaptivity
+! are set from the QUAD namelist:
+!  1. Target No. of cells (integer) [NCTARGET_QA]
+!     If this is exceeded, the grid will be coarsened to comply,
+!     starting with cells with the lowest value of the diagnostic variable
+!  2. Diagnostic variable type (integer) [DVTYPE_QA] 
+!       =  0  no adaptivity
+!          1  depth-dependent CFL factor
+!          2  2nd derivative of wind speed
+!          3  2nd derivative of wave spectrum
+!         12  CFL factor x 2nd deriv. wind speed
+!         13  CFL factor x wind speed
+!  3. Max./Min. diagnostic var. ratio [DVTOLFAC_QA]
+!  4. Max. value of diagnostic variable [DVMAX_QA]
+!     Cells with the diagnostic variable exceeding the maximum (DVMAX_QA) 
+!     will be refined, while those below the minimum (DVMAX_QA/DVTOLFAC_QA)
+!     will be coarsened
+!
+! Defaults:
+!  QUAD%NCTARGET_QA = 0
+!  QUAD%DVTYPE_QA   = 2
+!  QUAD%DVTOLFAC_QA = 2.
+!  QUAD%DVMAX_QA    = 9999.
+!
+&QUAD_NML
+  QUAD%NCTARGET_QA = 100000
+  QUAD%DVTYPE_QA   = 2
+  QUAD%DVTOLFAC_QA = 2.
+  QUAD%DVMAX_QA    = 9999.
+/
 ! -------------------------------------------------------------------- !
 ! WAVEWATCH III - end of namelist                                      !
 ! -------------------------------------------------------------------- !

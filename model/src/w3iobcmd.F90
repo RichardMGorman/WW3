@@ -78,6 +78,8 @@ MODULE W3IOBCMD
   CHARACTER(LEN=10), PARAMETER :: VERBPTBC = '2018-03-01'
   CHARACTER(LEN=32), PARAMETER ::                        &
        IDSTRBC  = 'WAVEWATCH III BOUNDARY DATA FILE'
+  CHARACTER(LEN=32), PARAMETER ::                        &
+       IDSTRBC_QA  = 'WW3(QUADTREE) BOUNDARY DATA FILE'
   !/
 CONTAINS
   !/ ------------------------------------------------------------------- /
@@ -108,7 +110,7 @@ CONTAINS
     !/
     !/    12-Jan-1999 : Distributed FORTRAN 77 version.     ( version 1.18 )
     !/    20-May-1999 : Remove read bug for IPBP and RDBP   ( see web page )
-    !/    30-Dec-1999 : Upgrade to FORTRAN 90               ( version 2.00 )
+    !/    30-Dec-1999 : Upgrade to FORTRAN 90               ( veW3IOBCrsion 2.00 )
     !/                  Major changes to logistics.
     !/    13-Dec-2004 : Multiple grid version.              ( version 3.06 )
     !/    19-Sep-2005 : Allow for change of spec. res.      ( version 3.08 )
@@ -219,14 +221,15 @@ CONTAINS
     USE W3GDATMD, ONLY: NK, NTH, NSPEC, NSEA,        &
          GSU, MAPSTA, MAPFS, MAPSF,                  &
          XFR, FR1, SIG2, TH, DTH, FILEXT, FACHFE,    &
-         GTYPE, UNGTYPE, SMCTYPE
+         GTYPE, UNGTYPE, SMCTYPE, QAGTYPE
     USE W3GDATMD, ONLY: DXYMAX
 #ifdef W3_T1
     USE W3GDATMD, ONLY: SIG
 #endif
+    USE W3GDATMD, ONLY: X0, Y0, SX, SY, QTREE, IQGW
 #ifdef W3_RTD
     !!   Use rotated N-Pole lat/lon and conversion sub.  JGLi12Jun2012
-    USE W3GDATMD, ONLY: PoLat, PoLon, AnglD, NX, NY, X0, Y0, SX, SY
+    USE W3GDATMD, ONLY: PoLat, PoLon, AnglD, NX, NY
     USE W3SERVMD, ONLY: W3LLTOEQ, W3EQTOLL, W3ACTURN
 #endif
 #ifdef W3_SHRD
@@ -239,7 +242,7 @@ CONTAINS
          IPBPI, ISBPI, XBPI, YBPI, RDBPI,            &
          IPBPO, ISBPO, XBPO, YBPO, RDBPO,            &
          ABPI0, ABPIN, ABPOS, FLBPI, FILER, FILEW,   &
-         FILED, SPCONV, FNMPRE
+         FILED, SPCONV, FNMPRE, NWTBI, NWTBO
     USE W3GSRUMD
     !
     USE W3SERVMD, ONLY: EXTCDE, EXTOPN, EXTIOF
@@ -250,6 +253,7 @@ CONTAINS
 #ifdef W3_SMC
     USE W3PSMCMD, ONLY: W3SMCGMP
 #endif
+    USE QA_UTILS, ONLY: QA_XY2CELL
     !
     IMPLICIT NONE
     !/
@@ -285,10 +289,12 @@ CONTAINS
     REAL                   :: XRLIM, YRLIM
 #endif
     REAL, ALLOCATABLE       :: TMPSPC(:,:)
-    LOGICAL                 :: FLOK
+    LOGICAL                 :: FLOK, INGRID
     CHARACTER(LEN=18)       :: FILEN
     CHARACTER(LEN=10)       :: VERTST
     CHARACTER(LEN=32)       :: IDTST
+    INTEGER                 :: LVCELL, IQCELL, ISCELL, ISTAT(2)
+    REAL                    :: XCELL, YCELL
     !/
     !/ ------------------------------------------------------------------- /
     !/
@@ -370,14 +376,21 @@ CONTAINS
     ! ... writing
     !
     IF ( INXOUT.EQ.'WRITE' .AND. FILEW ) THEN
+      IF ( GTYPE.EQ.QAGTYPE ) THEN
+        IDTST = IDSTRBC_QA
+        NWTBO = 9
+      ELSE
+        IDTST = IDSTRBC
+        NWTBO = 4
+      END IF
       IF ( IAPROC .EQ. NAPBPT ) THEN
         DO IFILE=1, NFBPO
           WRITE (NDSL(IFILE))                                   &
-               IDSTRBC, VERBPTBC, NK, NTH, XFR, FR1, TH(1),    &
+               IDTST, VERBPTBC, NK, NTH, XFR, FR1, TH(1),       &
                NBO(IFILE)-NBO(IFILE-1)
           !
 #ifdef W3_T
-          WRITE (NDST,9002) IFILE, NDSL(IFILE), IDSTRBC,       &
+          WRITE (NDST,9002) IFILE, NDSL(IFILE), IDTST,          &
                VERBPTBC, NBO(IFILE)-NBO(IFILE-1)
 #endif
           !
@@ -386,18 +399,24 @@ CONTAINS
           ! remapped to standard lat-lon and stored in mod_def.*
           !
 #endif
-          WRITE (NDSL(IFILE))                                   &
-               (XBPO(I),I=NBO(IFILE-1)+1,NBO(IFILE)),         &
-               (YBPO(I),I=NBO(IFILE-1)+1,NBO(IFILE)),         &
-               ((IPBPO(I,J),I=NBO(IFILE-1)+1,NBO(IFILE)),J=1,4),&
-               ((RDBPO(I,J),I=NBO(IFILE-1)+1,NBO(IFILE)),J=1,4)
+          WRITE (NDSL(IFILE))                                        &
+               (XBPO(I),I=NBO(IFILE-1)+1,NBO(IFILE)),                &
+               (YBPO(I),I=NBO(IFILE-1)+1,NBO(IFILE)),                &
+               ((IPBPO(I,J),I=NBO(IFILE-1)+1,NBO(IFILE)),J=1,NWTBO), &
+               ((RDBPO(I,J),I=NBO(IFILE-1)+1,NBO(IFILE)),J=1,NWTBO)
           !
 #ifdef W3_T0
           WRITE (NDST,9003)
           DO I=NBO(IFILE-1)+1, NBO(IFILE)
-            WRITE (NDST,9004) I-NBO(IFILE-1), XBPO(I),      &
-                 YBPO(I), (IPBPO(I,J),J=1,4),             &
-                 (RDBPO(I,J),J=1,4)
+            IF ( NWTBO.EQ.9 ) THEN
+              WRITE (NDST,9006) I-NBO(IFILE-1), XBPO(I),      &
+                 YBPO(I), (IPBPO(I,J),J=1,NWTBO),             &
+                 (RDBPO(I,J),J=1,NWTBO)
+            ELSE
+              WRITE (NDST,9004) I-NBO(IFILE-1), XBPO(I),      &
+                 YBPO(I), (IPBPO(I,J),J=1,NWTBO),             &
+                 (RDBPO(I,J),J=1,NWTBO)
+            END IF
           END DO
 #endif
           !
@@ -409,21 +428,31 @@ CONTAINS
     !
     IF ( INXOUT.EQ.'DUMP' .AND. FILED ) THEN
       IF ( IAPROC .EQ. NAPBPT ) THEN
-        WRITE (NDSB) IDSTRBC, VERBPTBC, NK, NTH, XFR, FR1, TH(1), NBI
+        IF ( NWTBI.EQ.9 ) THEN
+          IDTST = IDSTRBC_QA
+        ELSE
+          IDTST = IDSTRBC
+        END IF
+        WRITE (NDSB) IDTST, VERBPTBC, NK, NTH, XFR, FR1, TH(1), NBI
         !
 #ifdef W3_T
-        WRITE (NDST,9002) 1, NDSB, IDSTRBC, VERBPTBC, NBI
+        WRITE (NDST,9002) 1, NDSB, IDTST, VERBPTBC, NBI
 #endif
         !
         WRITE (NDSB) (XBPI(I),I=1,NBI), (YBPI(I),I=1,NBI),      &
-             ((IPBPI(I,J),I=1,NBI),J=1,4),              &
-             ((RDBPI(I,J),I=1,NBI),J=1,4)
+             ((IPBPI(I,J),I=1,NBI),J=1,NWTBI),                  &
+             ((RDBPI(I,J),I=1,NBI),J=1,NWTBI)
         !
 #ifdef W3_T0
         WRITE (NDST,9003)
         DO I=1, NBI
-          WRITE (NDST,9004) I, XBPI(I), YBPI(I),                &
-               (IPBPI(I,J),J=1,4), (RDBPI(I,J),J=1,4)
+          IF ( NWTBI.EQ.9 ) THEN
+            WRITE (NDST,9006) I, XBPI(I), YBPI(I),              &
+               (IPBPI(I,J),J=1,NWTBI), (RDBPI(I,J),J=1,NWTBI)
+          ELSE
+            WRITE (NDST,9004) I, XBPI(I), YBPI(I),              &
+               (IPBPI(I,J),J=1,NWTBI), (RDBPI(I,J),J=1,NWTBI)
+          END IF
         END DO
 #endif
         !
@@ -442,9 +471,13 @@ CONTAINS
       WRITE (NDST,9002) 1, NDSB, IDTST, VERTST, NBI
 #endif
       !
-      IF ( IDTST .NE. IDSTRBC ) THEN
+      IF ( IDTST .EQ. IDSTRBC_QA ) THEN
+        NWTBI = 9
+      ELSE IF ( IDTST .NE. IDSTRBC ) THEN
+        NWTBI = 4
+      ELSE
         IF ( IAPROC .EQ. NAPERR )                               &
-             WRITE (NDSE,901) IDTST, IDSTRBC
+             WRITE (NDSE,901) IDTST, IDSTRBC, IDSTRBC_QA
         CALL EXTCDE ( 10 )
       END IF
       IF ( VERTST .NE. VERBPTBC ) THEN
@@ -464,8 +497,8 @@ CONTAINS
       !
       READ (NDSB,IOSTAT=IERR)                                 &
            (XBPI(I),I=1,NBI), (YBPI(I),I=1,NBI),              &
-           ((IPBPI(I,J),I=1,NBI),J=1,4),                      &
-           ((RDBPI(I,J),I=1,NBI),J=1,4)
+           ((IPBPI(I,J),I=1,NBI),J=1,NWTBI),                  &
+           ((RDBPI(I,J),I=1,NBI),J=1,NWTBI)
       IF (IERR.GT.0) CALL EXTIOF(NDSE,IERR,'W3IOBC','',41)
       !
 #ifdef W3_RTD
@@ -518,10 +551,23 @@ CONTAINS
 #endif
       ELSE
         DO I=1, NBI
-          ! W3GFTP: find the nearest grid point to the input boundary point
-          ! DCIN=0.1 is the distance outside of source grid in units of
-          ! cell width to treat target point as inside the source grid.
-          IF ( W3GFPT( GSU, XBPI(I), YBPI(I), IX, IY, DCIN=0.1 ) ) THEN
+          IF ( GTYPE.EQ.QAGTYPE ) THEN
+            !
+            ! Locate quadtree cell containing the output point
+            !
+            CALL QA_XY2CELL(QTREE(IQGW), 1.+(XBPI(I)-X0)/SX,   &
+                                         1.+(YBPI(I)-Y0)/SY,   &
+               IX, XCELL, YCELL, LVCELL, IQCELL, ISCELL, ISTAT )
+            IY = 1
+            INGRID = ALL(ISTAT.EQ.0)
+          ELSE
+            ! W3GFTP: find the nearest grid point to the input 
+            ! boundary point
+            ! DCIN=0.1 is the distance outside of source grid in units of
+            ! cell width to treat target point as inside the source grid.
+            INGRID = W3GFPT( GSU, XBPI(I), YBPI(I), IX, IY, DCIN=0.1 )
+          END IF
+          IF ( INGRID ) THEN
             IF ( ABS(MAPSTA(IY,IX)) .NE. 2 ) THEN
               IF ( IAPROC .EQ. NAPERR )                         &
                    WRITE (NDSE,909) IX, IY, ABS(MAPSTA(IY,IX))
@@ -539,8 +585,13 @@ CONTAINS
 #ifdef W3_T0
       WRITE (NDST,9003)
       DO I=1, NBI
-        WRITE (NDST,9005) I, ISBPI(I), XBPI(I), YBPI(I),      &
-             (IPBPI(I,J),J=1,4), (RDBPI(I,J),J=1,4)
+        IF ( NWTBI.EQ.9 ) THEN
+          WRITE (NDST,9007) I, ISBPI(I), XBPI(I), YBPI(I),    &
+             (IPBPI(I,J),J=1,NWTBI), (RDBPI(I,J),J=1,NWTBI)
+        ELSE
+          WRITE (NDST,9005) I, ISBPI(I), XBPI(I), YBPI(I),    &
+             (IPBPI(I,J),J=1,NWTBI), (RDBPI(I,J),J=1,NWTBI)
+        END IF
       END DO
 #endif
       !
@@ -562,6 +613,7 @@ CONTAINS
       !     Read first time and allocate ABPI0/N
       !
       READ (NDSB,IOSTAT=IERR) TIME2, NBI2
+      CALL W3DMO5 ( IGRD, NDSE, NDST, 3 )
       IF (IERR.NE.0) THEN
         IF ( FILER ) THEN
           IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,1010)
@@ -587,7 +639,7 @@ CONTAINS
 #ifdef W3_T
       WRITE (NDST,9012) NDSB, TIME2, NBI2
 #endif
-      CALL W3DMO5 ( IGRD, NDSE, NDST, 3 )
+!      CALL W3DMO5 ( IGRD, NDSE, NDST, 3 )
       !
     END IF
     !
@@ -785,8 +837,9 @@ CONTAINS
 900 FORMAT (/' *** WAVEWATCH III ERROR IN W3IOBC :'/                &
          '     ILLEGAL INXOUT VALUE: ',A/)
 901 FORMAT (/' *** WAVEWATCH III ERROR IN W3IOBC :'/                &
-         '     ILLEGAL IDSTRBC, READ : ',A/                     &
-         '                  CHECK : ',A/)
+         '     ILLEGAL IDSTRBC, READ : ',A/                         &
+         '                  CHECK : ',A/                            &
+         '                     OR : ',A/)
 902 FORMAT (/' *** WAVEWATCH III ERROR IN W3IOBC :'/                &
          '     ILLEGAL VEROGR, READ : ',A/                      &
          '                   CHECK : ',A/)
@@ -823,6 +876,8 @@ CONTAINS
 9003 FORMAT (' TEST W3IOBC : POINT DATA ')
 9004 FORMAT ('             ',I3,2E10.3,2X,4I4,2X,4F5.2)
 9005 FORMAT ('             ',I3,I4,2E10.3,2X,4I4,2X,4F5.2)
+9006 FORMAT ('             ',I3,2E10.3,2X,9I4,2X,9F5.2)
+9007 FORMAT ('             ',I3,I4,2E10.3,2X,9I4,2X,9F5.2)
 #endif
     !
 #ifdef W3_T

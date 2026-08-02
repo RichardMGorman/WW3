@@ -2080,7 +2080,7 @@ CONTAINS
           J = IU(M)
           DO WHILE (J-I .GE. 1)
             K = I
-            INT((J-I)*R)
+            IJ = INT((J-I)*R)
             T = X(IJ)
             !
             !     If first element of array is greater than T, interchange with T

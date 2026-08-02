@@ -1418,6 +1418,7 @@ CONTAINS
     !/                  (Jian-Guo Li)                       ( version 4.06 )
     !/    06-Jun-2018 : Add DEBUGIOBC/SETUP/DEBUGW3ULEV     ( version 6.04 )
     !/    13-Jun-2019 : Rotation only if POLAT<90 (C.Hansen)( version 7.11 )
+    !/    27-Jul-2026 : Generalise number of interp. wts    ( version X.XX )
     !/
     !  1. Purpose :
     !
@@ -1479,7 +1480,7 @@ CONTAINS
 #endif
     USE W3ADATMD, ONLY: CG
     USE W3ODATMD, ONLY: NBI, ABPI0, ABPIN, ISBPI, IPBPI, RDBPI,     &
-         BBPI0, BBPIN
+         BBPI0, BBPIN, NWTBI
     !/
     IMPLICIT NONE
     !/
@@ -1488,7 +1489,7 @@ CONTAINS
     !/
     !/ ------------------------------------------------------------------- /
     !/
-    INTEGER                 :: IBI, ISP, ISEA
+    INTEGER                 :: IBI, ISP, ISEA, J
 #ifdef W3_S
     INTEGER, SAVE           :: IENT = 0
 #endif
@@ -1521,17 +1522,15 @@ CONTAINS
       DO IBI=1, NBI
         ISEA   = ISBPI(IBI)
         DO ISP=1, NSPEC
+          BBPI0(ISP,IBI) = 0.
+          DO J=1,NWTBI
+            IF ( IPBPI(IBI,J).GT.0 )     &
+            BBPI0(ISP,IBI) = BBPI0(ISP,IBI) + RDBPI(IBI,J) * ABPI0(ISP,IPBPI(IBI,J)) 
+          END DO
 #ifdef W3_PDLIB
-          BBPI0(ISP,IBI) = ( RDBPI(IBI,1) * ABPI0(ISP,IPBPI(IBI,1))   &
-               + RDBPI(IBI,2) * ABPI0(ISP,IPBPI(IBI,2))   &
-               + RDBPI(IBI,3) * ABPI0(ISP,IPBPI(IBI,3))   &
-               + RDBPI(IBI,4) * ABPI0(ISP,IPBPI(IBI,4)) ) / SIG2(ISP)
+          BBPI0(ISP,IBI) = BBPI0(ISP,IBI)  / SIG2(ISP)  
 #else
-          BBPI0(ISP,IBI) = CG(MAPWN(ISP),ISEA) / SIG2(ISP) *      &
-               ( RDBPI(IBI,1) * ABPI0(ISP,IPBPI(IBI,1))   &
-               + RDBPI(IBI,2) * ABPI0(ISP,IPBPI(IBI,2))   &
-               + RDBPI(IBI,3) * ABPI0(ISP,IPBPI(IBI,3))   &
-               + RDBPI(IBI,4) * ABPI0(ISP,IPBPI(IBI,4)) )
+          BBPI0(ISP,IBI) = BBPI0(ISP,IBI) * CG(MAPWN(ISP),ISEA) / SIG2(ISP)  
 #endif
         END DO
       END DO
@@ -1547,17 +1546,15 @@ CONTAINS
     DO IBI=1, NBI
       ISEA   = ISBPI(IBI)
       DO ISP=1, NSPEC
+        BBPIN(ISP,IBI) = 0.
+        DO J=1,NWTBI
+          IF ( IPBPI(IBI,J).GT.0 )     &
+          BBPIN(ISP,IBI) = BBPIN(ISP,IBI) + RDBPI(IBI,J) * ABPIN(ISP,IPBPI(IBI,J)) 
+        END DO
 #ifdef W3_PDLIB
-        BBPIN(ISP,IBI) = ( RDBPI(IBI,1) * ABPIN(ISP,IPBPI(IBI,1))       &
-             + RDBPI(IBI,2) * ABPIN(ISP,IPBPI(IBI,2))       &
-             + RDBPI(IBI,3) * ABPIN(ISP,IPBPI(IBI,3))       &
-             + RDBPI(IBI,4) * ABPIN(ISP,IPBPI(IBI,4)) ) / SIG2(ISP)
+        BBPIN(ISP,IBI) = BBPIN(ISP,IBI)  / SIG2(ISP)  
 #else
-       BBPIN(ISP,IBI) = CG(MAPWN(ISP),ISEA) / SIG2(ISP) *          &
-             ( RDBPI(IBI,1) * ABPIN(ISP,IPBPI(IBI,1))       &
-             + RDBPI(IBI,2) * ABPIN(ISP,IPBPI(IBI,2))       &
-             + RDBPI(IBI,3) * ABPIN(ISP,IPBPI(IBI,3))       &
-             + RDBPI(IBI,4) * ABPIN(ISP,IPBPI(IBI,4)) )
+        BBPIN(ISP,IBI) = BBPIN(ISP,IBI) * CG(MAPWN(ISP),ISEA) / SIG2(ISP)  
 #endif
       END DO
       !

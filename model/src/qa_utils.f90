@@ -44,7 +44,7 @@
 !                                  indices
 !     QA_INCR       Subr. Public   Increment a multiple-digit counter 
 !                                  in arbitrary base
-!     QA_INTERP     Subr. Public   Interpolate to a target location 
+!          Subr. Public   Interpolate to a target location 
 !                                  using weighted values from 
 !                                  neighbouring cells.
 !     QA_IOQT       Subr. Public   Unformatted IO of a quadtree structure
@@ -3227,7 +3227,7 @@
 !     Parameter list
 !     ----------------------------------------------------------------
 !       ICELL    Int.   I   Target cell
-!       MSTEN    Int.   I   Max. number of stencil cells
+!       ITBL     Int.   I   Index into table of precomputed cases
 !       NSOL     Int.   I   Number of derivatives to be calculated (up to 9)
 !       ISOL     I.A.   I   Array of codes for derivatives to be calculated:
 !                            1 = d/dX, 2=d/dY, 3=d2/dX2, 4=d2/dY2, 5= d2/dXdY 
@@ -3260,7 +3260,7 @@
 !
 !      Name      Type  Module   Description
 !     ---------------------------------------------------------------- 
-!     QA_INTERP  Subr. qa_utils Interpolate to a target location 
+!       Subr. qa_utils Interpolate to a target location 
 !                               using weighted values from 
 !                               neighbouring cells.
 !     ----------------------------------------------------------------
@@ -5529,6 +5529,183 @@
 !/ End of QA_INTERP ----------------------------------------------------- /
 !/
       END SUBROUTINE QA_INTERP
+!
+!/ ------------------------------------------------------------------- /
+!
+      SUBROUTINE QA_INTERP1WT( QTREE, XTARG, YTARG, WT1_TABLE, IND,   &
+                               WT, IERR, NDSE )
+!/
+!       Richard Gorman
+!         25-Jul-2016:      Origination.
+!/
+!  1. Purpose :
+!
+!     Interpolation weights to a target location using weighted values from 
+!     neighbouring cells. 
+!
+!  2. Method :
+!
+!
+!  3. Parameters :
+!
+!     Parameter list
+!     ----------------------------------------------------------------
+!
+!       QTREE   QA_TREE I  Quadtree structure, of which the following 
+!                          components are affected:
+!          LVLREF  Int.  Refinement level of reference grid
+!          NCASE   I.A.  Index identifying the relative configuration of 
+!                        neighbouring cells (out of 2401 possibilities)
+!          INDWT   I.A.  Index, for each cell, into the lookup table of
+!                        (second order) weights
+!          NGBR    I.A.  Neighbours of each cell
+!       XTARG    Real   I   Target X coordinate
+!       YTARG    Real   I   Target Y coordinate
+!       WT1_TABLE   R.A    I*  Array of weights 
+!                            WT1_TABLE(ITBL,NB,ISOL(K)) = weight to compute 
+!                            DERIV(ISOL(K)) at cell ISEA from values at cell 
+!                            ISTEN(NB), or ISEA if NB=0.
+!       IND      I.A.   O   Indices of cells used for interpolation
+!       WT       R.A.   O   Weights used for interpolation
+!       IERR     Int.   O*  Return flag = 1 for error, else 0
+!       NDSE     Int.   I*  Unit number for error output (if >0)
+!
+!     ----------------------------------------------------------------
+!
+!     Local variables.
+!     ----------------------------------------------------------------
+!     ----------------------------------------------------------------
+!
+!  4. Subroutines used :
+!
+!      Name      Type  Module   Description
+!     ---------------------------------------------------------------
+!     QA_XY2CELL Subr. qa_utils Identify the quadtree cell containing a
+!                               given point
+!     ----------------------------------------------------------------
+!
+!  5. Called by :
+!
+!
+!  6. Error messages :
+!
+!       None.
+!
+!  8. Structure :
+!
+!     -----------------------------------------------------------------
+!
+!  9. Switches :
+!
+! 10. Source code :
+!
+!/ ------------------------------------------------------------------- /
+!/
+      IMPLICIT NONE
+!/
+!/ ------------------------------------------------------------------- /
+!/ Parameter list
+!/
+      TYPE(QA_TREE), INTENT(IN)        :: QTREE
+      REAL, INTENT(IN)                 :: XTARG, YTARG
+      REAL, INTENT(IN)                 :: WT1_TABLE(1:,0:,1:)
+      INTEGER, INTENT(OUT)             :: IND(9)
+      REAL, INTENT(OUT)                :: WT(9)
+      INTEGER, OPTIONAL, INTENT(OUT)   :: IERR
+      INTEGER, OPTIONAL, INTENT(IN)    :: NDSE
+!/
+!/ ------------------------------------------------------------------- /
+!/ Local parameters
+!/
+      INTEGER                 :: MSTEN
+      INTEGER                 :: LVLREF
+      REAL                    :: DELXIN, DELYIN, DELX, DELY, FX, FY
+      REAL                    :: XCELL, YCELL
+      INTEGER, ALLOCATABLE    :: ISOL(:)
+      INTEGER                 :: ISEA, ITBL, LVCELL,                  &    
+                                 NSOL, MWT1, MWT2L, MWT2U, MWT3,      &
+                                 IQUAD, ISUB
+      INTEGER                 :: ISTAT(2)
+      INTEGER                 :: IUN, IERS
+!
+!   Error handling:
+      IUN = 6
+      IF ( PRESENT(NDSE) ) IUN = NDSE
+      IF ( PRESENT(IERR) ) IERR = 0
+      IND = 0
+      WT = 0.
+!
+      LVLREF = QTREE%LVLREF
+      
+      MWT1 = SIZE(WT1_TABLE,1)
+      MWT2L = LBOUND(WT1_TABLE,2)
+      MWT2U = UBOUND(WT1_TABLE,2)
+      MWT3 = SIZE(WT1_TABLE,3)
+      NSOL = 5
+      ! Check on size of weight array:
+      IF ( MWT1.LT.2401 .OR. MWT2L.GT.0 .OR. MWT2U.LT.8 ) THEN
+        IF (IUN.GT.0 ) THEN
+          WRITE(IUN,*) ' ERROR IN QA_INTERP1WT:'
+          WRITE(IUN,*) ' 1ST ORDER WT1_TABLE TABLE IS TOO SMALL'
+          WRITE(IUN,*) '   SIZE(WT1_TABLE,1) = ', MWT1
+          WRITE(IUN,*) ' LBOUND(WT1_TABLE,2) = ', MWT2L
+          WRITE(IUN,*) ' UBOUND(WT1_TABLE,2) = ', MWT2U
+          WRITE(IUN,*) '   SIZE(WT1_TABLE,3) = ', MWT3
+          WRITE(IUN,*) ' SHOULD BE (2401,0:8,5)'
+        END IF
+        IF ( PRESENT(IERR) ) IERR = 1
+        RETURN
+      END IF
+      ! can't solve for more derivatives than we have weights for:
+      NSOL = MIN(NSOL,MWT3)
+         
+!
+!  Find the cell (if any) containing (XTARG, YTARG):
+!
+      CALL QA_XY2CELL ( QTREE, XTARG, YTARG, ISEA, XCELL, YCELL,      &
+                        LVCELL, IQUAD, ISUB, ISTAT )
+      IF ( ISTAT(1).LT.0 ) THEN
+      !  (XTARG,YTARG) is in an internal part of the domain that is not
+      !  in a cell (e.g. dry)
+          IF ( PRESENT(IERR) ) IERR = 1
+          IF ( IUN.GT.0 )  THEN
+            WRITE(IUN,*) 'ERROR IN QA_INTERP1WT: IWTORDER < 1'
+            WRITE(IUN,*) 'XTARG, YTARG is not in a wet cell'
+          END IF
+          RETURN
+      END IF
+      ! 
+      ! Offsets from the cell centre:
+      DELX = XTARG - XCELL
+      DELY = YTARG - YCELL
+      !
+      !  
+      !  If the necessary weights and indices are provided to estimate derivatives, 
+      !  improve this  estimate with a Taylor series
+      !
+      DELXIN = 2.**(LVCELL-LVLREF)
+      DELYIN = DELXIN
+      !
+      FX=DELX*DELXIN
+      FY=DELY*DELYIN
+      !
+      ! First-order neighbours, linear interpolation:
+      IND(1) = ISEA
+      IND(2:9) = QTREE%NGBR(ISEA,1:8)
+      ITBL = QTREE%NCASE(ISEA)
+      !
+      WT = 0.
+      WT(1) = 1.
+      IF ( NSOL.GE.1 ) WT = WT + WT1_TABLE(ITBL,0:8,1)*FX
+      IF ( NSOL.GE.2 ) WT = WT + WT1_TABLE(ITBL,0:8,2)*FY
+      IF ( NSOL.GE.3 ) WT = WT + WT1_TABLE(ITBL,0:8,3)*FX*FX
+      IF ( NSOL.GE.4 ) WT = WT + WT1_TABLE(ITBL,0:8,4)*FY*FY
+      IF ( NSOL.GE.4 ) WT = WT + WT1_TABLE(ITBL,0:8,5)*FX*FY
+!/
+!/ End of QA_INTERP1WT -------------------------------------------------- /
+!/
+      END SUBROUTINE QA_INTERP1WT
+!
 !
 !/ ------------------------------------------------------------------- /
 !

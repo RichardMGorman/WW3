@@ -202,6 +202,7 @@ MODULE W3ODATMD
   !      IT0PNT    Int.  Public   Base tag number of MPI communication.
   !      IT0TRK    Int.  Public   Base tag number of MPI communication.
   !      IT0PRT    Int.  Public   Base tag number of MPI communication.
+  !      IT0BPT    Int.  Public   Base tag number of MPI communication.
   !      NRQTR     Int.  Public   Number of handles in IRQTR.
   !      IRQTR     I.A.  Public   Array with MPI handles.
   !      O3INIT    Log.  Public   Flag for array initialization.
@@ -231,9 +232,11 @@ MODULE W3ODATMD
   !     ----------------------------------------------------------------
   !      NBI(2)    Int.  Public   Number of input bound. points.
   !      NFBPO     Int.  Public   Number of files for output bound. data.
+  !      NWTBI     Int.  Public   Number of interpolation cells/weights per input bound. point.
   !      NRQBP(2)  Int.  Public   Number of MPI handles.
   !      NKI,NTHI  Int.  Public   Size of input spectra
   !      NBO(2)    I.A.  Public   Number of output bound. pts. per file.
+  !      NWTBO     Int.  Public   Number of interpolation cells/weights per output bound. point.
   !      NDSL      I.A.  Public   Array with unit numbers.
   !      IPBPI     I.A.  Public   Interpolation data input b.p.
   !      ISBPI     I.A.  Public   Sea point counters for input b.p.
@@ -390,7 +393,7 @@ MODULE W3ODATMD
   TYPE OTYPE3
     INTEGER               :: IPASS3
 #ifdef W3_MPI
-    INTEGER               :: IT0PNT, IT0TRK, IT0PRT, NRQTR
+    INTEGER               :: IT0PNT, IT0TRK, IT0PRT, IT0BPT, NRQTR
     type(MPI_Request), POINTER :: IRQTR(:)
 #endif
     LOGICAL               :: O3INIT, STOP
@@ -410,6 +413,7 @@ MODULE W3ODATMD
   TYPE OTYPE5
     INTEGER               :: NBI, NBI2, NFBPO, NBO(0:9),          &
          NBO2(0:9), NDSL(9), NKI, NTHI
+    INTEGER               :: NWTBI, NWTBO
 #ifdef W3_MPI
     INTEGER               :: NRQBP = 0, NRQBP2 = 0
 #endif
@@ -522,7 +526,7 @@ MODULE W3ODATMD
   !/
   INTEGER, POINTER        :: IPASS3
 #ifdef W3_MPI
-  INTEGER, POINTER        :: IT0PNT, IT0TRK, IT0PRT, NRQTR
+  INTEGER, POINTER        :: IT0PNT, IT0TRK, IT0PRT, IT0BPT, NRQTR
   type(MPI_Request), POINTER :: IRQTR(:)
 #endif
   LOGICAL, POINTER        :: O3INIT, STOP
@@ -541,6 +545,7 @@ MODULE W3ODATMD
   !/ Type 5 ...
   !/
   INTEGER, POINTER        :: NBI, NBI2, NFBPO, NKI, NTHI
+  INTEGER, POINTER        :: NWTBI, NWTBO
   INTEGER, POINTER        :: NBO(:), NBO2(:), NDSL(:)
 #ifdef W3_MPI
   INTEGER, POINTER        :: NRQBP, NRQBP2
@@ -962,7 +967,7 @@ CONTAINS
     !/
   END SUBROUTINE W3NOUT
   !/ ------------------------------------------------------------------- /
-  SUBROUTINE W3DMO2 ( IMOD, NDSE, NDST, NPT )
+  SUBROUTINE W3DMO2 ( IMOD, NDSE, NDST, NPT, NWTPO )
     !/
     !/                  +-----------------------------------+
     !/                  | WAVEWATCH III           NOAA/NCEP |
@@ -978,6 +983,7 @@ CONTAINS
     !/    30-Oct-2009 : Implement curvilinear grid type.    ( version 3.14 )
     !/                  (W. E. Rogers & T. J. Campbell, NRL)
     !/    10-Dec-2014 : Add checks for allocate status      ( version 5.04 )
+    !/    24-Jul-2026 : Add NWT parameter (R.Gorman)        ( version X.XX )
     !/
     !  1. Purpose :
     !
@@ -996,6 +1002,7 @@ CONTAINS
     !       NDSE    Int.   I   Error output unit number.
     !       NDST    Int.   I   Test output unit number.
     !       NPT     Int.   I   Array size.
+    !       NWTPO   Int.*  I   Number of weights (optional, default = 4)
     !     ----------------------------------------------------------------
     !
     !  4. Subroutines used :
@@ -1044,11 +1051,13 @@ CONTAINS
     !/ Parameter list
     !/
     INTEGER, INTENT(IN)           :: IMOD, NDSE, NDST, NPT
+    INTEGER, OPTIONAL, INTENT(IN) :: NWTPO
     !/
     !/ ------------------------------------------------------------------- /
     !/ Local parameters
     !/
     INTEGER                 :: JGRID, NLOW
+    INTEGER                 :: NWT
 #ifdef W3_S
     INTEGER, SAVE           :: IENT = 0
     CALL STRACE (IENT, 'W3DMO2')
@@ -1077,17 +1086,23 @@ CONTAINS
     WRITE (NDST,9000) IMOD
 #endif
     !
+    IF ( PRESENT(NWTPO) ) THEN
+      NWT = NWTPO
+    ELSE
+      NWT = 4
+    END IF
+    !
     JGRID  = IGRID
     IF ( JGRID .NE. IMOD ) CALL W3SETG ( IMOD, NDSE, NDST )
     !
     ! -------------------------------------------------------------------- /
     ! 2.  Allocate arrays
     !
-    ALLOCATE ( OUTPTS(IMOD)%OUT2%IPTINT(2,4,NPT) ,            &
+    ALLOCATE ( OUTPTS(IMOD)%OUT2%IPTINT(2,NWT,NPT) ,          &
          OUTPTS(IMOD)%OUT2%IL(NPT)         ,                  &
          OUTPTS(IMOD)%OUT2%IW(NPT)         ,                  &
          OUTPTS(IMOD)%OUT2%II(NPT)         ,                  &
-         OUTPTS(IMOD)%OUT2%PTIFAC(4,NPT)   ,                  &
+         OUTPTS(IMOD)%OUT2%PTIFAC(NWT,NPT) ,                  &
          OUTPTS(IMOD)%OUT2%PTNME(NPT)      ,                  &
          OUTPTS(IMOD)%OUT2%GRDID(NPT)      ,                  &
          OUTPTS(IMOD)%OUT2%DPO(NPT)        ,                  &
@@ -1348,6 +1363,7 @@ CONTAINS
     !/    13-Dec-2004 : Origination.                        ( version 3.06 )
     !/    06-Sep-2005 : Second storage for input bound. sp. ( version 3.08 )
     !/    10-Dec-2014 : Add checks for allocate status      ( version 5.04 )
+    !/    27-Jul-2026 : Add NWT parameter (R.Gorman)        ( version X.XX )
     !/
     !  1. Purpose :
     !
@@ -1446,11 +1462,11 @@ CONTAINS
       !
     CASE (1)
       !
-      ALLOCATE ( OUTPTS(IMOD)%OUT5%IPBPI(NBI,4),              &
+      ALLOCATE ( OUTPTS(IMOD)%OUT5%IPBPI(NBI,NWTBI),          &
            OUTPTS(IMOD)%OUT5%ISBPI(NBI)  ,                    &
            OUTPTS(IMOD)%OUT5%XBPI(NBI)   ,                    &
            OUTPTS(IMOD)%OUT5%YBPI(NBI)   ,                    &
-           OUTPTS(IMOD)%OUT5%RDBPI(NBI,4), STAT=ISTAT         )
+           OUTPTS(IMOD)%OUT5%RDBPI(NBI,NWTBI), STAT=ISTAT       )
       CHECK_ALLOC_STATUS ( ISTAT )
       !
       IPBPI  => OUTPTS(IMOD)%OUT5%IPBPI
@@ -1463,11 +1479,11 @@ CONTAINS
       !
     CASE (2)
       !
-      ALLOCATE ( OUTPTS(IMOD)%OUT5%IPBPO(NBO(NFBPO),4),       &
-           OUTPTS(IMOD)%OUT5%ISBPO(4*NBO(NFBPO)),             &
+      ALLOCATE ( OUTPTS(IMOD)%OUT5%IPBPO(NBO(NFBPO),NWTBO),   &
+           OUTPTS(IMOD)%OUT5%ISBPO(NWTBO*NBO(NFBPO)),         &
            OUTPTS(IMOD)%OUT5%XBPO(NBO(NFBPO))   ,             &
            OUTPTS(IMOD)%OUT5%YBPO(NBO(NFBPO))   ,             &
-           OUTPTS(IMOD)%OUT5%RDBPO(NBO(NFBPO),4), STAT=ISTAT  )
+           OUTPTS(IMOD)%OUT5%RDBPO(NBO(NFBPO),NWTBO), STAT=ISTAT  )
       CHECK_ALLOC_STATUS ( ISTAT )
       !
       IPBPO  => OUTPTS(IMOD)%OUT5%IPBPO
@@ -1481,8 +1497,8 @@ CONTAINS
       !
     CASE (3)
       !
-      ALLOCATE ( OUTPTS(IMOD)%OUT5%ABPI0(NSPEC,0:NBI2),       &
-           OUTPTS(IMOD)%OUT5%ABPIN(NSPEC,0:NBI2),             &
+      ALLOCATE ( OUTPTS(IMOD)%OUT5%ABPI0(NSPEC,0:NBI*NWTBI),  &
+           OUTPTS(IMOD)%OUT5%ABPIN(NSPEC,0:NBI*NWTBI),        &
            OUTPTS(IMOD)%OUT5%BBPI0(NSPEC,0:NBI),              &
            OUTPTS(IMOD)%OUT5%BBPIN(NSPEC,0:NBI), STAT=ISTAT   )
       CHECK_ALLOC_STATUS ( ISTAT )
@@ -1750,6 +1766,7 @@ CONTAINS
     IT0PNT => OUTPTS(IMOD)%OUT3%IT0PNT
     IT0TRK => OUTPTS(IMOD)%OUT3%IT0TRK
     IT0PRT => OUTPTS(IMOD)%OUT3%IT0PRT
+    IT0BPT => OUTPTS(IMOD)%OUT3%IT0BPT
     NRQTR  => OUTPTS(IMOD)%OUT3%NRQTR
     IF ( NRQTR .NE. 0 ) IRQTR  => OUTPTS(IMOD)%OUT3%IRQTR
 #endif
@@ -1777,12 +1794,14 @@ CONTAINS
     NBI    => OUTPTS(IMOD)%OUT5%NBI
     NBI2   => OUTPTS(IMOD)%OUT5%NBI2
     NFBPO  => OUTPTS(IMOD)%OUT5%NFBPO
+    NWTBI  => OUTPTS(IMOD)%OUT5%NWTBI
 #ifdef W3_MPI
     NRQBP  => OUTPTS(IMOD)%OUT5%NRQBP
     NRQBP2 => OUTPTS(IMOD)%OUT5%NRQBP2
 #endif
     NBO    => OUTPTS(IMOD)%OUT5%NBO
     NBO2   => OUTPTS(IMOD)%OUT5%NBO2
+    NWTBO  => OUTPTS(IMOD)%OUT5%NWTBO
     NDSL   => OUTPTS(IMOD)%OUT5%NDSL
     NKI    => OUTPTS(IMOD)%OUT5%NKI
     NTHI   => OUTPTS(IMOD)%OUT5%NTHI

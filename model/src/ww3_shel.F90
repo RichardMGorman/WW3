@@ -283,6 +283,7 @@ PROGRAM W3SHEL
   USE W3IORSMD, ONLY: OARST
   USE W3SERVMD, ONLY : NEXTLN, EXTCDE, EXTOPN, EXTIOF
   USE W3TIMEMD
+  USE W3ADGRMD, ONLY: W3FLQO
 
 #ifdef W3_OASIS
   USE W3OACPMD, ONLY: CPL_OASIS_INIT, CPL_OASIS_GRID,            &
@@ -329,6 +330,7 @@ PROGRAM W3SHEL
   TYPE(NML_OUTPUT_PATH_T)  :: NML_OUTPUT_PATH
   TYPE(NML_HOMOG_COUNT_T)  :: NML_HOMOG_COUNT
   TYPE(NML_HOMOG_INPUT_T), ALLOCATABLE  :: NML_HOMOG_INPUT(:)
+  TYPE(NML_QUAD_T)         :: NML_QUAD
   !
   INTEGER             :: NDSI, NDSI2, NDSS, NDSO, NDSE, NDST, NDSL,&
        NDSEN, IERR, J, I, ILOOP, IPTS, NPTS,     &
@@ -372,6 +374,7 @@ PROGRAM W3SHEL
   CHARACTER(LEN=1024) :: FLDRST=''
   CHARACTER(LEN=80)   :: LINEIN
   CHARACTER(LEN=8)    :: WORDS(7)=''
+  CHARACTER(LEN=40)   :: DVTSTR
 
 #ifdef W3_COU
   CHARACTER(LEN=30)   :: OFILE
@@ -697,6 +700,19 @@ PROGRAM W3SHEL
   IQGAN = IQGW
   IQGI0 = IQGW
   IQGIN = IQGW
+  !
+  FLQA = GTYPE.EQ.QAGTYPE
+  IF ( FLQA ) THEN
+    !
+    ! Quadtree simulations:
+    ! default size of all quadtree grids:
+    NCMXQ = NSEA
+    NQMXQ = NQUAD
+    ! Save parameters of the bathymetry quadtree
+    IQGB = 2
+    ! Auxiliary quadtrees (wave and bathy at least):          
+    NAUX_QA = 2
+  END IF
 
 
   call print_memcheck(memunit, 'memcheck_____:'//' WW3_SHEL SECTION 2a')
@@ -714,7 +730,7 @@ PROGRAM W3SHEL
     CALL W3NMLSHEL (MPICOMM, NDSI, TRIM(FNMPRE)//'ww3_shel.nml',  &
          NML_DOMAIN, NML_INPUT, NML_OUTPUT_TYPE,                   &
          NML_OUTPUT_DATE, NML_OUTPUT_PATH, NML_HOMOG_COUNT,        &
-         NML_HOMOG_INPUT, IERR)
+         NML_HOMOG_INPUT, NML_QUAD, IERR)
 
     ! 2.1 forcing flags
 
@@ -1223,7 +1239,36 @@ PROGRAM W3SHEL
       END IF
       !
     END IF ! FLHOM
-
+    !
+    IF ( FLQA ) THEN
+      !
+      ! User quadtree options
+      NCTARGET_QA = NML_QUAD%NCTARGET_QA
+      DVTYPE_QA = NML_QUAD%DVTYPE_QA
+      DVTOLFAC_QA = NML_QUAD%DVTOLFAC_QA
+      DVMAX_QA = NML_QUAD%DVMAX_QA
+      SELECT CASE (DVTYPE_QA)
+        CASE (0)
+          DVTSTR = 'no adaptivity'
+        CASE (1)
+          DVTSTR = 'depth-dependent CFL factor'
+        CASE (2)
+          DVTSTR = '2nd derivative of wind speed'
+        CASE (3)
+          DVTSTR = '2nd derivative of wave spectrum'
+        CASE (12)
+          DVTSTR = 'CFL factor x 2nd deriv. wind speed'
+        CASE (13)
+          DVTSTR = 'CFL factor x wind speed'
+        CASE DEFAULT
+          DVTSTR = 'UNDEFINED: default to 2nd der. wind'
+          DVTYPE_QA = 2
+      END SELECT
+      IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,4900) NCTARGET_QA,  &
+                             DVTYPE_QA, DVTSTR,  DVTOLFAC_QA,   &
+                             DVMAX_QA/DVTOLFAC_QA, DVMAX_QA 
+    END IF
+    !
     ! USER DEFINED OUTPUT PATH FROM NAMELIST
     ! '/' IS NOT REQUIRED AT THE END OF USER-DEFINED DIRECTORY
     FNMGRD = TRIM(NML_OUTPUT_PATH%GRD_OUT)
@@ -1610,46 +1655,6 @@ PROGRAM W3SHEL
     ! force minimal allocation to avoid memory seg fault
     IF ( .NOT.ALLOCATED(X) .AND. NPTS.EQ.0 ) ALLOCATE ( X(1), Y(1), PNAMES(1) )
     !
-    FLQA = GTYPE.EQ.QAGTYPE
-    !
-    IF ( FLQA ) THEN
-      ! TO DO: Namelist version of this
-      ! Quadtree simulations:
-      ! default size of all quadtree grids:
-      NCMXQ = NSEA
-      NQMXQ = NQUAD
-      ! Save parameters of the bathymetry quadtree
-      IQGB = 2
-      ! Auxiliary quadtrees (wave and bathy at least):          
-      NAUX_QA = 2
-      !
-      ! Read user quadtree options
-      CALL NEXTLN ( COMSTR , NDSI , NDSEN )
-      READ (NDSI,*,IOSTAT=IERR) NCTARGET_QA, DVTYPE_QA,   &
-                                DVTOLFAC_QA, DVMAX_QA
-      IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3SHEL','INPUT',1001)
-      SELECT CASE (DVTYPE_QA)
-        CASE (0)
-          DVTSTR = 'no adaptivity'
-        CASE (1)
-          DVTSTR = 'depth-dependent CFL factor'
-        CASE (2)
-          DVTSTR = '2nd derivative of wind speed'
-        CASE (3)
-          DVTSTR = '2nd derivative of wave spectrum'
-        CASE (12)
-          DVTSTR = 'CFL factor x 2nd deriv. wind speed'
-        CASE (13)
-          DVTSTR = 'CFL factor x wind speed'
-        CASE DEFAULT
-          DVTSTR = 'UNDEFINED: default to 2nd der. wind'
-          DVTYPE_QA = 2
-      END SELECT
-      IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,4900) NCTARGET_QA,  &
-                             DVTYPE_QA, DVTSTR,  DVTOLFAC_QA,   &
-                             DVMAX_QA/DVTOLFAC_QA, DVMAX_QA 
-    END IF
-
     ! 2.6 Homogeneous field data
 
     IF ( FLHOM ) THEN
@@ -1767,6 +1772,38 @@ PROGRAM W3SHEL
       END IF
       !
     END IF ! FLHOM
+    !
+    IF ( FLQA ) THEN
+      !
+      ! Quadtree simulations:
+      !
+      ! Read user quadtree options
+      CALL NEXTLN ( COMSTR , NDSI , NDSEN )
+      READ (NDSI,*,IOSTAT=IERR) NCTARGET_QA, DVTYPE_QA,   &
+                                DVTOLFAC_QA, DVMAX_QA
+      IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3SHEL','INPUT',1001)
+      SELECT CASE (DVTYPE_QA)
+        CASE (0)
+          DVTSTR = 'no adaptivity'
+        CASE (1)
+          DVTSTR = 'depth-dependent CFL factor'
+        CASE (2)
+          DVTSTR = '2nd derivative of wind speed'
+        CASE (3)
+          DVTSTR = '2nd derivative of wave spectrum'
+        CASE (12)
+          DVTSTR = 'CFL factor x 2nd deriv. wind speed'
+        CASE (13)
+          DVTSTR = 'CFL factor x wind speed'
+        CASE DEFAULT
+          DVTSTR = 'UNDEFINED: default to 2nd der. wind'
+          DVTYPE_QA = 2
+      END SELECT
+      IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,4900) NCTARGET_QA,  &
+                             DVTYPE_QA, DVTSTR,  DVTOLFAC_QA,   &
+                             DVMAX_QA/DVTOLFAC_QA, DVMAX_QA 
+    END IF
+
 
   END IF
   !
@@ -2059,12 +2096,6 @@ PROGRAM W3SHEL
          WRITE( NDSO,957) NX, NY, NSEA, NQUAD
   !
   ALLOCATE ( XXX(NX,NY) )
-  IF ( FLQA ) THEN
-    ALLOCATE ( XXL(NCMXQ(IQGLN),NY), XXC(NCMXQ(IQGCN),NY),      &
-               XXI(NCMXQ(IQGIN),NY)  )
-  ELSE
-    ALLOCATE ( XXL(NX,NY), XXC(NX,NY), XXI(NX,NY) )
-  END IF
   !
 #ifdef W3_MPI
   CALL MPI_BARRIER ( MPICOMM, IERR_MPI )
@@ -2247,8 +2278,7 @@ PROGRAM W3SHEL
                    , MPICOMM                       &
 #endif
                    , flqa=FLQA, new_qt=NEW_QT,                &
-                   qtree=QTREE(IQGI0:IQGIN) 
-                   )
+                   qtree=QTREE(IQGI0:IQGIN) )
             END IF
             IF ( IERR .LT. 0 ) FLLST_ALL(J) = .TRUE.
 
@@ -2324,8 +2354,7 @@ PROGRAM W3SHEL
                    , MPICOMM                                  &
 #endif
                    , flqa=FLQA, new_qt=NEW_QT,                &
-                   qtree=QTREE(IQGI0:IQGIN) 
-                   )
+                   qtree=QTREE(IQGI0:IQGIN) )
             END IF
             IF ( IERR .LT. 0 )FLLST_ALL(J) = .TRUE.
 
@@ -2401,8 +2430,7 @@ PROGRAM W3SHEL
                      , MPICOMM                       &
 #endif
                      , flqa=FLQA, new_qt=NEW_QT,    &
-                       qtree=QTREE(IQGL0:IQGLN) 
-                     )
+                       qtree=QTREE(IQGL0:IQGLN) )
 #ifdef W3_TIDE
               END IF
 #endif
@@ -2450,8 +2478,7 @@ PROGRAM W3SHEL
                      , MPICOMM                                  &
 #endif
                      , flqa=FLQA, new_qt=NEW_QT,                &
-                       qtree=QTREE(IQGC0:IQGCN) 
-                     )
+                       qtree=QTREE(IQGC0:IQGCN) )
 #ifdef W3_TIDE
               END IF
 #endif
@@ -2487,8 +2514,7 @@ PROGRAM W3SHEL
                    , MPICOMM                                  &
 #endif
                    , flqa=FLQA, new_qt=NEW_QT,                &
-                   qtree=QTREE(IQGA0:IQGAN) 
-                   )
+                   qtree=QTREE(IQGA0:IQGAN) )
             END IF
 
             ! ICE : ice conc.
@@ -2512,8 +2538,7 @@ PROGRAM W3SHEL
                    , MPICOMM                                     &
 #endif
                    , flqa=FLQA, new_qt=NEW_QT,                &
-                   qtree=QTREE(IQGI0:IQGIN) 
-                   )
+                   qtree=QTREE(IQGI0:IQGIN) )
               IF ( IERR .LT. 0 ) FLLSTI = .TRUE.
               !could be:      IF ( IERR .LT. 0 ) FLLST_ALL(J) = .TRUE.
             END IF
@@ -2548,8 +2573,7 @@ PROGRAM W3SHEL
                    , MPICOMM                                  &
 #endif
                    , flqa=FLQA, new_qt=NEW_QT,                &
-                   qtree=QTREE(IQGA0:IQGAN) 
-                   )
+                   qtree=QTREE(IQGA0:IQGAN) )
             END IF
 
             ! RHO : air density
@@ -2581,8 +2605,7 @@ PROGRAM W3SHEL
                    , MPICOMM                                  &
 #endif
                    , flqa=FLQA, new_qt=NEW_QT,                &
-                   qtree=QTREE(IQGA0:IQGAN) 
-                   )
+                   qtree=QTREE(IQGA0:IQGAN) )
               IF ( IERR .LT. 0 ) FLLSTR = .TRUE.
             END IF
 
