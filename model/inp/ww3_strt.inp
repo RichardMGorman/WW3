@@ -1,6 +1,17 @@
 $ -------------------------------------------------------------------- $
 $ WAVEWATCH III Initial conditions input file                          $
 $--------------------------------------------------------------------- $
+$
+$ For a quadtree simulation, the first step is to derive an initial wave
+$ quadtree structure from the input (multi-level) quadtree structure on 
+$ which bathymetry (and, optionally, obstructions) are defined. This 
+$ reduces the number of cells, firstly, by only retaining the highest 
+$ local refinement level (removing pre-computed coarser levels), and 
+$ then, optionally, to a user-specified target number of cells by  
+$ coarsening the mesh according to a depth-dependent CFL criterion.
+$ Specify the target number of cells [NCTARGET_QA = 0 to ignore]
+$    0
+$ -------------------------------------------------------------------- $    
 $ type of initial field ITYPE .
 $
     1

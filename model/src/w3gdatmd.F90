@@ -254,7 +254,7 @@ MODULE W3GDATMD
   !      IQGI(0,N) Int.  Public   Indices for last & next ice quadtree grids
   !      WTS1_QA QA_WEIGHTS1 Pub. Precomputed 1st-order neighbour weights
   !      NAUX_QA   Int.  Public   Number of auxiliary quadtree grids 
-  !      NCTARGET_QA Int. Public  Targwet number of cells when adapting grid
+  !      NCTARGET_QA Int. Public  Target number of cells when adapting grid
   !      DVTYPE_QA Int.  Public   Type of diagnostic variable used for adaptivity
   !      DVMAX_QA  Real  Public   Max. value of diagnostic variable before refining
   !      DVTOLFAC_QA Real Public  Ratio of max/min values of diagnostic variable

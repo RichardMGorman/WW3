@@ -704,7 +704,11 @@ PROGRAM W3SHEL
   FLQA = GTYPE.EQ.QAGTYPE
   IF ( FLQA ) THEN
     !
-    ! Quadtree simulations:
+    ! Quadtree simulations: Allow for separate quadtrees for 
+    ! waves, bathy, and other inputs (1 for levels, 2 for currents,
+    ! 2 for winds, 1 for ice):
+    !
+    ALLOCATE ( QTREE(8), NCMXQ(8), NQMXQ(8) )
     ! default size of all quadtree grids:
     NCMXQ = NSEA
     NQMXQ = NQUAD
@@ -712,6 +716,8 @@ PROGRAM W3SHEL
     IQGB = 2
     ! Auxiliary quadtrees (wave and bathy at least):          
     NAUX_QA = 2
+  ELSE
+    ALLOCATE ( QTREE(1), NCMXQ(1), NQMXQ(1) )
   END IF
 
 

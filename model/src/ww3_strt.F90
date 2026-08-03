@@ -313,8 +313,9 @@ PROGRAM W3STRT
   !
   FLOGRR(:,:) = .FALSE.
   !
-  ! Quadtree grids
+  ! Quadtree arrays: allocate even if unused by other grid types
   !
+  ALLOCATE ( QTREE(2), NCMXQ(2), NQMXQ(2) )
   IQGW = 1
   IQGB = 2
   !
@@ -375,20 +376,25 @@ PROGRAM W3STRT
   !
   ! Read user quadtree options
     CALL NEXTLN ( COMSTR , NDSI , NDSEN )
-    READ (NDSI,*,IOSTAT=IERR) NSTGT
+    READ (NDSI,*,IOSTAT=IERR) NCTARGET_QA
     IF (IERR.NE.0) CALL EXTIOF(NDSE,IERR,'W3STRT','INPUT',12)
+    IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,910)            &
+                              NCMXQ(IQGB), NQMXQ(IQGB),   &
+                              NCTARGET_QA
   !
   ! Create a wave quadtree from the bathy quadtree, reduced down 
   ! to the required limits
-    CALL W3STQT ( NSTGT, NDSEN, IERR, NDST )
+    CALL W3STQT ( NCTARGET_QA, NDSEN, IERR, NDST )
     IF ( IERR.NE.0 ) THEN
       IF ( IAPROC .EQ. NAPERR ) WRITE (NDSE,1004) IERR
       CALL EXTCDE ( 14 )
     END IF
   !
-    IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,920) NSTGT,           &
-         NCTARGET_QA, DVTOLFAC_QA, DVMAX_QA/DVTOLFAC_QA,       &
-         DVMAX_QA, NSEA, NQUAD
+    IF ( IAPROC .EQ. NAPOUT ) WRITE (NDSO,920) NSEA, NQUAD
+  !
+  ! Save parameters of the wave quadtree
+    NCMXQ(IQGW) = NSEA
+    NQMXQ(IQGW) = NQUAD
   !
   END IF
   !
@@ -984,12 +990,12 @@ PROGRAM W3STRT
        '  WW3 will create a gaussian distribution    '/       &
        '  that is circular in real space. ')
   !
-920 FORMAT (/'  Initial wave quadtree parameters:'/                 &
+910 FORMAT (/'  Input bathymetry quadtree parameters:'/             &
+             '       Bathy No. of cells                :',I8/       &
+             '       Bathy No. of quads                :',I8/       &
              '       Target No. of cells (user)        :',I8/       &
-             '       Target No. of cells (final)       :',I8/       &
-             '       Max./Min. diagnostic var. ratio   :',E12.4/    &
-             '       Min. value of diagnostic variable :',E12.4/    &
-             '       Max. value of diagnostic variable :',E12.4/    &
+             ' --------------------------------------------------')
+920 FORMAT (/'  Initial wave quadtree parameters:'/                 &
              '       Final No. of cells                :',I8/       &
              '       Final No. of quads                :',I8/       &
              ' --------------------------------------------------')
