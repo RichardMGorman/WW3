@@ -386,7 +386,7 @@ $         13  CFL factor x wind speed
 $  3. Max./Min. diagnostic var. ratio [DVTOLFAC_QA]
 $  4. Max. value of diagnostic variable [DVMAX_QA]
 $ 
-$ 10000  2  2.0  900.
+$ 0  2  2.0  900.
 $ -------------------------------------------------------------------- $
 $ End of input file                                                    $
 $ -------------------------------------------------------------------- $

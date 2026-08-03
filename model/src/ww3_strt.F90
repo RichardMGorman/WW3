@@ -1063,10 +1063,10 @@ PROGRAM W3STRT
 1003 FORMAT (/' *** WAVEWATCH III ERROR IN W3STRT : '/               &
        '     NUMBER OF SEA POINTS LESS THAN NUMBER OF PROC.'/ &
        '     NSEA, NAPROC =',2I8/)
+#endif
 1004 FORMAT (/' *** WAVEWATCH III ERROR IN W3STRT : '/               &
               '     ERROR IN W3STQT'/                                &
               '     IOSTAT =',I5/)
-#endif
   !/
   !/ End of W3STRT ----------------------------------------------------- /
   !/
