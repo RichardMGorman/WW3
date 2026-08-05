@@ -210,7 +210,7 @@ PROGRAM W3OUNF
        FL_DEFAULT_GBL_META, COORDS_ATTR
   !
   USE NETCDF
-  USE
+  USE QA_UTILS
 
 #ifdef W3_SMC
   USE W3SMCOMD, SMCNOVAL=>NOVAL
@@ -2565,14 +2565,14 @@ CONTAINS
 
               ! If quadtree mesh
               IF (GTYPE.EQ.QAGTYPE) THEN 
-                iret=nf90_put_var(ncid,varid(1),lon(IX1:IXN))
-                call check_err(iret)
-                iret=nf90_put_var(ncid,varid(2),lat(IX1:IXN))
-                call check_err(iret)
-                iret=nf90_put_var(ncid,varid(4+extradim),LON_BND(IX1:IXN,:))
-                call check_err(iret)
-                iret=nf90_put_var(ncid,varid(5+extradim),LAT_BND(IX1:IXN,:))
-                call check_err(iret)
+                IRET=NF90_PUT_VAR(NCID,VARID(1),LON(IX1:IXN))
+                CALL CHECK_ERR(IRET)
+                IRET=NF90_PUT_VAR(NCID,VARID(2),LAT(IX1:IXN))
+                CALL CHECK_ERR(IRET)
+                IRET=NF90_PUT_VAR(NCID,VARID(4+EXTRADIM),LON_BND(IX1:IXN,:))
+                CALL CHECK_ERR(IRET)
+                IRET=NF90_PUT_VAR(NCID,VARID(5+EXTRADIM),LAT_BND(IX1:IXN,:))
+                CALL CHECK_ERR(IRET)
               END IF
 
               ! Writes frequencies to netcdf file
