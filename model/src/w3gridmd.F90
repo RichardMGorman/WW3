@@ -5863,6 +5863,7 @@ CONTAINS
     ELSE
       NWTBO = 4
     END IF
+    ALLOCATE ( IXR(NWTBO), IYR(NWTBO), ISEAI(NWTBO), RD(NWTBO) )
     WRITE (NDSO,990)
     IF ( .NOT. FLGNML ) &
          OPEN (NDSS,FILE=TRIM(FNMPRE)//'ww3_grid.scratch',FORM='FORMATTED')
@@ -5870,7 +5871,6 @@ CONTAINS
     DO ILOOP = 1, 2
       !
       IF ( ILOOP.EQ.2 ) CALL W3DMO5 ( 1, NDST, NDSE, 2 )
-      ALLOCATE ( IXR(NWTBO), IYR(NWTBO), ISEAI(NWTBO), RD(NWTBO) )
       !
       I = 1
       NBOTOT = 0
