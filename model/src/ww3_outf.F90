@@ -560,6 +560,7 @@ CONTAINS
     !/    26-Jan-2021 : Added TP field (derived from FP0)   ( version 7.12 )
     !/    22-Mar-2021 : New coupling fields output          ( version 7.13 )
     !/    04-Jul-2025 : Remove labelled statements          ( version X.XX )
+    !/    10-Aug-2026 : Handle quadtrees                    ( version X.XX )
     !/
     !  1. Purpose :
     !
@@ -2430,7 +2431,7 @@ CONTAINS
             !
             FNAME(13:) = ENAME
             IF ( IDFM .EQ. 3 ) THEN
-              IF(GTYPE .NE. UNGTYPE) THEN
+              IF(GTYPE .NE. UNGTYPE .AND. GTYPE .NE. QAGTYPE) THEN
                 JJ     = LEN_TRIM(FNMPRE)
                 OPEN (NDSDAT,FILE=FNMPRE(:JJ)//FNAME,             &
                      form='UNFORMATTED', convert=file_endian,IOSTAT=IERR)
@@ -2451,7 +2452,7 @@ CONTAINS
                      ENAME, FSC, UNITS, IDLA, IDFM, FORMF, MFILL
               ENDIF
             ELSE
-              IF(GTYPE .NE. UNGTYPE) THEN
+              IF(GTYPE .NE. UNGTYPE .AND. GTYPE .NE. QAGTYPE) THEN
                 JJ     = LEN_TRIM(FNMPRE)
                 OPEN (NDSDAT,FILE=FNMPRE(:JJ)//FNAME,IOSTAT=IERR)
                 IF (IERR.NE.0) CALL EXTOPN(NDSE,IERR,'W3EXGO','OUTPUT',2)

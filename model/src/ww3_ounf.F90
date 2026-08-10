@@ -851,7 +851,7 @@ CONTAINS
   !> @author M. Accensi
   !> @date 22-Mar-2021
   !>
-  SUBROUTINE W3EXNC ( NX, NY, IX1, IXNM, IY1, IYN, NSEA,             &
+  SUBROUTINE W3EXNC ( NX, NY, IX1, IXN, IY1, IYN, NSEA,             &
        FILEPREFIX, E3DF, P2MSF, US3DF, USSPF,NCTYPE, &
        TOGETHER, NCVARTYPEI, FLG2D, NCIDS, S3, STRSTOPDATE )
     !/
@@ -960,7 +960,7 @@ CONTAINS
     !/ ------------------------------------------------------------------- /
     !/ Parameter list
     !/
-    INTEGER, INTENT(IN)     :: NX, NY, IX1, IXNM, IY1, IYN, NSEA,     &
+    INTEGER, INTENT(IN)     :: NX, NY, IX1, IXN, IY1, IYN, NSEA,     &
          E3DF(3,5), P2MSF(3), US3DF(3),        &
          USSPF(2), NCTYPE, NCVARTYPEI
     CHARACTER(30)           :: FILEPREFIX
@@ -1031,7 +1031,7 @@ CONTAINS
 #endif
     REAL,DIMENSION(:,:),  ALLOCATABLE  :: LON_BND, LAT_BND
     DOUBLE PRECISION        :: DXYFAC
-    INTEGER                 :: LVLR, IXN
+    INTEGER                 :: LVLR
     TYPE(META_T)            :: META(3)
     !TYPE(META_T)            :: META
     !/
@@ -1109,8 +1109,8 @@ CONTAINS
     IF (GTYPE.EQ.UNGTYPE) THEN
       COORDTYPE=2
     ELSE IF (GTYPE.EQ.QAGTYPE) THEN
-      COORDTYPE=3
-      IXN = MIN(IXNM, NSEA)
+      COORDTYPE=2
+      !IXN = MIN(IXNM, NSEA)
     ELSE
       COORDTYPE=1
     ENDIF
@@ -2563,17 +2563,6 @@ CONTAINS
                 CALL CHECK_ERR(IRET)
               END IF
 
-              ! If quadtree mesh
-              IF (GTYPE.EQ.QAGTYPE) THEN 
-                IRET=NF90_PUT_VAR(NCID,VARID(1),LON(IX1:IXN))
-                CALL CHECK_ERR(IRET)
-                IRET=NF90_PUT_VAR(NCID,VARID(2),LAT(IX1:IXN))
-                CALL CHECK_ERR(IRET)
-                IRET=NF90_PUT_VAR(NCID,VARID(4+EXTRADIM),LON_BND(IX1:IXN,:))
-                CALL CHECK_ERR(IRET)
-                IRET=NF90_PUT_VAR(NCID,VARID(5+EXTRADIM),LAT_BND(IX1:IXN,:))
-                CALL CHECK_ERR(IRET)
-              END IF
 
               ! Writes frequencies to netcdf file
               IF (EXTRADIM.EQ.1) THEN
@@ -2605,11 +2594,11 @@ CONTAINS
                 START(2)=1
                 COUNT(1)=IXN-IX1+1
                 COUNT(2)=IYN-IY1+1
-                IF (GTYPE.NE.UNGTYPE .AND. GTYPE.NE.QAGTYPE) THEN
+                IF ( GTYPE.EQ.UNGTYPE ) THEN
+                  IRET=NF90_PUT_VAR(NCID,VARID(20),MAPOUT(IX1:IXN,1),(/START(1)/),(/COUNT(1)/))
+                ELSE IF (GTYPE.NE.QAGTYPE) THEN
                   IRET=NF90_PUT_VAR(NCID,VARID(20),MAPOUT(IX1:IXN,IY1:IYN), &
                        (/START(1:2)/),(/COUNT(1:2)/))
-                ELSE
-                  IRET=NF90_PUT_VAR(NCID,VARID(20),MAPOUT(IX1:IXN,1),(/START(1)/),(/COUNT(1)/))
                 ENDIF
                 CALL CHECK_ERR(IRET)
               END IF
@@ -2732,7 +2721,7 @@ CONTAINS
                 ! If it is cartesian coordinate
                 ELSE
                   IRET=NF90_INQ_VARID (NCID, 'x', varid(1))
-                  IRET=NF90_INQ_VARID (NCID, 'y', varid(1))
+                  IRET=NF90_INQ_VARID (NCID, 'y', varid(2))
                 END IF 
                 CALL CHECK_ERR(IRET)
               ELSE
@@ -2924,6 +2913,39 @@ CONTAINS
                 IRET = NF90_PUT_VAR(NCID, VARID(11), OUTSECS, (/N/))
                 CALL CHECK_ERR(IRET)
               ENDIF
+            END IF
+              ! If quadtree mesh
+            IF (GTYPE.EQ.QAGTYPE) THEN 
+              IF (.NOT.ALLOCATED(LON_BND)) ALLOCATE(LON_BND(NX,2))
+              IF (.NOT.ALLOCATED(LAT_BND)) ALLOCATE(LAT_BND(NX,2))
+              SXD=DBLE(0.000001d0*DNINT(1d6*(DBLE(SX)) ))
+              SYD=DBLE(0.000001d0*DNINT(1d6*(DBLE(SY)) ))
+              X0D=DBLE(0.000001d0*DNINT(1d6*(DBLE(X0)) ))
+              Y0D=DBLE(0.000001d0*DNINT(1d6*(DBLE(Y0)) ))
+              LVLR = QTREE(IQGW)%LVLREF
+              DO ISEA=1,NSEA
+                lon(ISEA) = REAL( X0D +                             &
+                    SXD*( DBLE(QTREE(IQGW)%XYVAL(ISEA,1)) - 1.D0 ) )
+                lat(ISEA) = REAL( Y0D +                             &
+                    SYD*( DBLE(QTREE(IQGW)%XYVAL(ISEA,2)) - 1.D0 ) )
+                DXYFAC = 2.D0**(LVLR - QTREE(IQGW)%INDLVL(ISEA) - 1)
+                LON_BND(ISEA,1) = LON(ISEA) - DXYFAC*SXD*CLATS(ISEA)
+                LON_BND(ISEA,2) = LON(ISEA) + DXYFAC*SXD*CLATS(ISEA)
+                LAT_BND(ISEA,1) = LAT(ISEA) - DXYFAC*SYD
+                LAT_BND(ISEA,2) = LAT(ISEA) + DXYFAC*SYD
+              END DO
+              IRET=NF90_PUT_VAR(NCID,VARID(1),LON(IX1:IXN),START1D(1:2),COUNT1D(1:2))
+              CALL CHECK_ERR(IRET)
+              IRET=NF90_PUT_VAR(NCID,VARID(2),LAT(IX1:IXN),START1D(1:2),COUNT1D(1:2))
+              CALL CHECK_ERR(IRET)
+              IRET=NF90_PUT_VAR(NCID,VARID(5),LON_BND(IX1:IXN,:),START1D(1:2),COUNT1D(1:2))
+              CALL CHECK_ERR(IRET)
+              IRET=NF90_PUT_VAR(NCID,VARID(6),LAT_BND(IX1:IXN,:),START1D(1:2),COUNT1D(1:2))
+              CALL CHECK_ERR(IRET)
+              IF (MAPSTAOUT ) THEN
+                IRET=NF90_PUT_VAR(NCID,VARID(20),MAPOUT(IX1:IXN,:),START1D(1:2),COUNT1D(1:2))
+                CALL CHECK_ERR(IRET)
+              END IF
             END IF
             !
             ! 2.6.5 Puts field(s) in NetCDF file
@@ -3405,7 +3427,7 @@ CONTAINS
     !
     IRET = NF90_DEF_DIM(NCID, 'level', DIMLN(1), DIMID(1))
 
-    IF (GTYPE.NE.UNGTYPE) THEN
+    IF (GTYPE.EQ.UNGTYPE) THEN
       !
       ! Unstructured case
       !
@@ -3416,9 +3438,9 @@ CONTAINS
       !
       ! Quadtree case
       !
-        IRET = NF90_DEF_DIM(NCID, 'node', DIMLN(2), DIMID(2))
-        IRET = NF90_DEF_DIM(NCID, 'nbound', DIMLN(3), DIMID(3))
-        CALL CHECK_ERR(IRET)
+      IRET = NF90_DEF_DIM(NCID, 'node', DIMLN(2), DIMID(2))
+      IRET = NF90_DEF_DIM(NCID, 'nbound', DIMLN(3), DIMID(3))
+      CALL CHECK_ERR(IRET)
     ELSE
       !
       ! Regular structured case
@@ -3450,6 +3472,7 @@ CONTAINS
       IRET = NF90_DEF_DIM(NCID, 'f', DIMLN(4), DIMID(4))
       CALL CHECK_ERR(IRET)
     ENDIF
+    !
 
     IRET = NF90_DEF_DIM(NCID, 'time',NF90_UNLIMITED, DIMID(4+EXTRADIM))
     CALL CHECK_ERR(IRET)
@@ -3510,6 +3533,11 @@ CONTAINS
              VARID(1))
         IRET = NF90_DEF_VAR(NCID, 'latitude', NF90_FLOAT, (/ DIMID(2), DIMID(3)/), &
              VARID(2))
+      ELSE IF (GTYPE.EQ.QAGTYPE) THEN
+        IRET = NF90_DEF_VAR(NCID, 'longitude', NF90_FLOAT,             &
+                  (/ DIMID(2), DIMID(3), DIMID(4+EXTRADIM)/), VARID(1))
+        IRET = NF90_DEF_VAR(NCID, 'latitude', NF90_FLOAT,              &
+                  (/ DIMID(2), DIMID(3), DIMID(4+EXTRADIM)/), VARID(2))
       ELSE
         IRET = NF90_DEF_VAR(NCID, 'longitude', NF90_FLOAT, DIMID(2), VARID(1))
         IRET = NF90_DEF_VAR(NCID, 'latitude', NF90_FLOAT, DIMID(2), VARID(2))
@@ -3637,6 +3665,11 @@ CONTAINS
              VARID(1))
         IRET = NF90_DEF_VAR(NCID, 'y', NF90_FLOAT, (/ DIMID(2), DIMID(3)/), &
              VARID(2))
+      ELSE IF (GTYPE.EQ.QAGTYPE) THEN
+        IRET = NF90_DEF_VAR(NCID, 'x', NF90_FLOAT,                          &
+               (/ DIMID(2), DIMID(3), DIMID(4+EXTRADIM)/), VARID(1))
+        IRET = NF90_DEF_VAR(NCID, 'y', NF90_FLOAT,                          &
+               (/ DIMID(2), DIMID(3), DIMID(4+EXTRADIM)/), VARID(2))
       ELSE
         IRET = NF90_DEF_VAR(NCID, 'x', NF90_FLOAT, DIMID(2), VARID(1))
         IRET = NF90_DEF_VAR(NCID, 'y', NF90_FLOAT, DIMID(2), VARID(2))
@@ -3756,29 +3789,25 @@ CONTAINS
     !
     IF (GTYPE.EQ.QAGTYPE) THEN
       IF (FLAGLL) THEN 
-        ivar=4+extradim
         iret = nf90_def_var(ncid, 'longitude_bounds', nf90_float,   &
-                       (/ dimid(2), dimid(3)/), varid(ivar))
+                       (/ dimid(2), dimid(3), dimid(4+extradim)/), varid(5))
         iret=nf90_put_att(ncid,varid(ivar),'units','degree_east')
         iret=nf90_put_att(ncid,varid(ivar),'long_name',             &
                           'longitude of cell walls')
     !
-        ivar=5+extradim
         iret = nf90_def_var(ncid, 'latitude_bounds', nf90_float,    &
-                       (/ dimid(2), dimid(3)/), varid(ivar))
+                       (/ dimid(2), dimid(3), dimid(4+extradim)/), varid(6))
         iret=nf90_put_att(ncid,varid(ivar),'units','degree_north')
         iret=nf90_put_att(ncid,varid(ivar),'long_name',             &
                          'latitude of cell walls')
       ELSE
-        ivar=4+extradim
         iret = nf90_def_var(ncid, 'x_bounds', nf90_float,           &
-                       (/ dimid(2), dimid(3)/), varid(ivar))
+                       (/ dimid(2), dimid(3), dimid(4+extradim)/), varid(5))
         iret=nf90_put_att(ncid,varid(ivar),'units','m')
         iret=nf90_put_att(ncid,varid(ivar),'long_name',             &
                           'x coordinate of cell walls')
-        !ivar=5+extradim
         iret = nf90_def_var(ncid, 'y_bounds', nf90_float,           &
-                       (/ dimid(2), dimid(3)/), varid(ivar))
+                       (/ dimid(2), dimid(3), dimid(4+extradim)/), varid(6))
         iret=nf90_put_att(ncid,varid(ivar),'units','m')
         iret=nf90_put_att(ncid,varid(ivar),'long_name',             &
                             'y coordinate of cell walls')
@@ -3791,9 +3820,8 @@ CONTAINS
       IF (GTYPE.EQ.UNGTYPE) THEN
         IRET = NF90_DEF_VAR(NCID,'MAPSTA', NF90_SHORT,(/ DIMID(2) /), VARID(20))
       ELSEIF (GTYPE.EQ.QAGTYPE) THEN 
-        IVAR=6+EXTRADIM
         IRET = NF90_DEF_VAR(NCID,'MAPSTA', NF90_SHORT,               &
-                            (/ DIMID(2) /), VARID(IVAR)) 
+                            (/ DIMID(2), DIMID(4+EXTRADIM) /), VARID(20)) 
       ELSE
         IRET = NF90_DEF_VAR(NCID,'MAPSTA', NF90_SHORT,(/ DIMID(2) , DIMID(3) /), &
              VARID(20))
